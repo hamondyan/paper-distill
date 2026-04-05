@@ -1,6 +1,7 @@
 """Helpers for initializing and writing Paper Distill vault notes."""
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -243,6 +244,12 @@ def write_markdown(path: Path, frontmatter: dict[str, Any], body: str) -> Path:
     return path
 
 
+def write_json(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def update_frontmatter(path: Path, updates: dict[str, Any]) -> None:
     content = path.read_text(encoding="utf-8")
     if not content.startswith("---\n"):
@@ -273,6 +280,11 @@ def inbox_note_path(vault_path: str, paper: dict[str, Any]) -> Path:
 def raw_source_path(vault_path: str, citekey: str) -> Path:
     root = ensure_vault_structure(vault_path)
     return root / "raw" / "source" / _now_date() / f"{citekey}.md"
+
+
+def raw_source_sidecar_path(vault_path: str, citekey: str) -> Path:
+    root = ensure_vault_structure(vault_path)
+    return root / "raw" / "source" / _now_date() / f"{citekey}.assets.json"
 
 
 def raw_note_path(vault_path: str, citekey: str) -> Path:
@@ -317,8 +329,10 @@ def build_raw_note_body(note_payload: dict[str, Any]) -> str:
         "zotero_uri": paper.get("zotero_uri") or "N/A",
         "zotero_import_path": paper.get("zotero_import_path") or "N/A",
         "source_raw_path": paper.get("source_raw_path") or "N/A",
+        "source_structured_path": paper.get("source_structured_path") or "N/A",
         "canonical_html_url": paper.get("canonical_html_url") or "N/A",
         "canonical_pdf_url": paper.get("canonical_pdf_url") or "N/A",
+        "capture_fidelity": paper.get("capture_fidelity") or "N/A",
     })
 
 

@@ -67,8 +67,10 @@ from server.vault_ops import (
     ensure_vault_structure,
     inbox_note_path,
     raw_source_path,
+    raw_source_sidecar_path,
     raw_note_path,
     update_frontmatter,
+    write_json,
     write_markdown,
 )
 from server.zotero import add_papers as _zotero_add, search_papers as _zotero_search
@@ -281,7 +283,12 @@ def _source_frontmatter(
     candidate: dict,
     citekey: str,
     appendix_policy: str,
+    source_structured_rel_path: str = "",
     capture_method: str = "ar5iv_html_cleaned",
+    capture_fidelity: str = "high",
+    figure_count: int = 0,
+    table_count: int = 0,
+    equation_count: int = 0,
 ) -> dict:
     return {
         "paper_id": paper.get("paper_id", candidate.get("paper_id", "")),
@@ -299,7 +306,12 @@ def _source_frontmatter(
         "canonical_html_url": paper.get("canonical_html_url", ""),
         "canonical_pdf_url": paper.get("canonical_pdf_url") or paper.get("open_access_url", ""),
         "capture_method": capture_method,
+        "capture_fidelity": capture_fidelity,
         "appendix_policy": appendix_policy,
+        "source_structured_path": source_structured_rel_path,
+        "figure_count": figure_count,
+        "table_count": table_count,
+        "equation_count": equation_count,
         "captured_at": datetime.now().isoformat(timespec="seconds"),
         "compiled": False,
     }
@@ -310,12 +322,14 @@ def _note_frontmatter(
     candidate: dict,
     citekey: str,
     source_rel_path: str,
+    source_structured_rel_path: str,
     zotero_mode: str,
     zotero_status: str,
     zotero_import_path: str,
     zotero_key: str,
     zotero_uri: str,
     confidence: float,
+    capture_fidelity: str,
 ) -> dict:
     return {
         "paper_id": paper.get("paper_id", candidate.get("paper_id", "")),
@@ -328,11 +342,13 @@ def _note_frontmatter(
         "venue": paper.get("venue_raw") or paper.get("venue", ""),
         "topics": candidate.get("matched_topics", []),
         "source_raw_path": source_rel_path,
+        "source_structured_path": source_structured_rel_path,
         "zotero_mode": zotero_mode,
         "zotero_status": zotero_status,
         "zotero_import_path": zotero_import_path,
         "zotero_uri": zotero_uri,
         "zotero_key": zotero_key,
+        "capture_fidelity": capture_fidelity,
         "note_framework": "CRGP-DNL",
         "confidence": confidence,
         "compiled": False,
@@ -343,6 +359,7 @@ def _note_frontmatter(
 def _successful_capture_updates(
     note_rel_path: str,
     source_rel_path: str,
+    source_structured_rel_path: str,
     paper: dict,
     zotero_mode: str,
     zotero_status: str,
@@ -357,6 +374,7 @@ def _successful_capture_updates(
         "raw_path": note_rel_path,
         "raw_source_path": source_rel_path,
         "raw_note_path": note_rel_path,
+        "source_structured_path": source_structured_rel_path,
         **_canonical_url_updates(paper),
         "zotero_mode": zotero_mode,
         "zotero_status": zotero_status,
@@ -417,6 +435,20 @@ def _capture_settings() -> tuple[str, int]:
     return appendix_policy, min_body_chars
 
 
+def _capture_options() -> dict[str, int | bool]:
+    capture_settings = get_paper_distill_settings().get("capture", {})
+    return {
+        "preserve_math": bool(capture_settings.get("preserve_math", True)),
+        "preserve_figures": bool(capture_settings.get("preserve_figures", True)),
+        "preserve_tables": bool(capture_settings.get("preserve_tables", True)),
+        "write_structured_sidecar": bool(capture_settings.get("write_structured_sidecar", True)),
+        "extract_figure_assets": bool(capture_settings.get("extract_figure_assets", False)),
+        "max_figures": int(capture_settings.get("max_figures", 12)),
+        "max_tables": int(capture_settings.get("max_tables", 12)),
+        "max_equations": int(capture_settings.get("max_equations", 24)),
+    }
+
+
 def _relative_to_vault_if_possible(vault_path: str, maybe_path: str) -> str:
     if not maybe_path:
         return ""
@@ -449,6 +481,7 @@ async def _prepare_ingestion_candidate(
     collection_name: str,
     appendix_policy: str,
     min_body_chars: int,
+    capture_options: dict[str, int | bool] | None = None,
 ) -> tuple[dict | None, Any | None, str]:
     paper = await _enrich_inbox_candidate(candidate, vault_path=vault_path)
     paper = await bind_paper_to_arxiv(paper) or {}
@@ -456,10 +489,17 @@ async def _prepare_ingestion_candidate(
         return None, None, "arXiv binding failed during ingestion"
 
     try:
+        options = capture_options or {}
         source_doc = await capture_arxiv_source(
             paper,
             appendix_policy=appendix_policy,
             min_body_chars=min_body_chars,
+            preserve_math=bool(options.get("preserve_math", True)),
+            preserve_figures=bool(options.get("preserve_figures", True)),
+            preserve_tables=bool(options.get("preserve_tables", True)),
+            max_figures=int(options.get("max_figures", 12)),
+            max_tables=int(options.get("max_tables", 12)),
+            max_equations=int(options.get("max_equations", 24)),
         )
     except Exception as exc:
         return None, None, str(exc)
@@ -475,23 +515,27 @@ async def _prepare_ingestion_candidate(
     return paper, source_doc, ""
 
 
-def _ingestion_paths(vault_path: str, paper: dict) -> tuple[str, Path, Path, str, str]:
+def _ingestion_paths(vault_path: str, paper: dict) -> tuple[str, Path, Path, Path, str, str, str]:
     citekey = citekey_for_paper(paper)
     source_path = raw_source_path(vault_path, citekey)
+    source_structured_path = raw_source_sidecar_path(vault_path, citekey)
     note_path = raw_note_path(vault_path, citekey)
     source_rel_path = str(source_path.relative_to(Path(vault_path)))
+    source_structured_rel_path = str(source_structured_path.relative_to(Path(vault_path)))
     note_rel_path = str(note_path.relative_to(Path(vault_path)))
-    return citekey, source_path, note_path, source_rel_path, note_rel_path
+    return citekey, source_path, source_structured_path, note_path, source_rel_path, source_structured_rel_path, note_rel_path
 
 
 def _note_body_payload(
     paper: dict,
     source_rel_path: str,
+    source_structured_rel_path: str,
     zotero_mode: str,
     zotero_status: str,
     zotero_import_path: str,
     zotero_key: str,
     zotero_uri: str,
+    capture_fidelity: str,
     dnl_note: dict,
 ) -> dict:
     note_paper = dict(paper)
@@ -501,6 +545,8 @@ def _note_body_payload(
     note_paper["zotero_uri"] = zotero_uri
     note_paper["zotero_key"] = zotero_key
     note_paper["source_raw_path"] = source_rel_path
+    note_paper["source_structured_path"] = source_structured_rel_path
+    note_paper["capture_fidelity"] = capture_fidelity
     return {
         "paper": note_paper,
         "sections": dnl_note.get("sections", {}),
@@ -522,13 +568,43 @@ async def _write_ingestion_outputs(
     dnl_note: dict,
     capture_method: str = "ar5iv_html_cleaned",
 ) -> tuple[Path, Path, str, str]:
-    citekey, source_path, note_path, source_rel_path, note_rel_path = _ingestion_paths(vault_path, paper)
+    capture_options = _capture_options()
+    capture_fidelity = str(getattr(source_doc, "capture_fidelity", "unknown"))
+    figures = list(getattr(source_doc, "figures", []) or [])
+    tables = list(getattr(source_doc, "tables", []) or [])
+    equations = list(getattr(source_doc, "equations", []) or [])
+    (
+        citekey,
+        source_path,
+        source_structured_path,
+        note_path,
+        source_rel_path,
+        source_structured_rel_path,
+        note_rel_path,
+    ) = _ingestion_paths(vault_path, paper)
     await asyncio.to_thread(
         write_markdown,
         source_path,
-        _source_frontmatter(paper, candidate, citekey, appendix_policy, capture_method=capture_method),
+        _source_frontmatter(
+            paper,
+            candidate,
+            citekey,
+            appendix_policy,
+            source_structured_rel_path=source_structured_rel_path,
+            capture_method=capture_method,
+            capture_fidelity=capture_fidelity,
+            figure_count=len(figures),
+            table_count=len(tables),
+            equation_count=len(equations),
+        ),
         build_raw_source_body(source_doc),
     )
+    if bool(capture_options.get("write_structured_sidecar", True)):
+        await asyncio.to_thread(
+            write_json,
+            source_structured_path,
+            _source_doc_sidecar_payload(source_doc),
+        )
     await asyncio.to_thread(
         write_markdown,
         note_path,
@@ -537,22 +613,26 @@ async def _write_ingestion_outputs(
             candidate,
             citekey,
             source_rel_path,
+            source_structured_rel_path,
             zotero_mode,
             zotero_status,
             zotero_import_path,
             zotero_key,
             zotero_uri,
             dnl_note.get("confidence", 0.5),
+            capture_fidelity,
         ),
         build_raw_note_body(
             _note_body_payload(
                 paper,
                 source_rel_path,
+                source_structured_rel_path,
                 zotero_mode,
                 zotero_status,
                 zotero_import_path,
                 zotero_key,
                 zotero_uri,
+                capture_fidelity,
                 dnl_note,
             )
         ),
@@ -687,7 +767,22 @@ def _source_doc_from_text(
             "appendix_sections": 0,
             "bibliography_ratio": 0.0,
         },
+        capture_fidelity="low",
     )
+
+
+def _source_doc_sidecar_payload(source_doc: CleanedArxivDocument) -> dict:
+    return {
+        "title": source_doc.title,
+        "abstract": source_doc.abstract,
+        "capture_fidelity": getattr(source_doc, "capture_fidelity", "unknown"),
+        "quality": getattr(source_doc, "quality", {}),
+        "sections": getattr(source_doc, "sections", []),
+        "appendix_snapshot": getattr(source_doc, "appendix_snapshot", []),
+        "figures": getattr(source_doc, "figures", []),
+        "tables": getattr(source_doc, "tables", []),
+        "equations": getattr(source_doc, "equations", []),
+    }
 
 
 def _explicit_candidate(paper: dict, matched_topics: list[str]) -> dict[str, Any]:
@@ -844,6 +939,7 @@ async def _prepare_direct_add_candidate(
     identifier: str,
     appendix_policy: str,
     min_body_chars: int,
+    capture_options: dict[str, int | bool] | None = None,
 ) -> tuple[dict, CleanedArxivDocument | None, str, str]:
     prepared = dict(paper)
 
@@ -854,10 +950,17 @@ async def _prepare_direct_add_candidate(
 
     if prepared.get("arxiv_id"):
         try:
+            options = capture_options or {}
             source_doc = await capture_arxiv_source(
                 prepared,
                 appendix_policy=appendix_policy,
                 min_body_chars=min_body_chars,
+                preserve_math=bool(options.get("preserve_math", True)),
+                preserve_figures=bool(options.get("preserve_figures", True)),
+                preserve_tables=bool(options.get("preserve_tables", True)),
+                max_figures=int(options.get("max_figures", 12)),
+                max_tables=int(options.get("max_tables", 12)),
+                max_equations=int(options.get("max_equations", 24)),
             )
         except Exception as exc:
             return prepared, None, "", str(exc)
@@ -1661,6 +1764,7 @@ async def process_inbox(
         return {"error": "ZOTERO_LIBRARY_ID and ZOTERO_API_KEY required for web_api mode"}
 
     appendix_policy, min_body_chars = _capture_settings()
+    capture_options = _capture_options()
 
     ensure_vault_structure(vault_path)
     inbox = query_vault_sync(vault_path, section="inbox", status=status)
@@ -1680,6 +1784,7 @@ async def process_inbox(
             collection,
             appendix_policy,
             min_body_chars,
+            capture_options=capture_options,
         )
         if error:
             await asyncio.to_thread(
@@ -1740,6 +1845,7 @@ async def process_inbox(
             _successful_capture_updates(
                 note_rel_path,
                 source_rel_path,
+                source_rel_path.replace(".md", ".assets.json"),
                 paper,
                 zotero_mode,
                 zotero_status,
@@ -1796,6 +1902,7 @@ async def add_paper(
 
     ensure_vault_structure(vault_path)
     appendix_policy, min_body_chars = _capture_settings()
+    capture_options = _capture_options()
 
     paper = await _resolve_explicit_paper(identifier)
     if not paper:
@@ -1825,6 +1932,7 @@ async def add_paper(
         identifier,
         appendix_policy,
         min_body_chars,
+        capture_options=capture_options,
     )
     if capture_error or source_doc is None:
         return {
@@ -1888,6 +1996,7 @@ async def add_paper(
         "paper_id": paper.get("paper_id", ""),
         "title": paper.get("title", ""),
         "matched_topics": matched_topics,
+        "capture_fidelity": str(getattr(source_doc, "capture_fidelity", "unknown")),
         "zotero_mode": zotero_mode,
         "zotero_status": zotero_status,
         "zotero_import_path": zotero_import_path,
@@ -1896,6 +2005,7 @@ async def add_paper(
         "raw_source_path": str(source_path),
         "raw_note_path": str(note_path),
         "source_raw_path": source_rel_path,
+        "source_structured_path": source_rel_path.replace(".md", ".assets.json"),
         "source_note_path": note_rel_path,
         "warning": zotero_warning,
     }

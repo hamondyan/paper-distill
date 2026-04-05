@@ -28,7 +28,15 @@
       "cleaning_scope": "body_abstract_sections_captions",
       "appendix_policy": "summary_only",
       "failure_policy": "return_to_inbox",
-      "min_body_chars": 1500
+      "min_body_chars": 1500,
+      "preserve_math": true,
+      "preserve_figures": true,
+      "preserve_tables": true,
+      "write_structured_sidecar": true,
+      "extract_figure_assets": false,
+      "max_figures": 12,
+      "max_tables": 12,
+      "max_equations": 24
     },
     "scoring": {
       "weights": {

@@ -33,7 +33,38 @@ def _fake_source_doc(title: str, abstract: str) -> CleanedArxivDocument:
             "appendix_chars": 0,
             "appendix_sections": 0,
             "bibliography_ratio": 0.0,
+            "figure_count": 1,
+            "table_count": 1,
+            "equation_count": 1,
         },
+        figures=[
+            {
+                "label": "Figure 1",
+                "caption": "Figure 1: Architecture overview.",
+                "section": "Recovered Text",
+                "image_url": "",
+                "alt_text": "",
+            }
+        ],
+        tables=[
+            {
+                "label": "Table 1",
+                "caption": "Table 1: Main results.",
+                "section": "Recovered Text",
+                "summary": "Table 1: Main results.",
+                "markdown": "| A | B |\n| --- | --- |\n| 1 | 2 |",
+                "row_count": 2,
+                "column_count": 2,
+            }
+        ],
+        equations=[
+            {
+                "label": "Equation E1",
+                "section": "Recovered Text",
+                "text": "a_t = \\pi(o_t, g_t)",
+            }
+        ],
+        capture_fidelity="high",
     )
 
 
@@ -173,11 +204,13 @@ class PaperAddTest(unittest.TestCase):
             self.assertEqual(result["zotero_status"], "local_exported")
             self.assertTrue(Path(result["raw_source_path"]).exists())
             self.assertTrue(Path(result["raw_note_path"]).exists())
+            self.assertTrue((Path(tmpdir) / result["source_structured_path"]).exists())
 
             raw_notes = query_vault_sync(tmpdir, section="raw_notes")
             self.assertEqual(raw_notes["stats"]["raw_notes"], 1)
             self.assertEqual(raw_notes["sections"]["raw_notes"][0]["paper_id"], paper["paper_id"])
             self.assertEqual(raw_notes["sections"]["raw_notes"][0]["zotero_status"], "local_exported")
+            self.assertEqual(raw_notes["sections"]["raw_notes"][0]["capture_fidelity"], "high")
 
     def test_add_paper_returns_existing_record_without_rewriting(self) -> None:
         paper = {

@@ -24,11 +24,20 @@ _SAMPLE_AR5IV_HTML = """
       <section class="ltx_section">
         <h2 class="ltx_title ltx_title_section">2 Method</h2>
         <div class="ltx_para"><p class="ltx_p">Our proposal scales the action tokenizer, introduces a hierarchical control stack, and combines the policy with parallel decoding to reduce rollout latency while preserving semantic grounding.</p></div>
+        <div class="ltx_equation"><math alttext="a_t = \\pi(o_t, g_t)">a_t = π(o_t, g_t)</math></div>
         <figure><figcaption class="ltx_caption">Figure 1: The method uses token scaling and parallel decoding.</figcaption></figure>
       </section>
       <section class="ltx_section">
         <h2 class="ltx_title ltx_title_section">3 Evaluation</h2>
         <div class="ltx_para"><p class="ltx_p">Experiments show stronger success rates on manipulation benchmarks and more stable long-horizon control. The evaluation also highlights improved throughput under parallel decoding.</p></div>
+        <figure class="ltx_table">
+          <figcaption class="ltx_caption">Table 1: Success rate and throughput both improve.</figcaption>
+          <table class="ltx_tabular">
+            <tr><th>Model</th><th>Success</th><th>Throughput</th></tr>
+            <tr><td>Baseline</td><td>61</td><td>1.0x</td></tr>
+            <tr><td>Ours</td><td>78</td><td>1.8x</td></tr>
+          </table>
+        </figure>
       </section>
       <section class="ltx_section">
         <h2 class="ltx_title ltx_title_section">4 Discussion</h2>
@@ -76,7 +85,15 @@ class ArxivCaptureTest(unittest.TestCase):
         self.assertEqual(cleaned.title, "A Structured VLA Paper")
         self.assertIn("## Abstract", cleaned.markdown)
         self.assertIn("## Appendix Snapshot", cleaned.markdown)
+        self.assertIn("## Figure Snapshot", cleaned.markdown)
+        self.assertIn("## Table Snapshot", cleaned.markdown)
+        self.assertIn("## Equation Snapshot", cleaned.markdown)
         self.assertIn("Figure 1: The method uses token scaling and parallel decoding.", cleaned.markdown)
+        self.assertEqual(cleaned.quality["figure_count"], 1)
+        self.assertEqual(cleaned.quality["table_count"], 1)
+        self.assertEqual(cleaned.quality["equation_count"], 1)
+        self.assertEqual(cleaned.capture_fidelity, "high")
+        self.assertIn("a_t = \\pi(o_t, g_t)", cleaned.equations[0]["text"])
         self.assertNotIn("Example reference that should be removed", cleaned.markdown)
         self.assertEqual(cleaned.appendix_snapshot[0]["heading"], "Appendix A Additional Details")
         self.assertNotIn("second appendix paragraph", cleaned.markdown)
@@ -95,5 +112,6 @@ class ArxivCaptureTest(unittest.TestCase):
 
         self.assertIn("parallel decoding", note["sections"]["Proposal"].lower())
         self.assertIn("benchmark", note["sections"]["Key Results"].lower())
+        self.assertIn("throughput", note["sections"]["Key Results"].lower())
+        self.assertIn("equation snapshot", " ".join(note["evidence"]["Proposal"]).lower())
         self.assertGreaterEqual(note["confidence"], 0.7)
-

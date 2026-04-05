@@ -16,5 +16,7 @@ _Evidence: {{ evidence.get(section_name, ['Source note']) | join(', ') }}_
 - Zotero: {{ zotero_uri | default('N/A') }}
 - Zotero import pack: {{ zotero_import_path | default('N/A') }}
 - Source note: {{ source_raw_path | default('N/A') }}
+- Source structured data: {{ source_structured_path | default('N/A') }}
 - HTML: {{ canonical_html_url | default('N/A') }}
 - PDF: {{ canonical_pdf_url | default('N/A') }}
+- Capture fidelity: {{ capture_fidelity | default('N/A') }}
