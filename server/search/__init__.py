@@ -10,7 +10,12 @@ Utility functions:
     dedup_merge(papers)    -- deduplicate and merge multi-source results
 """
 
-from .arxiv_search import search_arxiv, search_arxiv_query, search_arxiv_title_author
+from .arxiv_search import (
+    fetch_arxiv_record,
+    search_arxiv,
+    search_arxiv_query,
+    search_arxiv_title_author,
+)
 from .semantic_scholar import search_semantic_scholar
 from .openalex import search_openalex
 from .dblp_search import search_dblp
@@ -23,6 +28,7 @@ __all__ = [
     "search_arxiv",
     "search_arxiv_query",
     "search_arxiv_title_author",
+    "fetch_arxiv_record",
     "search_semantic_scholar",
     "search_openalex",
     "search_dblp",

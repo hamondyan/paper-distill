@@ -12,6 +12,8 @@ The server launcher is [../scripts/run-mcp.sh](/Users/huang/Desktop/paper-distil
 uv --directory <repo-root> run paper-distill-server
 ```
 
+This means the packaged bundle expects `uv` to be available by default. If you prefer `conda`, either install `uv` alongside it or edit the launcher to call `paper-distill-server` from your activated environment.
+
 ## Claude
 
 - Manifest: [../.claude-plugin/plugin.json](/Users/huang/Desktop/paper-distill-v2/.claude-plugin/plugin.json)

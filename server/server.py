@@ -11,10 +11,12 @@ import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastmcp import FastMCP
 
 from server.arxiv_capture import (
+    CleanedArxivDocument,
     bind_paper_to_arxiv,
     build_crgp_dnl,
     capture_arxiv_source,
@@ -35,11 +37,13 @@ from server.paper_utils import (
     canonical_html_url,
     canonical_item_url,
     canonical_pdf_url,
+    extract_arxiv_id,
     normalize_venue_tier,
     paper_arxiv_id,
     paper_id,
 )
 from server.search import (
+    fetch_arxiv_record,
     search_arxiv,
     search_semantic_scholar,
     search_openalex,
@@ -105,6 +109,7 @@ _DISCOVERY_UPDATE_FIELDS = (
     "canonical_html_url",
     "canonical_item_url",
 )
+_DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +158,10 @@ def _safe_parse_date(paper: dict) -> datetime | None:
 def _tokenize(text: str) -> set[str]:
     """Lowercase token set, min 2 chars."""
     return {w for w in re.split(r"\W+", text.lower()) if len(w) >= 2}
+
+
+def _collapse_text(text: str) -> str:
+    return " ".join((text or "").split()).strip()
 
 
 def _annotate_paper(
@@ -272,6 +281,7 @@ def _source_frontmatter(
     candidate: dict,
     citekey: str,
     appendix_policy: str,
+    capture_method: str = "ar5iv_html_cleaned",
 ) -> dict:
     return {
         "paper_id": paper.get("paper_id", candidate.get("paper_id", "")),
@@ -288,7 +298,7 @@ def _source_frontmatter(
         "topics": candidate.get("matched_topics", []),
         "canonical_html_url": paper.get("canonical_html_url", ""),
         "canonical_pdf_url": paper.get("canonical_pdf_url") or paper.get("open_access_url", ""),
-        "capture_method": "ar5iv_html_cleaned",
+        "capture_method": capture_method,
         "appendix_policy": appendix_policy,
         "captured_at": datetime.now().isoformat(timespec="seconds"),
         "compiled": False,
@@ -510,12 +520,13 @@ async def _write_ingestion_outputs(
     zotero_key: str,
     zotero_uri: str,
     dnl_note: dict,
+    capture_method: str = "ar5iv_html_cleaned",
 ) -> tuple[Path, Path, str, str]:
     citekey, source_path, note_path, source_rel_path, note_rel_path = _ingestion_paths(vault_path, paper)
     await asyncio.to_thread(
         write_markdown,
         source_path,
-        _source_frontmatter(paper, candidate, citekey, appendix_policy),
+        _source_frontmatter(paper, candidate, citekey, appendix_policy, capture_method=capture_method),
         build_raw_source_body(source_doc),
     )
     await asyncio.to_thread(
@@ -564,6 +575,321 @@ def _existing_paper_ids(vault_path: str, sections: tuple[str, ...] = ("inbox", "
             if arxiv_id:
                 known.add(f"arxiv:{arxiv_id}")
     return known
+
+
+def _extract_doi(value: str) -> str:
+    text = unquote((value or "").strip())
+    if text.lower().startswith("doi:"):
+        text = text[4:].strip()
+    match = _DOI_PATTERN.search(text)
+    if not match:
+        return ""
+    return match.group(0).rstrip(").,;")
+
+
+def _extract_title_from_text(text: str) -> str:
+    for line in text.splitlines():
+        candidate = _collapse_text(line)
+        lowered = candidate.lower()
+        if len(candidate) < 15 or len(candidate) > 220:
+            continue
+        if lowered in {"abstract", "introduction", "references"}:
+            continue
+        if lowered.startswith(("http", "doi:", "arxiv:")):
+            continue
+        return candidate
+    return ""
+
+
+def _extract_abstract_from_text(text: str) -> str:
+    match = re.search(
+        r"(?:^|\n)\s*abstract\s*\n+(.*?)(?=\n\s*(?:1\.?\s+introduction|introduction|keywords|contents)\b|\n\s*\n|\Z)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        abstract = _collapse_text(match.group(1))
+        if len(abstract) >= 60:
+            return abstract
+
+    paragraphs = [
+        _collapse_text(chunk)
+        for chunk in re.split(r"\n\s*\n", text)
+    ]
+    for paragraph in paragraphs:
+        lowered = paragraph.lower()
+        if len(paragraph) >= 80 and not lowered.startswith(("abstract", "keywords", "references")):
+            return paragraph
+    return ""
+
+
+def _extract_year_from_text(text: str) -> int | None:
+    match = re.search(r"\b(19|20)\d{2}\b", text[:2000])
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return None
+
+
+def _source_doc_from_text(
+    paper: dict,
+    text: str,
+    min_body_chars: int,
+) -> CleanedArxivDocument:
+    paragraphs = [
+        _collapse_text(chunk)
+        for chunk in re.split(r"\n\s*\n", text)
+    ]
+    paragraphs = [paragraph for paragraph in paragraphs if len(paragraph) >= 40]
+    if not paragraphs:
+        raise ValueError("PDF text extraction returned too little structured content")
+
+    title = paper.get("title") or _extract_title_from_text(text) or "Untitled Paper"
+    abstract = paper.get("abstract") or _extract_abstract_from_text(text)
+    body_paragraphs = paragraphs[: min(len(paragraphs), 24)]
+    body_text = "\n\n".join(body_paragraphs)
+    if len(body_text) < min_body_chars:
+        raise ValueError(f"recovered PDF text too short ({len(body_text)} chars)")
+
+    markdown = "\n".join(
+        [
+            f"# {title}",
+            "",
+            "## Abstract",
+            "",
+            abstract or "Abstract unavailable.",
+            "",
+            "## Recovered Text",
+            "",
+            body_text,
+        ]
+    ).strip()
+    return CleanedArxivDocument(
+        title=title,
+        abstract=abstract,
+        markdown=markdown,
+        sections=[
+            {
+                "heading": "Recovered Text",
+                "level": 2,
+                "paragraphs": body_paragraphs,
+                "captions": [],
+            }
+        ],
+        appendix_snapshot=[],
+        quality={
+            "body_chars": len(body_text),
+            "has_abstract": bool(abstract),
+            "section_count": 1,
+            "appendix_chars": 0,
+            "appendix_sections": 0,
+            "bibliography_ratio": 0.0,
+        },
+    )
+
+
+def _explicit_candidate(paper: dict, matched_topics: list[str]) -> dict[str, Any]:
+    best_topic = matched_topics[0] if matched_topics else ""
+    return {
+        "paper_id": paper.get("paper_id", ""),
+        "matched_topics": matched_topics,
+        "best_topic": best_topic,
+    }
+
+
+def _matched_topics_for_explicit_paper(
+    paper: dict,
+    topic_keys: list[str] | None = None,
+) -> list[str]:
+    selected = _selected_topics(None, topic_keys)
+    if not selected:
+        return []
+
+    scored: list[tuple[float, str]] = []
+    for topic_key, topic in selected.items():
+        score = _score_topic_fit(paper, topic.get("keywords", []))
+        if score > 0:
+            scored.append((score, topic_key))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    if scored:
+        return [topic_key for _, topic_key in scored]
+    if topic_keys:
+        return list(dict.fromkeys(topic_keys))
+    return []
+
+
+def _candidate_identifiers(paper: dict) -> set[str]:
+    identifiers: set[str] = set()
+    pid = str(paper.get("paper_id", "")).strip().lower()
+    has_stable_metadata = bool(
+        paper.get("doi")
+        or paper.get("arxiv_id")
+        or paper.get("title")
+        or paper.get("authors")
+        or paper.get("year")
+    )
+    if pid and (not pid.startswith("hash:") or has_stable_metadata):
+        identifiers.add(pid)
+    doi = str(paper.get("doi", "")).strip().lower()
+    if doi:
+        identifiers.add(f"doi:{doi}")
+    arxiv_id = str(paper.get("arxiv_id", "")).strip().lower()
+    if arxiv_id:
+        identifiers.add(f"arxiv:{arxiv_id}")
+    for url in (
+        paper.get("canonical_item_url", ""),
+        paper.get("canonical_pdf_url", ""),
+        paper.get("open_access_url", ""),
+        paper.get("url", ""),
+    ):
+        cleaned = str(url).strip().lower()
+        if cleaned:
+            identifiers.add(f"url:{cleaned}")
+    return identifiers
+
+
+def _matches_existing_item(item: dict, identifiers: set[str]) -> bool:
+    item_ids = {
+        str(item.get("paper_id", "")).strip().lower(),
+        f"doi:{str(item.get('doi', '')).strip().lower()}",
+        f"arxiv:{str(item.get('arxiv_id', '')).strip().lower()}",
+        f"url:{str(item.get('canonical_item_url', '')).strip().lower()}",
+        f"url:{str(item.get('canonical_pdf_url', '')).strip().lower()}",
+        f"url:{str(item.get('open_access_url', '')).strip().lower()}",
+    }
+    item_ids.discard("")
+    item_ids.discard("doi:")
+    item_ids.discard("arxiv:")
+    item_ids.discard("url:")
+    return bool(item_ids & identifiers)
+
+
+def _abs_vault_path(vault_path: str, rel_path: str) -> str:
+    if not rel_path:
+        return ""
+    return str((Path(vault_path).expanduser() / rel_path).resolve())
+
+
+def _find_existing_paper(vault_path: str, paper: dict) -> dict[str, Any] | None:
+    identifiers = _candidate_identifiers(paper)
+    if not identifiers:
+        return None
+
+    raw_notes = query_vault_sync(vault_path, section="raw_notes").get("sections", {}).get("raw_notes", [])
+    wiki_papers = query_vault_sync(vault_path, section="papers").get("sections", {}).get("papers", [])
+
+    matched_note = next((item for item in raw_notes if _matches_existing_item(item, identifiers)), None)
+    matched_wiki = [item for item in wiki_papers if _matches_existing_item(item, identifiers)]
+    if not matched_note and not matched_wiki:
+        return None
+
+    return {
+        "paper_id": (matched_note or matched_wiki[0]).get("paper_id", paper.get("paper_id", "")),
+        "title": (matched_note or matched_wiki[0]).get("title", paper.get("title", "")),
+        "raw_note_path": _abs_vault_path(vault_path, matched_note.get("_path", "")) if matched_note else "",
+        "raw_source_path": _abs_vault_path(vault_path, matched_note.get("source_raw_path", "")) if matched_note else "",
+        "wiki_paths": [
+            _abs_vault_path(vault_path, item.get("_path", ""))
+            for item in matched_wiki
+            if item.get("_path")
+        ],
+        "compiled": bool(matched_wiki),
+    }
+
+
+async def _resolve_explicit_paper(identifier: str) -> dict[str, Any]:
+    raw = (identifier or "").strip()
+    if not raw:
+        return {}
+
+    doi = _extract_doi(raw)
+    arxiv_id = extract_arxiv_id(raw)
+    resolved: dict[str, Any] = {}
+
+    if doi:
+        resolved = await resolve_metadata(doi)
+
+    if arxiv_id:
+        arxiv_record = await fetch_arxiv_record(arxiv_id)
+        if arxiv_record:
+            for key, value in arxiv_record.items():
+                if value and not resolved.get(key):
+                    resolved[key] = value
+        resolved["arxiv_id"] = arxiv_id
+
+    if raw.lower().startswith(("http://", "https://")):
+        if raw.lower().endswith(".pdf"):
+            resolved.setdefault("open_access_url", raw)
+        else:
+            resolved.setdefault("url", raw)
+
+    if doi:
+        resolved["doi"] = doi
+    if arxiv_id:
+        resolved["arxiv_id"] = arxiv_id
+
+    scoring_settings = get_scoring_settings()
+    return _annotate_paper(
+        resolved,
+        venue_aliases=scoring_settings.get("venue_aliases", {}),
+        venue_tiers=scoring_settings.get("venue_tiers", {}),
+    )
+
+
+async def _prepare_direct_add_candidate(
+    paper: dict,
+    identifier: str,
+    appendix_policy: str,
+    min_body_chars: int,
+) -> tuple[dict, CleanedArxivDocument | None, str, str]:
+    prepared = dict(paper)
+
+    if not prepared.get("arxiv_id") and prepared.get("title") and prepared.get("authors"):
+        bound = await bind_paper_to_arxiv(prepared)
+        if bound:
+            prepared = _annotate_paper(bound)
+
+    if prepared.get("arxiv_id"):
+        try:
+            source_doc = await capture_arxiv_source(
+                prepared,
+                appendix_policy=appendix_policy,
+                min_body_chars=min_body_chars,
+            )
+        except Exception as exc:
+            return prepared, None, "", str(exc)
+        prepared["title"] = source_doc.title or prepared.get("title", "")
+        prepared.setdefault("abstract", source_doc.abstract)
+        return _annotate_paper(prepared), source_doc, "ar5iv_html_cleaned", ""
+
+    pdf_url = canonical_pdf_url(prepared)
+    if not pdf_url and identifier.lower().startswith(("http://", "https://")):
+        pdf_url = identifier
+        prepared.setdefault("open_access_url", identifier)
+        prepared["canonical_pdf_url"] = pdf_url
+
+    if not pdf_url:
+        return prepared, None, "", "No arXiv ID or fetchable PDF URL available for direct add"
+
+    text = await fetch_pdf_text(pdf_url)
+    if text.startswith("Error"):
+        return prepared, None, "", text
+
+    try:
+        source_doc = _source_doc_from_text(prepared, text, min_body_chars=min_body_chars)
+    except Exception as exc:
+        return prepared, None, "", str(exc)
+
+    prepared["title"] = prepared.get("title") or source_doc.title
+    prepared["abstract"] = prepared.get("abstract") or source_doc.abstract
+    prepared["year"] = prepared.get("year") or _extract_year_from_text(text)
+    prepared["canonical_pdf_url"] = canonical_pdf_url(prepared) or pdf_url
+    prepared["canonical_item_url"] = canonical_item_url(prepared) or pdf_url
+    prepared["canonical_html_url"] = canonical_html_url(prepared)
+    return _annotate_paper(prepared), source_doc, "pdf_text_recovered", ""
 
 
 def _canonical_topics(
@@ -1440,7 +1766,143 @@ async def process_inbox(
 
 
 # ---------------------------------------------------------------------------
-# Tool 11: lint_vault
+# Tool 11: add_paper
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def add_paper(
+    identifier: str,
+    topic_keys: list[str] | None = None,
+    collection_name: str = "",
+) -> dict:
+    """Directly add one explicit paper into the approved raw layers.
+
+    Accepts a DOI, arXiv identifier, arXiv URL, DOI URL, or direct PDF URL.
+    Unlike discovery, this bypasses inbox because the paper is already
+    user-approved.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
+
+    zotero_runtime = _zotero_runtime(vault_path)
+    if zotero_runtime["mode"] == "web_api" and (
+        not zotero_runtime["library_id"] or not zotero_runtime["api_key"]
+    ):
+        return {"error": "ZOTERO_LIBRARY_ID and ZOTERO_API_KEY required for web_api mode"}
+
+    if not identifier.strip():
+        return {"error": "identifier is required"}
+
+    ensure_vault_structure(vault_path)
+    appendix_policy, min_body_chars = _capture_settings()
+
+    paper = await _resolve_explicit_paper(identifier)
+    if not paper:
+        return {"error": "Could not resolve metadata from the provided identifier"}
+
+    existing = _find_existing_paper(vault_path, paper)
+    if existing:
+        return {
+            "added": False,
+            "existing": True,
+            **existing,
+        }
+
+    matched_topics = _matched_topics_for_explicit_paper(paper, topic_keys)
+    candidate = _explicit_candidate(paper, matched_topics)
+
+    paper["topic_tags"] = matched_topics
+    paper["collection_name"] = collection_name or zotero_runtime["collection_name"]
+    paper["venue_source"] = (
+        paper.get("venue_source")
+        or paper.get("_venue_source")
+        or paper.get("source", "")
+    )
+
+    paper, source_doc, capture_method, capture_error = await _prepare_direct_add_candidate(
+        paper,
+        identifier,
+        appendix_policy,
+        min_body_chars,
+    )
+    if capture_error or source_doc is None:
+        return {
+            "added": False,
+            "existing": False,
+            "paper_id": paper.get("paper_id", ""),
+            "title": paper.get("title", ""),
+            "error": capture_error or "Capture failed",
+        }
+
+    candidate["paper_id"] = paper.get("paper_id", candidate.get("paper_id", ""))
+    dnl_note = build_crgp_dnl(paper, source_doc)
+    paper["citekey"] = citekey_for_paper(paper)
+
+    zotero_key = ""
+    zotero_uri = ""
+    zotero_status = "disabled" if zotero_runtime["mode"] == "disabled" else "not_attempted"
+    zotero_mode = zotero_runtime["mode"]
+    zotero_import_path = ""
+    zotero_warning = ""
+
+    zotero_items = await _zotero_add(
+        [paper],
+        zotero_runtime["library_id"],
+        zotero_runtime["api_key"],
+        mode=zotero_runtime["mode"],
+        export_dir=zotero_runtime["local_export_dir"],
+    )
+    if zotero_items and not zotero_items[0].get("error"):
+        zotero_item = zotero_items[0]
+        zotero_key = zotero_item.get("key", "")
+        zotero_uri = zotero_item.get("zotero_uri", "")
+        zotero_mode = zotero_item.get("zotero_mode", zotero_mode)
+        zotero_status = zotero_item.get("zotero_status", zotero_status)
+        zotero_import_path = _relative_to_vault_if_possible(
+            vault_path,
+            zotero_item.get("zotero_import_path", ""),
+        )
+    elif zotero_items:
+        zotero_warning = zotero_items[0].get("error", "Zotero add failed")
+        zotero_status = "error"
+
+    source_path, note_path, source_rel_path, note_rel_path = await _write_ingestion_outputs(
+        vault_path,
+        candidate,
+        paper,
+        source_doc,
+        appendix_policy,
+        zotero_mode,
+        zotero_status,
+        zotero_import_path,
+        zotero_key,
+        zotero_uri,
+        dnl_note,
+        capture_method=capture_method,
+    )
+
+    return {
+        "added": True,
+        "existing": False,
+        "paper_id": paper.get("paper_id", ""),
+        "title": paper.get("title", ""),
+        "matched_topics": matched_topics,
+        "zotero_mode": zotero_mode,
+        "zotero_status": zotero_status,
+        "zotero_import_path": zotero_import_path,
+        "zotero_key": zotero_key,
+        "zotero_uri": zotero_uri,
+        "raw_source_path": str(source_path),
+        "raw_note_path": str(note_path),
+        "source_raw_path": source_rel_path,
+        "source_note_path": note_rel_path,
+        "warning": zotero_warning,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool 12: lint_vault
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -1458,7 +1920,7 @@ async def lint_vault() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 12: vault_stats
+# Tool 13: vault_stats
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -1473,7 +1935,7 @@ async def vault_stats() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 13: analyze_knowledge_graph
+# Tool 14: analyze_knowledge_graph
 # ---------------------------------------------------------------------------
 
 @mcp.tool()

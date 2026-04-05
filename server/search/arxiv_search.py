@@ -112,6 +112,33 @@ async def search_arxiv_query(
     return [_parse_entry(e) for e in entries[:max_results]]
 
 
+async def fetch_arxiv_record(arxiv_id: str) -> dict[str, Any] | None:
+    """Fetch one canonical arXiv record by identifier."""
+    normalized = (arxiv_id or "").strip()
+    if not normalized:
+        return None
+
+    params = {"id_list": normalized}
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(ARXIV_API, params=params)
+            resp.raise_for_status()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        LOG.warning("arXiv record fetch failed for %s: %s", normalized, exc)
+        return None
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        LOG.warning("arXiv XML parse error for %s: %s", normalized, exc)
+        return None
+
+    entries = root.findall(f"{ATOM_NS}entry")
+    if not entries:
+        return None
+    return _parse_entry(entries[0])
+
+
 def _escape_query_value(value: str) -> str:
     collapsed = " ".join((value or "").split())
     return re.sub(r'"', "", collapsed)
