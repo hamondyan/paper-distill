@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "paper-distill": {
+      "command": "/bin/bash",
+      "args": [
+        "-lc",
+        "ROOT=\"${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-${OPENCLAW_PLUGIN_ROOT:-$PWD}}}\"; exec \"$ROOT/scripts/run-mcp.sh\""
+      ],
+      "env": {
+        "VAULT_PATH": "${VAULT_PATH}",
+        "OPENALEX_EMAIL": "${OPENALEX_EMAIL}",
+        "S2_API_KEY": "${S2_API_KEY}",
+        "ZOTERO_MODE": "${ZOTERO_MODE}",
+        "ZOTERO_COLLECTION_NAME": "${ZOTERO_COLLECTION_NAME}",
+        "ZOTERO_LOCAL_EXPORT_DIR": "${ZOTERO_LOCAL_EXPORT_DIR}",
+        "ZOTERO_LIBRARY_ID": "${ZOTERO_LIBRARY_ID}",
+        "ZOTERO_API_KEY": "${ZOTERO_API_KEY}"
+      }
+    }
+  }
+}

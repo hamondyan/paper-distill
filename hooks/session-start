@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# SessionStart hook for paper-distill plugin
+# Injects using-paper-distill skill into session context
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Read the bootstrap skill
+skill_content=$(cat "${PLUGIN_ROOT}/skills/using-paper-distill/SKILL.md" 2>&1 || echo "Error reading skill")
+
+# Escape for JSON
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+skill_escaped=$(escape_for_json "$skill_content")
+context="<IMPORTANT>\nYou have Paper Distill installed.\n\n**Below is your 'paper-distill:using-paper-distill' skill. For all other skills, use the 'Skill' tool:**\n\n${skill_escaped}\n</IMPORTANT>"
+
+# Output for Claude Code
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$context"
+else
+  printf '{\n  "additionalContext": "%s"\n}\n' "$context"
+fi
+
+exit 0

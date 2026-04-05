@@ -1,0 +1,9 @@
+---
+name: discover
+description: Search and stage candidate papers into inbox
+user_invocable: true
+---
+
+Run the candidate discovery workflow using the `paper-distill:paper-discover` skill.
+
+This searches across paper sources, ranks results with venue and author signals, binds candidates to arXiv, and writes detailed inbox cards only for arXiv-backed papers.

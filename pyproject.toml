@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "paper-distill-server"
+version = "2.1.0"
+description = "Thin MCP API gateway for Paper Distill — academic paper search, arXiv capture, and local-first Zotero handoff"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Huang" },
+]
+keywords = ["mcp", "paper", "academic", "search", "arxiv", "ai"]
+dependencies = [
+    "fastmcp>=2.0.0",
+    "httpx>=0.27.0",
+    "pyzotero>=1.5.0",
+    "pymupdf>=1.24.0",
+    "rapidfuzz>=3.0.0",
+    "python-dateutil>=2.9.0",
+    "beautifulsoup4>=4.12.0",
+    "pyyaml>=6.0",
+    "jinja2>=3.1.0",
+]
+
+[project.scripts]
+paper-distill-server = "server.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server"]

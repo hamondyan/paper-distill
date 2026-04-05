@@ -1,0 +1,20 @@
+# Paper Distill {{ date }}
+
+{{ paper_count }} candidates discovered today.
+
+## Candidates
+
+{{ paper_list }}
+
+## Highlights
+
+{{ highlights }}
+
+## Pending Review
+
+```dataview
+TABLE status, score_total as Score, join(matched_topics, ", ") as Topics
+FROM "Paper Distill/inbox/{{ date }}"
+WHERE status = "proposed"
+SORT score_total DESC
+```

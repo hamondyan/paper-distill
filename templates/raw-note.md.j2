@@ -1,0 +1,20 @@
+# {{ title | default('Untitled Paper') }}
+
+{% for section_name in sections_order -%}
+## {{ section_name }}
+
+{{ sections.get(section_name, '') }}
+
+_Evidence: {{ evidence.get(section_name, ['Source note']) | join(', ') }}_
+
+{% endfor -%}
+
+## Links
+
+- Zotero mode: {{ zotero_mode | default('N/A') }}
+- Zotero status: {{ zotero_status | default('N/A') }}
+- Zotero: {{ zotero_uri | default('N/A') }}
+- Zotero import pack: {{ zotero_import_path | default('N/A') }}
+- Source note: {{ source_raw_path | default('N/A') }}
+- HTML: {{ canonical_html_url | default('N/A') }}
+- PDF: {{ canonical_pdf_url | default('N/A') }}

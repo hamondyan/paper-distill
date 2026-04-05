@@ -1,0 +1,45 @@
+---
+paper_id: {{ paper_id }}
+citekey: {{ citekey }}
+title: "{{ title }}"
+authors: [{{ authors | join(', ') }}]
+year: {{ year }}
+doi: "{{ doi }}"
+arxiv_id: "{{ arxiv_id }}"
+source: {{ source }}
+venue: "{{ venue }}"
+venue_normalized: "{{ venue_normalized }}"
+venue_tier: {{ venue_tier }}
+topics: [{{ topics | join(', ') }}]
+approved_by_human: true
+approved_at: {{ date }}
+zotero_key: "{{ zotero_key }}"
+zotero_uri: "{{ zotero_uri }}"
+pdf_url: "{{ pdf_url }}"
+source_urls: [{{ source_urls | join(', ') }}]
+compiled: false
+---
+
+# {{ title }}
+
+**{{ authors_short }}** ({{ year }}){% if venue %} | {{ venue }}{% endif %}
+
+## Abstract
+
+{{ abstract }}
+
+## Summary
+
+{{ summary }}
+
+## Approval Context
+
+{{ approval_context }}
+
+## Links
+
+- Zotero: {{ zotero_uri }}
+- DOI: https://doi.org/{{ doi }}
+{% if oa_url %}- PDF: {{ oa_url }}
+{% endif %}{% if code_url %}- Code: {{ code_url }}
+{% endif %}

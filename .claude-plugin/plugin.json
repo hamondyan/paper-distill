@@ -1,0 +1,21 @@
+{
+  "name": "paper-distill",
+  "description": "Human-approved academic knowledge base with arXiv capture, local-first Zotero handoff, and Obsidian wiki compilation",
+  "version": "2.1.0",
+  "author": {
+    "name": "Huang",
+    "email": ""
+  },
+  "homepage": "https://github.com/huang/paper-distill",
+  "repository": "https://github.com/huang/paper-distill",
+  "license": "MIT",
+  "keywords": [
+    "academic",
+    "papers",
+    "knowledge-base",
+    "obsidian",
+    "wiki",
+    "arxiv",
+    "research"
+  ]
+}
