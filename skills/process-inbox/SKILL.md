@@ -9,8 +9,10 @@ Move `status=approved` inbox notes through the full ingestion pipeline: capture 
 
 ## Workflow
 
-1. Call `query_vault(section="inbox", status="approved")`
-2. Call `process_inbox(...)`
+1. Call `query_vault(section="inbox", status="approved")` — if no approved papers, report that and stop
+2. Call `process_inbox(...)` for each approved paper
+   - On capture failure: leave the note in inbox with a `capture_error` field noting the reason; continue with remaining papers
+   - On Zotero failure: mark the note as failed in inbox, warn the user, and continue with remaining papers
 3. Summarize: papers exported, raw/source and raw/notes paths, any failures
 4. If the user wants, trigger `wiki-compile`
 

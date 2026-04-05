@@ -54,13 +54,7 @@ This paper is already human-approved, so do **not** write to `inbox/`.
 ### Step 4: Hand Off to Zotero
 
 1. Call `zotero_add`
-2. Respect configured Zotero mode:
-   - `local_first`
-   - `web_api`
-   - `disabled`
-3. If Zotero fails:
-   - keep the raw layers
-   - report the handoff problem clearly
+2. If Zotero fails: keep the raw layers already written and report the handoff problem clearly — do not roll back the capture
 
 ### Step 5: Report and Suggest Next Step
 

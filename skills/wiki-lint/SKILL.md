@@ -1,6 +1,6 @@
 ---
 name: wiki-lint
-description: Use when the user says "/lint", "check wiki health", "wiki维护", "检查知识库", or wants to audit the wiki for broken links, orphans, and consistency.
+description: Use when the user says "/lint", "check wiki health", "wiki维护", "检查知识库", "broken links", "orphaned articles", "wiki audit", "知识库维护", or wants to inspect and repair the wiki for structural issues.
 ---
 
 # Wiki Lint

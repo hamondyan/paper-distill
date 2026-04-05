@@ -1,6 +1,6 @@
 ---
 name: paper-ingest
-description: Use when the user explicitly says "ingest", provides a DOI, arXiv ID, or paper URL, and wants to approve that paper directly into raw/ and Zotero without going through inbox discovery. For more natural user phrasing like "add this paper to my knowledge vault", prefer `paper-add`.
+description: Use when the user explicitly says "/ingest", "ingest this paper", or provides a DOI/arXiv ID/URL with clear intent to bypass the discovery queue and write directly to raw/. This is the explicit command path — for conversational phrasing like "add this paper" or "直接入库", use `paper-add` instead.
 ---
 
 # Paper Ingest
@@ -33,13 +33,7 @@ Call `zotero_add`. If Zotero fails, keep the raw notes but warn the user.
 
 Show: title, raw/source path, raw/notes path, Zotero status, optional next step (/compile).
 
-## Feedback Loop
-
-- If the user rejects a discovered paper, update `learned_preferences.rejected_keywords`
-- If the user explicitly approves, update `accepted_keywords` and `preferred_venues`
-
 ## Important
 
-- Direct ingest is a manual approval shortcut — discovery normally goes through `paper-discover`
+- Direct ingest bypasses the discovery queue — discovery normally goes through `paper-discover`
 - Raw/source format must be consistent: prefer `capture_arxiv_source` over raw PDF text
-- For user-facing direct-add intent, `paper-add` is the clearer preferred skill

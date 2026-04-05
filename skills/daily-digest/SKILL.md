@@ -1,6 +1,6 @@
 ---
 name: daily-digest
-description: Use when the user says "每日简报", "daily digest", "今天有什么新论文", "/digest", or wants the daily candidate discovery workflow.
+description: Use when the user says "每日简报", "daily digest", "拉取今日论文", "今天的推荐", "今天有什么新论文", "/digest", or wants to run the scheduled daily paper discovery and generate a digest for review. This is the batch daily workflow — for ad-hoc searches on a specific topic, use `paper-discover`.
 ---
 
 # Daily Digest

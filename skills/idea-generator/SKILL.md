@@ -1,6 +1,6 @@
 ---
 name: idea-generator
-description: Use when the user says "research ideas", "gap analysis", "给我一些研究思路", "/ideas", "what should I work on", or asks for research directions.
+description: Use when the user says "research ideas", "gap analysis", "给我一些研究思路", "研究方向", "有什么可以做的", "open problems", "what should I work on", "what are the research gaps", "帮我找研究方向", "/ideas", or asks for novel angles and directions based on their paper collection.
 ---
 
 # Idea Generator

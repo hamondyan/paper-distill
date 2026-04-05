@@ -1,6 +1,6 @@
 ---
 name: paper-discover
-description: Use when the user says "search papers", "find papers about X", "今天有什么新论文", "/discover", or "/search" to stage candidates in inbox/.
+description: Use when the user says "search papers", "find papers about X", "搜索论文", "帮我找关于X的论文", "/discover", "/search", or provides a specific topic/keyword to search. This is for ad-hoc or topic-specific paper searches — for the full daily batch discovery workflow, use `daily-digest`.
 ---
 
 # Paper Discover

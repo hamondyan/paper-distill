@@ -1,6 +1,6 @@
 ---
 name: using-paper-distill
-description: Use when starting a session involving academic papers, research, or the Paper Distill knowledge base.
+description: Use at the start of any session involving Paper Distill — when the user mentions "paper distill", "knowledge vault", "my wiki", "my papers", "阅读笔记", "知识库", opens a research session, or asks what Paper Distill can do. Load this skill early so the right sub-skills are invoked for subsequent requests in the session.
 ---
 
 # Paper Distill — Human-Approved Research Knowledge Base

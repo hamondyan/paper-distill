@@ -1,6 +1,6 @@
 ---
 name: paper-collect
-description: Use when the user says "add to Zotero", "save to Zotero", "收藏这篇论文", "collect papers", or wants already-ingested papers saved to Zotero.
+description: Use when the user says "add to Zotero", "save to Zotero", "收藏这篇论文", "同步到Zotero", "collect papers", or wants papers that are already in raw/ or wiki/ saved to their Zotero library.
 ---
 
 # Paper Collect

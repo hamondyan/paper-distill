@@ -1,6 +1,6 @@
 ---
 name: knowledge-query
-description: Use when the user asks research questions, says "based on my papers", "what do I know about", "在我的知识库中", "/query", or queries their wiki.
+description: Use when the user asks research questions, says "based on my papers", "what do I know about", "tell me about", "explain", "compare", "what papers discuss X", "在我的知识库中", "我的知识库里有没有", "帮我综述", "/query", or wants to synthesize knowledge from their approved paper collection.
 ---
 
 # Knowledge Query

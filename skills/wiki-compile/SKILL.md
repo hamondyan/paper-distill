@@ -1,6 +1,6 @@
 ---
 name: wiki-compile
-description: Use when the user says "compile", "update wiki", "编译wiki", "/compile", or wants to create or update wiki articles from approved raw papers.
+description: Use when the user says "compile", "update wiki", "编译wiki", "create wiki article", "turn notes into wiki", "把笔记写入wiki", "/compile", or wants to create or update structured wiki articles from approved raw papers. Also trigger after `paper-add` or `process-inbox` completes if the user asks to compile immediately.
 ---
 
 # Wiki Compile
