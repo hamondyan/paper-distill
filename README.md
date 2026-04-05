@@ -51,7 +51,9 @@ Paper Distill writes into your Obsidian vault under:
 
 ### 1. Point Paper Distill at Your Obsidian Vault
 
-Set your vault path in [settings.json](/Users/huang/Desktop/paper-distill-v2/settings.json) under `paper_distill.vault_path`, or provide `VAULT_PATH` as an environment variable.
+The repository ships a tracked template at [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json). Keep your real local configuration in `settings.json`, which is git-ignored, or provide `VAULT_PATH` as an environment variable.
+
+Set your vault path under `paper_distill.vault_path`.
 
 Example:
 
@@ -63,11 +65,11 @@ Example:
 }
 ```
 
-`VAULT_PATH` overrides `settings.json` when both are present.
+`VAULT_PATH` overrides local `settings.json` when both are present.
 
 ### 2. Configure Your Research Profile
 
-Paper ranking, recommendations, and downstream compilation are guided by `paper_distill.research_profile` in [settings.json](/Users/huang/Desktop/paper-distill-v2/settings.json).
+Paper ranking, recommendations, and downstream compilation are guided by `paper_distill.research_profile` in your local `settings.json`, using [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json) as the tracked template.
 
 The most important fields are:
 
@@ -112,7 +114,7 @@ Important behavior differences:
 - `web_api` can create Zotero items and may attempt to import or link PDF attachments
 - `disabled` keeps the Paper Distill knowledge-base workflow but performs no Zotero action
 
-The current default in [settings.json](/Users/huang/Desktop/paper-distill-v2/settings.json) is `local_first`.
+The template default in [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json) is `local_first`.
 
 ### 4. Set Zotero Credentials Only If You Need Them
 

@@ -1,0 +1,98 @@
+{
+  "paper_distill": {
+    "vault_path": "/absolute/path/to/your/obsidian/vault",
+    "topics": {
+      "vision-language-action": {
+        "label": "Vision-Language-Action",
+        "keywords": ["VLA", "vision language action"],
+        "weight": 1.0
+      },
+      "manipulation": {
+        "label": "Manipulation",
+        "keywords": ["manipulation"],
+        "weight": 1.0
+      }
+    },
+    "search": {
+      "sources": ["arxiv", "s2", "openalex", "dblp", "pwc"],
+      "max_per_topic": 20,
+      "max_daily": 10
+    },
+    "workflow": {
+      "detailed_inbox_cards": true,
+      "max_candidates_per_topic": 5,
+      "diversity_cap_per_cluster": 2,
+      "require_arxiv_binding": true
+    },
+    "capture": {
+      "cleaning_scope": "body_abstract_sections_captions",
+      "appendix_policy": "summary_only",
+      "failure_policy": "return_to_inbox",
+      "min_body_chars": 1500
+    },
+    "scoring": {
+      "weights": {
+        "topic_fit": 0.4,
+        "recency": 0.2,
+        "novelty": 0.15,
+        "impact": 0.1,
+        "venue_tier": 0.07,
+        "author_preference": 0.05,
+        "metadata_quality": 0.03
+      },
+      "venue_aliases": {
+        "nips": "NeurIPS",
+        "neurips": "NeurIPS",
+        "conference on robot learning": "CoRL"
+      },
+      "venue_tiers": {
+        "tier_s": [
+          "CVPR",
+          "ICCV",
+          "ECCV",
+          "NeurIPS",
+          "ICML",
+          "ICLR",
+          "AAAI",
+          "ICRA",
+          "IROS",
+          "RSS",
+          "CoRL"
+        ],
+        "tier_a": []
+      }
+    },
+    "compile": {
+      "auto_after_ingest": false,
+      "deep_compile_threshold": 5,
+      "source_policy": "notes_first"
+    },
+    "venue": {
+      "authority_order": ["dblp", "crossref", "openalex", "arxiv"]
+    },
+    "zotero": {
+      "enabled": true,
+      "mode": "local_first",
+      "auto_collect": false,
+      "collection_name": "Paper Distill",
+      "local_export_dir": "Paper Distill/zotero/imports",
+      "local_export_format": "csl_json"
+    },
+    "research_profile": {
+      "direction": "Embodied AI with vision-language-action policies for robot manipulation",
+      "whitelist_authors": [
+        "Sergey Levine",
+        "Chelsea Finn"
+      ],
+      "seed_papers": [
+        "10.48550/arxiv.2410.24164"
+      ],
+      "learned_preferences": {
+        "accepted_keywords": [],
+        "rejected_keywords": [],
+        "preferred_venues": [],
+        "feedback_count": 0
+      }
+    }
+  }
+}
