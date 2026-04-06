@@ -9,3 +9,6 @@ build/
 uv.lock
 settings.json
 .worktrees/
+
+# Paper Distill persistent state (SQLite DB — use export_db_state for backups)
+Paper Distill/.state/

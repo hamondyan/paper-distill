@@ -2522,6 +2522,411 @@ async def upsert_wiki_article(
     }
 
 
+# ---------------------------------------------------------------------------
+# Tool 17: register_concept
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def register_concept_tool(
+    canonical: str,
+    concept_type: str = "concept",
+    aliases: list[str] | None = None,
+) -> dict:
+    """Register a concept in the Canonical Registry.
+
+    If the slug already exists, returns the existing entry.  If an alias
+    matches an existing concept and auto-merge conditions are met (slug
+    match, abbreviation whitelist, or spelling variant), the concept is
+    automatically merged.
+
+    Args:
+        canonical: Display name (e.g. "Diffusion Policy").
+        concept_type: One of "concept", "method", "topic".
+        aliases: Additional surface forms to register.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.concept_registry import register_concept
+    return await asyncio.to_thread(
+        register_concept, vault_path, canonical, concept_type, aliases,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 18: resolve_concept
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def resolve_concept_tool(surface_form: str) -> dict:
+    """Resolve a surface form to its canonical concept in the registry.
+
+    Tries alias match, slug match, then abbreviation expansion.
+    Returns the canonical concept info or null if not found.
+
+    Args:
+        surface_form: The name to look up (e.g. "VLA", "diffusion policy").
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.concept_registry import resolve_concept
+    result = await asyncio.to_thread(resolve_concept, vault_path, surface_form)
+    return result or {"resolved": False, "surface_form": surface_form}
+
+
+# ---------------------------------------------------------------------------
+# Tool 19: merge_concepts
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def merge_concepts_tool(
+    from_id: str,
+    to_id: str,
+    reason: str = "",
+) -> dict:
+    """Merge one concept into another in the registry.
+
+    All aliases of the source concept are re-mapped to the target.
+    Paper counts are combined.  The merge is recorded in history
+    for traceability.
+
+    Args:
+        from_id: Slug of the concept to merge away.
+        to_id: Slug of the target concept to merge into.
+        reason: Human-readable reason for the merge.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.concept_registry import merge_concepts
+    return await asyncio.to_thread(
+        merge_concepts, vault_path, from_id, to_id, reason,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 20: list_concepts
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def list_concepts_tool(
+    concept_type: str | None = None,
+    min_paper_count: int = 0,
+) -> list[dict]:
+    """List concepts from the Canonical Registry.
+
+    Args:
+        concept_type: Filter by type — "concept", "method", or "topic".
+        min_paper_count: Only return concepts with at least this many papers.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return [{"error": "VAULT_PATH not configured."}]
+
+    from server.concept_registry import list_concepts
+    return await asyncio.to_thread(
+        list_concepts, vault_path, concept_type, min_paper_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 21: reconcile_maintenance
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def reconcile_maintenance(auto_confirm: bool = True) -> dict:
+    """Run lint + stats, then generate deduplicated maintenance tasks.
+
+    This is the bridge between pure-read analysis (lint_vault, vault_stats)
+    and the actionable maintenance queue.  Lint results are compared against
+    existing pending tasks to avoid duplicates.
+
+    Tasks that meet auto-confirm criteria (the three hard-coded merge rules:
+    slug match, abbreviation whitelist, spelling variant) are automatically
+    confirmed.
+
+    Args:
+        auto_confirm: Auto-confirm eligible tasks (default True).
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    lint_results = await asyncio.to_thread(lint_vault_sync, vault_path)
+    stats_results = await asyncio.to_thread(vault_stats_sync, vault_path)
+
+    from server.maintenance import reconcile_maintenance_queue
+    return await asyncio.to_thread(
+        reconcile_maintenance_queue,
+        vault_path, lint_results, stats_results, auto_confirm,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 22: get_maintenance_queue
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def get_maintenance_queue(
+    task_type: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    """View maintenance tasks in the queue.
+
+    Args:
+        task_type: Filter by type — "merge_candidate", "promote_to_topic",
+            "stale_topic_refresh", "orphan_fix", "missing_concept_stub".
+        status: Filter by status — "pending", "confirmed", "processing",
+            "done", "rejected".  Defaults to non-terminal statuses.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return [{"error": "VAULT_PATH not configured."}]
+
+    from server.maintenance import get_pending_tasks
+    return await asyncio.to_thread(
+        get_pending_tasks, vault_path, task_type, status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 23: resolve_maintenance_task
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def resolve_maintenance_task(
+    task_id: int,
+    action: str = "confirm",
+    reason: str = "",
+) -> dict:
+    """Confirm, reject, or complete a maintenance task.
+
+    Args:
+        task_id: The task ID from the maintenance queue.
+        action: "confirm", "reject", or "complete".
+        reason: Optional reason (used for rejections).
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.maintenance import confirm_task, reject_task, complete_task
+
+    if action == "confirm":
+        return await asyncio.to_thread(confirm_task, vault_path, task_id)
+    elif action == "reject":
+        return await asyncio.to_thread(reject_task, vault_path, task_id, reason)
+    elif action == "complete":
+        return await asyncio.to_thread(complete_task, vault_path, task_id)
+    else:
+        return {"error": f"Invalid action: {action}. Must be confirm, reject, or complete."}
+
+
+# ---------------------------------------------------------------------------
+# Tool 24: export_db_state
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def export_db_state() -> dict:
+    """Export authority-layer database tables to JSON for backup.
+
+    Exports: concept_registry, concept_aliases, concept_merge_history,
+    maintenance_queue.  The rebuildable index layer (compile_state,
+    compile_deps) is excluded — it can be rebuilt from vault files.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.database import export_authority_state
+    return await asyncio.to_thread(export_authority_state, vault_path)
+
+
+# ---------------------------------------------------------------------------
+# Tool 25: backfill_registry
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def backfill_registry() -> dict:
+    """Populate the concept registry from existing wiki frontmatter.
+
+    Scans wiki/concepts/, wiki/methods/, and wiki/papers/ to backfill:
+    - Concepts and methods into concept_registry
+    - Paper → concept references into compile_deps
+    - compile_state entries marked as schema_version="legacy"
+
+    Does NOT create Compile IR (that requires LLM).  This is a one-time
+    migration tool for existing vaults.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.concept_registry import backfill_registry_from_wiki
+    return await asyncio.to_thread(backfill_registry_from_wiki, vault_path)
+
+
+# ---------------------------------------------------------------------------
+# Tool 26: write_compile_ir
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def write_compile_ir(citekey: str, ir_json: dict) -> dict:
+    """Validate and persist an Extract-stage IR produced by the agent.
+
+    Writes to ``compiled_ir/{citekey}.json``.  The agent is responsible for
+    the LLM extraction; this tool does schema validation and storage.
+
+    Required top-level fields in ir_json:
+    - citekey, title, authors, candidate_concepts, tension_fields
+    tension_fields must contain: limitations, assumptions, open_questions,
+    negative_results (each a list).
+
+    Args:
+        citekey: Paper identifier (e.g. "brohan2023rt2").
+        ir_json: The IR dict produced by the agent.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.compile_ir import write_ir
+    return await asyncio.to_thread(write_ir, vault_path, citekey, ir_json)
+
+
+# ---------------------------------------------------------------------------
+# Tool 27: resolve_compile_ir
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def resolve_compile_ir(citekeys: list[str]) -> list[dict]:
+    """Entity-link candidate_concepts in raw IRs against the concept registry.
+
+    For each citekey, reads ``compiled_ir/{citekey}.json``, maps each
+    candidate concept to its canonical registry entry (registering new ones
+    as needed), and writes ``compiled_ir/{citekey}_resolved.json``.
+
+    This is the pure-Python Resolve stage — no LLM calls.
+
+    Args:
+        citekeys: List of paper citekeys to resolve.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return [{"error": "VAULT_PATH not configured."}]
+
+    from server.compile_ir import resolve_ir
+    results = []
+    for citekey in citekeys:
+        result = await asyncio.to_thread(resolve_ir, vault_path, citekey)
+        result["citekey"] = citekey
+        results.append(result)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Tool 28: commit_compile_result
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def commit_compile_result(
+    page_id: str,
+    page_type: str,
+    content: str,
+    frontmatter: dict,
+    ir_path: str | None = None,
+    deps: list[dict] | None = None,
+) -> dict:
+    """Write compiled markdown + atomically update compile_state/compile_deps.
+
+    This is the EDC Write stage's sole exit point.  Unlike upsert_wiki_article
+    (generic safe write), this tool is compile-aware: it records compile
+    metadata in SQLite and detects manual-edit conflicts via content_hash.
+
+    Args:
+        page_id: Logical ID — citekey for papers, slug for concepts/topics.
+        page_type: "paper" | "concept" | "method" | "topic".
+        content: Full markdown body (without frontmatter block).
+        frontmatter: Dict of frontmatter fields to render.
+        ir_path: Optional path to resolved IR JSON for traceability.
+        deps: Optional list of deps: [{dep_type, dep_id, dep_version}].
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.compile_ir import commit_compile_result as _commit
+    return await asyncio.to_thread(
+        _commit, vault_path, page_id, page_type, content, frontmatter, ir_path, deps,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 29: query_tension_signals
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def query_tension_signals(
+    min_occurrence: int = 2,
+    topic: str | None = None,
+) -> dict:
+    """Aggregate tension signals from all resolved Compile IRs.
+
+    Scans compiled_ir/*_resolved.json and returns:
+    - recurring_limitations: limitations in ≥ min_occurrence papers
+    - all_assumptions: flat list for LLM conflict detection
+    - open_question_clusters: open questions grouped by keywords
+    - negative_results: flat list of negative/null results
+
+    Use this in the idea-generator skill to ground research gap analysis
+    in structured, IR-sourced evidence rather than heuristic keyword scanning.
+
+    Args:
+        min_occurrence: Minimum papers a limitation must appear in (default 2).
+        topic: Optional topic filter (must match paper's topics list).
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.compile_ir import aggregate_tension_signals
+    return await asyncio.to_thread(
+        aggregate_tension_signals, vault_path, min_occurrence, topic,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 30: get_compile_state
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
+    """Get the compile state record for a wiki page.
+
+    Returns compile_version, schema_version, compiled_at, ir_path,
+    and content_hash for the given page.
+
+    Args:
+        page_id: Page identifier (citekey or slug).
+        page_type: "paper" | "concept" | "method" | "topic" (default "paper").
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.compile_ir import get_compile_state as _get_state
+    result = await asyncio.to_thread(_get_state, vault_path, page_id, page_type)
+    return result or {"found": False, "page_id": page_id, "page_type": page_type}
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def main():
     mcp.run()
 

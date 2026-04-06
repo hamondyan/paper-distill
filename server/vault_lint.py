@@ -251,6 +251,32 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
         "items": merge_candidates[:20],  # cap output
     }
 
+    # --- Registry consistency check (pure read) ----------------------------
+    registry_unregistered: list[str] = []
+    try:
+        from server.database import get_db
+        from server.concept_registry import slugify
+        conn = get_db(vault_path)
+        for fpath in _iter_md_files(pd_root, "wiki/concepts"):
+            fm = _parse_frontmatter(fpath)
+            if not fm:
+                continue
+            name = fm.get("concept", os.path.basename(fpath).replace(".md", ""))
+            slug = slugify(name)
+            row = conn.execute(
+                "SELECT id FROM concept_registry WHERE id = ?", (slug,)
+            ).fetchone()
+            if not row:
+                registry_unregistered.append(f"wiki/concepts/{os.path.basename(fpath)}")
+    except Exception as exc:
+        # DB not yet initialised — skip in a non-breaking way
+        LOG.debug("Registry consistency check skipped: %s", exc)
+
+    results["registry_unregistered"] = {
+        "count": len(registry_unregistered),
+        "items": registry_unregistered,
+    }
+
     # --- Overall health -----------------------------------------------------
     total_issues = sum(v["count"] for v in results.values() if isinstance(v, dict) and "count" in v)
     if total_issues == 0:
@@ -641,14 +667,32 @@ def analyze_knowledge_graph_sync(
     # Limit combination_opportunities to top 10
     gaps["combination_opportunities"] = gaps["combination_opportunities"][:10]
 
+    # --- IR tension signals (if compiled_ir/ exists) -----------------------
+    ir_signals: dict[str, Any] = {}
+    try:
+        from server.compile_ir import aggregate_tension_signals
+        ir_signals = aggregate_tension_signals(vault_path, min_occurrence=2)
+        if ir_signals.get("papers_scanned", 0) > 0:
+            gaps["ir_recurring_limitations"] = ir_signals.get("recurring_limitations", [])
+            gaps["ir_open_question_clusters"] = ir_signals.get("open_question_clusters", [])
+            gaps["ir_negative_results"] = ir_signals.get("negative_results", [])
+    except Exception as exc:  # noqa: BLE001
+        LOG.debug("IR tension signal aggregation skipped: %s", exc)
+
+    summary: dict[str, int] = {
+        "methodology_mismatches": len(gaps["methodology_mismatches"]),
+        "combination_opportunities": len(gaps["combination_opportunities"]),
+        "recurring_problems": len(gaps["recurring_problems"]),
+        "scaling_questions": len(gaps["scaling_questions"]),
+    }
+    if ir_signals.get("papers_scanned", 0) > 0:
+        summary["ir_papers_scanned"] = ir_signals["papers_scanned"]
+        summary["ir_recurring_limitations"] = len(gaps.get("ir_recurring_limitations", []))
+        summary["ir_open_question_clusters"] = len(gaps.get("ir_open_question_clusters", []))
+
     return {
         "paper_count": len(paper_meta),
         "concept_count": len(concept_to_papers),
         "gaps": gaps,
-        "gap_summary": {
-            "methodology_mismatches": len(gaps["methodology_mismatches"]),
-            "combination_opportunities": len(gaps["combination_opportunities"]),
-            "recurring_problems": len(gaps["recurring_problems"]),
-            "scaling_questions": len(gaps["scaling_questions"]),
-        },
+        "gap_summary": summary,
     }

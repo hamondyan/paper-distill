@@ -72,26 +72,45 @@ Index files use **Obsidian Dataview** queries from YAML frontmatter. Your main j
 - methods → papers and concepts compared
 - topics → key concepts and papers
 
-## Subagent Usage (3-Phase Protocol)
+## EDC Compile Protocol (Extract → Resolve → Write)
 
-For >3 uncompiled papers, use a Map→Reduce→Write protocol:
+For structured compilation with registry integration, use the three-stage EDC protocol.
 
-### Phase 1: Map (Parallel)
-Dispatch parallel compilation subagents (each compiles 1-3 papers). Each subagent:
-- Creates `wiki/papers/{citekey}.md` as usual
-- Returns a list of **candidate concepts** (name, definition, source papers) instead of directly creating concept articles
-- Uses `compiler-prompt.md` for subagent instructions
+### Stage 1: Extract (Agent + LLM)
 
-### Phase 2: Reduce (Main Agent)
-Main agent collects all candidate concepts from all subagents and:
-1. **Canonicalize names**: Merge "diffusion policy" and "Diffusion Policy" into one
-2. **Deduplicate**: If two subagents propose the same concept, merge their paper lists
-3. **Alias registration**: If concept already exists in vault under a different name, record as alias
-4. **Threshold check**: Only create concept articles for concepts referenced by ≥2 papers
+For each uncompiled paper:
+1. Read raw notes and source PDF
+2. Produce a structured IR dict with required fields:
+   - `citekey`, `title`, `authors`, `candidate_concepts`, `tension_fields`
+   - `tension_fields` must include: `limitations`, `assumptions`, `open_questions`, `negative_results`
+3. Submit to `write_compile_ir(citekey, ir_json)` — validates schema and persists to `compiled_ir/{citekey}.json`
 
-### Phase 3: Write (Main Agent)
-After reconciliation:
-1. Create/update concept articles with merged paper lists
-2. Create/update method articles for competing approaches
-3. Update topic landscapes and index files
-4. Set `compiled: true` in all processed raw notes
+### Stage 2: Resolve (Pure Python)
+
+Call `resolve_compile_ir(citekeys)` — no LLM needed.
+- Maps each `candidate_concept` to its canonical registry entry
+- Registers new concepts automatically (or auto-merges slug/abbreviation/spelling variants)
+- Writes `compiled_ir/{citekey}_resolved.json`
+
+### Stage 3: Write (Agent)
+
+Before writing, check `get_maintenance_queue(status="confirmed")` and process any pending merge/promote tasks.
+
+For each paper:
+1. Render wiki markdown from resolved IR
+2. Call `commit_compile_result(page_id, page_type, content, frontmatter, ir_path, deps)`
+   - This is the sole write exit — records compile_state and deps in SQLite
+   - Wraps managed sections with `<!-- managed:start -->` / `<!-- managed:end -->` markers
+   - `## My Notes` sections are **never** inside managed markers — always preserved
+
+### Subagent Usage (>3 papers)
+
+For >3 papers, dispatch parallel Extract subagents (1-3 papers each). Each returns IR dicts.
+Main agent runs batch Resolve, then sequential Write.
+
+### Concept Registry Rules
+
+- Always call `resolve_concept(surface_form)` before creating a new concept article
+- If resolved: link to existing; if not: the Resolve stage will register it
+- After Write stage: call `register_concept` for any hand-crafted aliases
+- Promotion candidates (concept referenced by ≥5 papers): note for `reconcile_maintenance`

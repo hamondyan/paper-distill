@@ -30,6 +30,8 @@ _SECTION_DIRS = {
     "topics": "wiki/topics",
     "daily-log": "daily-log",
     "queries": "queries",
+    "compiled_ir": "compiled_ir",
+    "state": ".state",
 }
 
 _INDEX_CONTENT = {
@@ -225,6 +227,10 @@ def ensure_vault_structure(vault_path: str) -> Path:
         if not target.exists():
             target.write_text(content, encoding="utf-8")
 
+    # Initialize SQLite database
+    from server.database import init_db
+    init_db(vault_path)
+
     return root
 
 
@@ -290,6 +296,24 @@ def raw_source_sidecar_path(vault_path: str, citekey: str) -> Path:
 def raw_note_path(vault_path: str, citekey: str) -> Path:
     root = ensure_vault_structure(vault_path)
     return root / "raw" / "notes" / _now_date() / f"{citekey}.md"
+
+
+def compiled_ir_path(vault_path: str, citekey: str) -> Path:
+    """Return path for the raw Extract IR JSON."""
+    root = paper_distill_root(vault_path)
+    return root / "compiled_ir" / f"{citekey}.json"
+
+
+def compiled_ir_resolved_path(vault_path: str, citekey: str) -> Path:
+    """Return path for the Resolved IR JSON."""
+    root = paper_distill_root(vault_path)
+    return root / "compiled_ir" / f"{citekey}_resolved.json"
+
+
+def state_db_path(vault_path: str) -> Path:
+    """Return path to the SQLite database."""
+    root = paper_distill_root(vault_path)
+    return root / ".state" / "paper-distill.db"
 
 
 def build_inbox_body(paper: dict[str, Any]) -> str:

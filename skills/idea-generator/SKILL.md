@@ -11,12 +11,20 @@ Identify research gaps and generate actionable ideas. Uses `analyze_knowledge_gr
 
 ### Step 1: Structural Analysis (Python)
 
-Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists computed from the vault's concept-paper graph:
+Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists from two sources:
 
+**Graph-based (always available):**
 - **Methodology mismatches:** Concepts proven in domain A but not applied to user's topics
 - **Combination opportunities:** Concept pairs in the same topic that never appear in the same paper
 - **Recurring problems:** Limitations/open questions mentioned across multiple papers
 - **Scaling questions:** Results limited to small-scale or toy settings
+
+**IR-based (when compiled_ir/ exists):**
+- **ir_recurring_limitations:** Structured limitation claims from ≥2 papers (higher precision than text scan)
+- **ir_open_question_clusters:** Open questions grouped by keyword theme
+- **ir_negative_results:** Explicit null/negative results from paper IRs
+
+For deeper tension analysis, also call `query_tension_signals(min_occurrence=2)` — this returns the full `all_assumptions` list that the LLM can scan for conflicting premises across papers.
 
 ### Step 2: Qualitative Interpretation (LLM)
 
