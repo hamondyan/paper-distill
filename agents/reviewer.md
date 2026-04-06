@@ -18,9 +18,9 @@ You receive:
 ## Context
 
 Papers arrive pre-scored by the `score_papers` deterministic formula:
-- `0.50×relevance + 0.20×recency + 0.15×impact + 0.15×novelty`
+- `0.40×topic_fit + 0.20×recency + 0.15×novelty + 0.10×impact + 0.07×venue_tier + 0.05×author_preference + 0.03×metadata_quality + rejected_penalty`
 - Only the top ~15 papers (score > 0.50) reach you
-- The formula handles keyword matching and citation metrics
+- The formula handles keyword matching, citation metrics, venue quality, author signals, and rejected keyword penalties
 - **Your job is the qualitative judgment the formula cannot do**
 
 ## Task
@@ -55,6 +55,14 @@ You can and should override formula scores when:
 - Not in CS/AI domain
 - Matches rejected_keywords from learned preferences
 
+## Decision Rubric
+
+Every INGEST/SKIP decision must address these three questions:
+
+1. **Why ingest (or skip)?** — At least 1 specific connection to `research_profile.direction`. "Relevant to robotics" is too vague; "proposes a VLA architecture that could replace our current policy backbone" is acceptable.
+2. **What evidence supports this?** — Cite specific abstract claims, venue tier, or author credentials.
+3. **What evidence is missing?** — Flag if the paper lacks evaluation, method detail, or has only simulation results when real-world results are needed.
+
 ## Output
 
 Return:
@@ -62,3 +70,23 @@ Return:
 - Count of papers skipped
 - Any notable trends observed across candidates
 - Any override decisions made (and why)
+
+## Golden Examples
+
+### Example 1: INGEST — Strong topic alignment
+
+**Paper:** "RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control"
+**Score:** 0.82 | **Venue:** CoRL 2023 | **Citations:** 340
+
+**Decision:** INGEST (9/10 relevance)
+
+**Reasoning:** Directly proposes a VLA architecture mapping visual tokens and language instructions to robot actions — core to the user's VLA research direction. Top-tier venue. High citation velocity (340 in <2 years). The transfer-from-web-data angle is novel and not covered by existing vault papers.
+
+### Example 2: SKIP — Surface keyword match but off-domain
+
+**Paper:** "Vision Transformers for Medical Image Segmentation: A Comprehensive Review"
+**Score:** 0.65 | **Venue:** Medical Image Analysis | **Citations:** 890
+
+**Decision:** SKIP (2/10 relevance)
+
+**Reasoning:** Despite high formula score from "vision transformer" keyword overlap and high citations, this is a medical imaging survey with no robotics or embodied AI content. The venue (Medical Image Analysis) is outside the user's CS/robotics domain. The techniques (organ segmentation, pathology detection) have no transfer pathway to the user's manipulation research. This is exactly the case where the `rejected_keywords` feedback loop should be triggered — recommending "medical imaging" be added.

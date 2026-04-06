@@ -9,29 +9,13 @@ Manual approval shortcut: resolve one paper, capture its source, and create raw 
 
 ## Workflow
 
-### Step 1: Resolve Metadata
+Follow the **[Shared Ingestion Protocol](../_shared/ingestion-protocol.md)** for Steps 1-6 (resolve → deduplicate → capture → CRGP-DNL → Zotero → report).
 
-1. Read `settings.json → paper_distill.research_profile`
-2. Call `resolve_metadata` when a DOI is available
-3. Build paper object with DOI, arXiv ID, title, authors, year, venue, and links
+### Ingest-Specific Behavior
 
-### Step 2: Capture Source
-
-If the paper has an arXiv ID, use the same `capture_arxiv_source` pipeline as `process-inbox` to create `raw/source/{date}/{citekey}.md`. This ensures consistent ar5iv HTML-cleaned format across all raw/source files.
-
-If no arXiv ID, call `fetch_pdf_text` (which still tries ar5iv first for arXiv URLs).
-
-### Step 3: Generate CRGP-DNL Note
-
-Use `build_crgp_dnl` to create `raw/notes/{date}/{citekey}.md` from the captured source.
-
-### Step 4: Add to Zotero
-
-Call `zotero_add`. If Zotero fails, keep the raw notes but warn the user.
-
-### Step 5: Report
-
-Show: title, raw/source path, raw/notes path, Zotero status, optional next step (/compile).
+- **Explicit command path**: Triggered by `/ingest` — for conversational phrasing use `paper-add` instead
+- **Direct to raw**: Bypasses discovery queue entirely
+- **Consistent capture format**: Always prefer `capture_arxiv_source` over raw PDF text
 
 ## Important
 

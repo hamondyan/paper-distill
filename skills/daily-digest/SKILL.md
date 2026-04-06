@@ -18,7 +18,10 @@ Daily candidate discovery: search all configured topics, stage inbox candidates,
    - venue and author signals
    - links to inbox notes
    - Dataview query for pending `status: proposed` papers (auto-updates in Obsidian)
-5. Tell the user to approve or reject candidates in Obsidian by editing the `status` field
+5. Generate two optional insight sections (LLM-powered):
+   - **Emerging Patterns**: Cross-paper methodological trends observed in today's batch
+   - **Challenges to Existing Notes**: Conflicts or updates to existing vault knowledge surfaced by new candidates
+6. Tell the user to approve or reject candidates in Obsidian by editing the `status` field
 
 ## Important
 

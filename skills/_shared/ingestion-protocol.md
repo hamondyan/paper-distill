@@ -1,0 +1,37 @@
+# Shared Ingestion Protocol
+
+The canonical resolve → capture → zotero → write flow for adding papers to the vault.
+
+## Steps
+
+### 1. Resolve Metadata
+
+1. Read `settings.json → paper_distill.research_profile`
+2. Prefer exact identifiers: DOI → arXiv ID → canonical paper URL
+3. Call `resolve_metadata` for DOI; `fetch_arxiv_record` for arXiv ID
+4. Build canonical paper object with: paper_id, title, authors, year, doi, arxiv_id, venue, canonical_pdf_url, canonical_html_url, canonical_item_url
+
+### 2. Deduplicate
+
+1. Call `query_vault(section="raw", detail="full")` and `query_vault(section="papers", detail="full")`
+2. Match by paper_id, DOI, or arXiv ID
+3. If exists: report existing paths, do NOT create duplicates
+
+### 3. Capture Source
+
+1. If `arxiv_id` exists: use `capture_arxiv_source` (ar5iv HTML cleaning)
+2. If ar5iv fails: automatic PDF fallback via `fetch_pdf_text`
+3. Generate `raw/source/{date}/{citekey}.md` and `raw/source/{date}/{citekey}.assets.json`
+
+### 4. Generate CRGP-DNL Note
+
+Use `build_crgp_dnl` to create `raw/notes/{date}/{citekey}.md` from cleaned source.
+
+### 5. Zotero Handoff
+
+1. Call `zotero_add`
+2. If Zotero fails: keep raw layers, report warning clearly — do NOT roll back
+
+### 6. Report
+
+Show: title, raw/source path, raw/notes path, Zotero status, capture fidelity, optional next step (/compile).

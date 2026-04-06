@@ -72,6 +72,26 @@ Index files use **Obsidian Dataview** queries from YAML frontmatter. Your main j
 - methods → papers and concepts compared
 - topics → key concepts and papers
 
-## Subagent Usage
+## Subagent Usage (3-Phase Protocol)
 
-For >3 uncompiled papers, dispatch parallel compilation subagents (each compiles 1-3 papers). Use `compiler-prompt.md` for subagent instructions. Main agent handles index updates after all subagents complete.
+For >3 uncompiled papers, use a Map→Reduce→Write protocol:
+
+### Phase 1: Map (Parallel)
+Dispatch parallel compilation subagents (each compiles 1-3 papers). Each subagent:
+- Creates `wiki/papers/{citekey}.md` as usual
+- Returns a list of **candidate concepts** (name, definition, source papers) instead of directly creating concept articles
+- Uses `compiler-prompt.md` for subagent instructions
+
+### Phase 2: Reduce (Main Agent)
+Main agent collects all candidate concepts from all subagents and:
+1. **Canonicalize names**: Merge "diffusion policy" and "Diffusion Policy" into one
+2. **Deduplicate**: If two subagents propose the same concept, merge their paper lists
+3. **Alias registration**: If concept already exists in vault under a different name, record as alias
+4. **Threshold check**: Only create concept articles for concepts referenced by ≥2 papers
+
+### Phase 3: Write (Main Agent)
+After reconciliation:
+1. Create/update concept articles with merged paper lists
+2. Create/update method articles for competing approaches
+3. Update topic landscapes and index files
+4. Set `compiled: true` in all processed raw notes

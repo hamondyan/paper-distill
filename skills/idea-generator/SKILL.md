@@ -32,9 +32,13 @@ Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists computed
 **Local Evidence:**
 - [[wiki/papers/{citekey}]] — {relevance}
 - [[wiki/concepts/{concept}]] — {relevance}
+**Assumptions:** {What implicit assumptions does the source method rely on?}
+**Conflict:** {Where do these assumptions clash with the target domain?}
+**Bridge:** {What new technique or adaptation is needed to resolve the conflict?}
+**Kill Criteria:** {Under what conditions is this idea infeasible or already solved?}
 **Feasibility:** {Low/Medium/High}
 **Novelty:** {Low/Medium/High}
-**Priority:** {novelty x feasibility}
+**Priority:** {novelty × feasibility}
 ```
 
 ### Step 3: Save Results
