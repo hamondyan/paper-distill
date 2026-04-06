@@ -441,6 +441,9 @@ def _capture_options() -> dict[str, int | bool]:
         "preserve_math": bool(capture_settings.get("preserve_math", True)),
         "preserve_figures": bool(capture_settings.get("preserve_figures", True)),
         "preserve_tables": bool(capture_settings.get("preserve_tables", True)),
+        "remove_refs": bool(capture_settings.get("remove_refs", True)),
+        "remove_inline_citations": bool(capture_settings.get("remove_inline_citations", False)),
+        "remove_internal_links": bool(capture_settings.get("remove_internal_links", True)),
         "write_structured_sidecar": bool(capture_settings.get("write_structured_sidecar", True)),
         "extract_figure_assets": bool(capture_settings.get("extract_figure_assets", False)),
         "max_figures": int(capture_settings.get("max_figures", 12)),
@@ -500,6 +503,9 @@ async def _prepare_ingestion_candidate(
             max_figures=int(options.get("max_figures", 12)),
             max_tables=int(options.get("max_tables", 12)),
             max_equations=int(options.get("max_equations", 24)),
+            remove_refs=bool(options.get("remove_refs", True)),
+            remove_inline_citations=bool(options.get("remove_inline_citations", False)),
+            remove_internal_links=bool(options.get("remove_internal_links", True)),
         )
     except Exception as exc:
         return None, None, str(exc)
@@ -961,6 +967,9 @@ async def _prepare_direct_add_candidate(
                 max_figures=int(options.get("max_figures", 12)),
                 max_tables=int(options.get("max_tables", 12)),
                 max_equations=int(options.get("max_equations", 24)),
+                remove_refs=bool(options.get("remove_refs", True)),
+                remove_inline_citations=bool(options.get("remove_inline_citations", False)),
+                remove_internal_links=bool(options.get("remove_internal_links", True)),
             )
         except Exception as exc:
             return prepared, None, "", str(exc)

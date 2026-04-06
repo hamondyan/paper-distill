@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from server.arxiv_capture import CleanedArxivDocument
-from server.server import add_paper
+from server.server import _capture_options, _prepare_direct_add_candidate, add_paper
 from server.vault_ops import ensure_vault_structure, write_markdown
 from server.vault_query import query_vault_sync
 
@@ -93,6 +93,23 @@ def _runtime(tmpdir: str, mode: str = "local_first", library_id: str = "", api_k
 
 
 class PaperAddTest(unittest.TestCase):
+    def test_capture_options_include_reference_and_citation_controls(self) -> None:
+        with patch(
+            "server.server.get_paper_distill_settings",
+            return_value={
+                "capture": {
+                    "remove_refs": False,
+                    "remove_inline_citations": True,
+                    "remove_internal_links": False,
+                }
+            },
+        ):
+            options = _capture_options()
+
+        self.assertFalse(options["remove_refs"])
+        self.assertTrue(options["remove_inline_citations"])
+        self.assertFalse(options["remove_internal_links"])
+
     def test_add_paper_requires_identifier(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("server.server.get_vault_path", return_value=tmpdir):
@@ -398,3 +415,42 @@ class PaperAddTest(unittest.TestCase):
         self.assertEqual(result["matched_topics"], ["manipulation"])
         self.assertEqual(captured["paper"]["topic_tags"], ["manipulation"])
         self.assertEqual(captured["paper"]["collection_name"], "My Custom Collection")
+
+    def test_prepare_direct_add_candidate_passes_capture_policy_options(self) -> None:
+        paper = {
+            "paper_id": "arxiv:2601.00001",
+            "title": "A Direct Add Paper",
+            "authors": ["Jane Doe"],
+            "year": 2026,
+            "arxiv_id": "2601.00001",
+            "abstract": "An embodied AI paper.",
+            "canonical_pdf_url": "https://arxiv.org/pdf/2601.00001.pdf",
+            "canonical_html_url": "https://ar5iv.labs.arxiv.org/html/2601.00001",
+            "canonical_item_url": "https://ar5iv.labs.arxiv.org/html/2601.00001",
+            "venue": "ICRA 2026",
+            "venue_source": "arxiv",
+        }
+        capture_mock = AsyncMock(return_value=_fake_source_doc(paper["title"], paper["abstract"]))
+
+        with patch("server.server.capture_arxiv_source", new=capture_mock):
+            prepared, source_doc, capture_method, error = asyncio.run(
+                _prepare_direct_add_candidate(
+                    paper,
+                    "arxiv:2601.00001",
+                    "summary_only",
+                    100,
+                    capture_options={
+                        "remove_refs": False,
+                        "remove_inline_citations": True,
+                        "remove_internal_links": False,
+                    },
+                )
+            )
+
+        self.assertEqual(error, "")
+        self.assertEqual(capture_method, "ar5iv_html_cleaned")
+        self.assertIsNotNone(source_doc)
+        self.assertEqual(prepared["title"], paper["title"])
+        self.assertEqual(capture_mock.await_args.kwargs["remove_refs"], False)
+        self.assertEqual(capture_mock.await_args.kwargs["remove_inline_citations"], True)
+        self.assertEqual(capture_mock.await_args.kwargs["remove_internal_links"], False)

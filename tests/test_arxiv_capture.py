@@ -115,3 +115,19 @@ class ArxivCaptureTest(unittest.TestCase):
         self.assertIn("throughput", note["sections"]["Key Results"].lower())
         self.assertIn("equation snapshot", " ".join(note["evidence"]["Proposal"]).lower())
         self.assertGreaterEqual(note["confidence"], 0.7)
+
+    def test_clean_ar5iv_html_supports_drop_appendix(self) -> None:
+        cleaned = clean_ar5iv_html(_SAMPLE_AR5IV_HTML, appendix_policy="drop", min_body_chars=300)
+
+        self.assertNotIn("## Appendix Snapshot", cleaned.markdown)
+        self.assertEqual(cleaned.appendix_snapshot, [])
+
+    def test_clean_ar5iv_html_can_remove_inline_citations(self) -> None:
+        html = _SAMPLE_AR5IV_HTML.replace(
+            "We study a source-backed pipeline that keeps arXiv captures stable enough for knowledge compilation, and we emphasize reliable section extraction for downstream note generation.",
+            "We study a source-backed pipeline <cite class=\"ltx_cite ltx_citemacro_citep\">(Anthropic, <a class=\"ltx_ref\" href=\"#bib.bib4\">2024</a>)</cite> that keeps arXiv captures stable enough for knowledge compilation.",
+        )
+
+        cleaned = clean_ar5iv_html(html, min_body_chars=300, remove_inline_citations=True)
+
+        self.assertNotIn("Anthropic", cleaned.markdown)

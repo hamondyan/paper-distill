@@ -4,13 +4,16 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import defaultdict
-from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup, Tag
 from rapidfuzz import fuzz
 
+from server.arxiv_capture_adapter import CleanedArxivDocument, build_cleaned_document
+from server.arxiv_html_fetch import fetch_arxiv_html_with_fallback
+from server.arxiv_html_parser import parse_arxiv_html_document
+from server.arxiv_markdown import node_text_content, table_html_to_markdown
 from server.paper_utils import (
     canonical_html_url,
     canonical_item_url,
@@ -54,8 +57,14 @@ def _collapse_ws(text: str) -> str:
 
 
 def _clean_text(text: str) -> str:
+    """Clean text and strip citation bracket noise — for bibliography/metadata contexts."""
     text = _collapse_ws(text)
     text = _CITATION_NOISE_RE.sub("", text)
+    return _collapse_ws(text)
+
+
+def _clean_text_body(text: str) -> str:
+    """Clean text but preserve inline citations unless the caller disables them."""
     return _collapse_ws(text)
 
 
@@ -178,26 +187,20 @@ def _heading_text(node: Tag) -> str:
     return _clean_text(node.get_text(" ", strip=True))
 
 
-def _extract_title(article: Tag) -> str:
-    node = article.select_one("h1.ltx_title_document")
-    if not node:
-        return ""
-    for tag in node.select(".ltx_tag"):
-        tag.decompose()
-    return _heading_text(node)
+def _normalise_appendix_policy(policy: str) -> str:
+    lowered = (policy or "").strip().lower()
+    if lowered in {"summary", "summary_only"}:
+        return "summary"
+    if lowered == "drop":
+        return "drop"
+    return "full"
 
 
-def _extract_abstract(article: Tag) -> str:
-    block = article.select_one(".ltx_abstract")
-    if not block:
-        return ""
-    clone = BeautifulSoup(str(block), "html.parser")
-    for tag in clone.select(".ltx_title, .ltx_tag, .ltx_note_mark"):
-        tag.decompose()
-    return _clean_text(clone.get_text(" ", strip=True))
-
-
-def _preclean_article(article: Tag, preserve_math: bool = True) -> tuple[int, int]:
+def _preclean_article(
+    article: Tag,
+    preserve_math: bool = True,
+    remove_refs: bool = True,
+) -> tuple[int, int]:
     """Strip noise in-place and return (bibliography_chars, appendix_chars)."""
     bibliography_chars = 0
     appendix_chars = 0
@@ -208,14 +211,21 @@ def _preclean_article(article: Tag, preserve_math: bool = True) -> tuple[int, in
         tag.decompose()
     for tag in article.select(".ltx_page_footer, .ltx_page_header, .ltx_note_mark, .ltx_role_footnote"):
         tag.decompose()
-    for tag in article.select(".ltx_bibliography, .ltx_toclist, .ltx_ref"):
+    for tag in article.select(".ltx_toclist"):
+        tag.decompose()
+    if remove_refs:
+        for tag in article.select(".ltx_bibliography"):
+            if getattr(tag, "attrs", None) is None:
+                continue
+            text = _clean_text(tag.get_text(" ", strip=True))
+            classes = tag.get("class") or []
+            if "ltx_bibliography" in " ".join(classes):
+                bibliography_chars += len(text)
+            tag.decompose()
+    for tag in article.select(".ltx_ref"):
         if getattr(tag, "attrs", None) is None:
             continue
-        text = _clean_text(tag.get_text(" ", strip=True))
-        classes = tag.get("class") or []
-        if "ltx_bibliography" in " ".join(classes):
-            bibliography_chars += len(text)
-        tag.decompose()
+        tag.unwrap()
     for tag in article.select(".ltx_tag_equation"):
         tag.decompose()
     for appendix in article.select("section.ltx_appendix"):
@@ -294,6 +304,7 @@ def _extract_figures(
     preserve_figures: bool,
     max_figures: int,
 ) -> list[dict[str, Any]]:
+    appendix_mode = _normalise_appendix_policy(appendix_policy)
     if not preserve_figures or max_figures <= 0:
         return []
     figures: list[dict[str, Any]] = []
@@ -303,7 +314,7 @@ def _extract_figures(
         if _has_ancestor_with_class(figure, "ltx_bibliography"):
             continue
         section_heading = _section_heading_for_node(figure)
-        if appendix_policy == "summary_only" and _is_appendix_heading(section_heading):
+        if appendix_mode in {"summary", "drop"} and _is_appendix_heading(section_heading):
             continue
         caption_node = figure.find("figcaption")
         caption = _clean_text(caption_node.get_text(" ", strip=True)) if isinstance(caption_node, Tag) else ""
@@ -335,7 +346,10 @@ def _extract_tables(
     appendix_policy: str,
     preserve_tables: bool,
     max_tables: int,
+    remove_inline_citations: bool = False,
+    remove_internal_links: bool = True,
 ) -> list[dict[str, Any]]:
+    appendix_mode = _normalise_appendix_policy(appendix_policy)
     if not preserve_tables or max_tables <= 0:
         return []
     tables: list[dict[str, Any]] = []
@@ -350,7 +364,7 @@ def _extract_tables(
         if "eqn" in table_classes or "equation" in table_classes:
             continue
         section_heading = _section_heading_for_node(table)
-        if appendix_policy == "summary_only" and _is_appendix_heading(section_heading):
+        if appendix_mode in {"summary", "drop"} and _is_appendix_heading(section_heading):
             continue
         rows: list[list[str]] = []
         for tr in table.find_all("tr"):
@@ -372,7 +386,11 @@ def _extract_tables(
                 "caption": caption,
                 "section": section_heading,
                 "summary": _table_summary(rows, caption),
-                "markdown": _table_markdown(rows[:12]),
+                "markdown": table_html_to_markdown(
+                    str(table),
+                    remove_inline_citations=remove_inline_citations,
+                    remove_internal_links=remove_internal_links,
+                ) or _table_markdown(rows[:12]),
                 "row_count": len(rows),
                 "column_count": max(len(row) for row in rows),
             }
@@ -387,6 +405,7 @@ def _extract_equations(
     preserve_math: bool,
     max_equations: int,
 ) -> list[dict[str, Any]]:
+    appendix_mode = _normalise_appendix_policy(appendix_policy)
     if not preserve_math or max_equations <= 0:
         return []
     equations: list[dict[str, Any]] = []
@@ -402,7 +421,7 @@ def _extract_equations(
         if node.name == "math" and _has_ancestor_with_class(node, "ltx_equation"):
             continue
         section_heading = _section_heading_for_node(node)
-        if appendix_policy == "summary_only" and _is_appendix_heading(section_heading):
+        if appendix_mode in {"summary", "drop"} and _is_appendix_heading(section_heading):
             continue
         math_node = node if node.name == "math" else node.find("math")
         target = math_node if isinstance(math_node, Tag) else node
@@ -419,21 +438,6 @@ def _extract_equations(
         seen.add(id(node))
     return equations
 
-
-@dataclass
-class CleanedArxivDocument:
-    title: str
-    abstract: str
-    markdown: str
-    sections: list[dict[str, Any]]
-    appendix_snapshot: list[dict[str, str]]
-    quality: dict[str, Any]
-    figures: list[dict[str, Any]] = field(default_factory=list)
-    tables: list[dict[str, Any]] = field(default_factory=list)
-    equations: list[dict[str, Any]] = field(default_factory=list)
-    capture_fidelity: str = "high"
-
-
 def clean_ar5iv_html(
     html: str,
     appendix_policy: str = "summary_only",
@@ -444,31 +448,38 @@ def clean_ar5iv_html(
     max_figures: int = 12,
     max_tables: int = 12,
     max_equations: int = 24,
+    remove_refs: bool = True,
+    remove_inline_citations: bool = False,
+    remove_internal_links: bool = True,
 ) -> CleanedArxivDocument:
     """Convert ar5iv HTML into cleaned markdown plus structured section data."""
-    soup = BeautifulSoup(html, "html.parser")
-    article = soup.select_one("article.ltx_document") or soup.find("article")
-    if not isinstance(article, Tag):
-        raise ValueError("ar5iv article node not found")
-
-    title = _extract_title(article)
-    abstract = _extract_abstract(article)
-    bibliography_chars, appendix_chars = _preclean_article(article, preserve_math=preserve_math)
+    parsed = parse_arxiv_html_document(html)
+    article = parsed.article
+    title = parsed.title
+    abstract = parsed.abstract
+    appendix_mode = _normalise_appendix_policy(appendix_policy)
+    bibliography_chars, appendix_chars = _preclean_article(
+        article,
+        preserve_math=preserve_math,
+        remove_refs=remove_refs,
+    )
     figures = _extract_figures(
         article,
-        appendix_policy=appendix_policy,
+        appendix_policy=appendix_mode,
         preserve_figures=preserve_figures,
         max_figures=max_figures,
     )
     tables = _extract_tables(
         article,
-        appendix_policy=appendix_policy,
+        appendix_policy=appendix_mode,
         preserve_tables=preserve_tables,
         max_tables=max_tables,
+        remove_inline_citations=remove_inline_citations,
+        remove_internal_links=remove_internal_links,
     )
     equations = _extract_equations(
         article,
-        appendix_policy=appendix_policy,
+        appendix_policy=appendix_mode,
         preserve_math=preserve_math,
         max_equations=max_equations,
     )
@@ -492,22 +503,27 @@ def clean_ar5iv_html(
             continue
         if node.name == "p" and _has_ancestor_with_class(node, "ltx_abstract"):
             continue
-        if _has_ancestor_with_class(node, "ltx_bibliography"):
+        if remove_refs and _has_ancestor_with_class(node, "ltx_bibliography"):
             continue
 
         if node.name in _HEADING_LEVELS:
             text = _heading_text(node)
             if not text or text.lower() == "abstract":
                 continue
-            if re.search(r"\b(reference|bibliography)\b", text, re.IGNORECASE):
+            if remove_refs and re.search(r"\b(reference|bibliography)\b", text, re.IGNORECASE):
                 break
             level = _HEADING_LEVELS[node.name]
-            if appendix_policy == "summary_only" and "appendix" in text.lower():
+            if appendix_mode in {"summary", "drop"} and "appendix" in text.lower():
                 in_appendix = True
+                if appendix_mode == "drop":
+                    current_appendix = None
+                    continue
                 current_appendix = {"heading": text, "summary": ""}
                 appendix_snapshot.append(current_appendix)
                 continue
-            if in_appendix and appendix_policy == "summary_only":
+            if in_appendix and appendix_mode in {"summary", "drop"}:
+                if appendix_mode == "drop":
+                    continue
                 current_appendix = {"heading": text, "summary": ""}
                 appendix_snapshot.append(current_appendix)
                 continue
@@ -515,11 +531,19 @@ def clean_ar5iv_html(
             ensure_section(text, level)
             continue
 
-        text = _clean_text(node.get_text(" ", strip=True))
+        text = _clean_text_body(
+            node_text_content(
+                node,
+                remove_inline_citations=remove_inline_citations,
+                remove_internal_links=remove_internal_links,
+            )
+        )
         if len(text) < 20:
             continue
 
-        if in_appendix and appendix_policy == "summary_only":
+        if in_appendix and appendix_mode in {"summary", "drop"}:
+            if appendix_mode == "drop":
+                continue
             if current_appendix and not current_appendix["summary"] and node.name == "p":
                 current_appendix["summary"] = text
             continue
@@ -602,7 +626,7 @@ def clean_ar5iv_html(
         "table_count": len(tables),
         "equation_count": len(equations),
     }
-    return CleanedArxivDocument(
+    return build_cleaned_document(
         title=title,
         abstract=abstract,
         markdown="\n".join(lines).strip(),
@@ -635,12 +659,15 @@ async def capture_arxiv_source(
     max_figures: int = 12,
     max_tables: int = 12,
     max_equations: int = 24,
+    remove_refs: bool = True,
+    remove_inline_citations: bool = False,
+    remove_internal_links: bool = True,
 ) -> CleanedArxivDocument:
     """Fetch and clean ar5iv HTML for a bound paper."""
     arxiv_id = paper_arxiv_id(paper)
     if not arxiv_id:
         raise ValueError("paper is not bound to arXiv")
-    html = await fetch_ar5iv_html(arxiv_id)
+    html, _fetch_source = await fetch_arxiv_html_with_fallback(arxiv_id)
     return await asyncio.to_thread(
         clean_ar5iv_html,
         html,
@@ -652,6 +679,9 @@ async def capture_arxiv_source(
         max_figures,
         max_tables,
         max_equations,
+        remove_refs,
+        remove_inline_citations,
+        remove_internal_links,
     )
 
 
