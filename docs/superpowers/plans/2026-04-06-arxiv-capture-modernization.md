@@ -419,7 +419,4 @@ git commit -m "feat: modernize arxiv capture pipeline"
 ## Verification Notes
 
 - Scope suite: `uv run --with pytest pytest -q tests/test_arxiv_html_fetch.py tests/test_arxiv_section_filters.py tests/test_arxiv_markdown.py tests/test_arxiv_capture.py tests/test_paper_add.py -k "not passes_topic_keys_and_collection_override"` -> `22 passed, 1 deselected`
-- Full suite: `uv run --with pytest pytest -q` -> `47 passed, 2 failed`
-- Repository-wide residual failures remain unchanged from baseline:
-  - `tests/test_paper_add.py::PaperAddTest::test_add_paper_passes_topic_keys_and_collection_override`
-  - `tests/test_scoring.py::ScoringTest::test_discover_merges_matched_topics_for_same_paper`
+- Full suite after follow-up topic-key fallback fix: `uv run --with pytest pytest -q` -> `50 passed`

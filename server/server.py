@@ -422,10 +422,22 @@ def _selected_topics(query: str | None, topic_keys: list[str] | None) -> dict[st
                 "keywords": [query],
             }
         }
-    return {
+    if not topic_keys:
+        return topics
+
+    selected = {
         key: value for key, value in topics.items()
-        if not topic_keys or key in topic_keys
+        if key in topic_keys
     }
+    for key in topic_keys:
+        if key in selected:
+            continue
+        normalized = str(key).replace("_", " ").replace("-", " ").strip()
+        selected[key] = {
+            "label": normalized.title() if normalized else str(key),
+            "keywords": [normalized or str(key)],
+        }
+    return selected
 
 
 def _capture_settings() -> tuple[str, int]:

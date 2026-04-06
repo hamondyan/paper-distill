@@ -4,10 +4,17 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from server.server import _enrich_inbox_candidate, discover_papers, score_papers
+from server.server import _enrich_inbox_candidate, _selected_topics, discover_papers, score_papers
 
 
 class ScoringTest(unittest.TestCase):
+    def test_selected_topics_falls_back_to_ad_hoc_topic_keys(self) -> None:
+        with patch("server.server.get_topics", return_value={}):
+            selected = _selected_topics(None, ["vision-language-action", "manipulation"])
+
+        self.assertEqual(sorted(selected.keys()), ["manipulation", "vision-language-action"])
+        self.assertEqual(selected["manipulation"]["keywords"], ["manipulation"])
+
     def test_top_tier_venue_is_visible_in_breakdown(self) -> None:
         papers = [
             {
