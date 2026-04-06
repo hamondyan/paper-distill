@@ -196,6 +196,14 @@ def _normalise_appendix_policy(policy: str) -> str:
     return "full"
 
 
+def _capture_method_for_fetch_source(fetch_source: str) -> str:
+    if fetch_source == "arxiv_native_html":
+        return "arxiv_native_html_cleaned"
+    if fetch_source == "ar5iv_html":
+        return "ar5iv_html_cleaned"
+    return "ar5iv_html_cleaned"
+
+
 def _preclean_article(
     article: Tag,
     preserve_math: bool = True,
@@ -222,10 +230,6 @@ def _preclean_article(
             if "ltx_bibliography" in " ".join(classes):
                 bibliography_chars += len(text)
             tag.decompose()
-    for tag in article.select(".ltx_ref"):
-        if getattr(tag, "attrs", None) is None:
-            continue
-        tag.unwrap()
     for tag in article.select(".ltx_tag_equation"):
         tag.decompose()
     for appendix in article.select("section.ltx_appendix"):
@@ -667,8 +671,8 @@ async def capture_arxiv_source(
     arxiv_id = paper_arxiv_id(paper)
     if not arxiv_id:
         raise ValueError("paper is not bound to arXiv")
-    html, _fetch_source = await fetch_arxiv_html_with_fallback(arxiv_id)
-    return await asyncio.to_thread(
+    html, fetch_source = await fetch_arxiv_html_with_fallback(arxiv_id)
+    source_doc = await asyncio.to_thread(
         clean_ar5iv_html,
         html,
         appendix_policy,
@@ -683,6 +687,9 @@ async def capture_arxiv_source(
         remove_inline_citations,
         remove_internal_links,
     )
+    source_doc.capture_source = fetch_source
+    source_doc.capture_method = _capture_method_for_fetch_source(fetch_source)
+    return source_doc
 
 
 def _section_bucket(sections: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -803,11 +810,24 @@ def build_crgp_dnl(
         "The captured source does not expose a dedicated related-work section. Use the introduction and bibliography context in the source note for manual comparison."
     )
 
+    _GAP_PATTERNS = (
+        "however", "challenge", "limited", "bottleneck", "hard", "difficult",
+        "remains challenging", "still fails to", "despite", "lack of",
+        "has not been", "underexplored", "overlooked", "insufficient",
+        "open problem", "poorly understood",
+    )
+    _GAP_BLACKLIST = (
+        "limited dataset", "limited benchmark", "limited to n",
+        "limited number of", "limited computational", "evaluation is limited",
+    )
+
     gap_candidates = []
     for text in [source_doc.abstract, *(_paragraphs_for_sections(intro_sections or sections[:1]))]:
         for sentence in _sentences(text):
             lowered = sentence.lower()
-            if any(token in lowered for token in ("however", "challenge", "limited", "bottleneck", "hard", "difficult")):
+            if any(bl in lowered for bl in _GAP_BLACKLIST):
+                continue
+            if any(pattern in lowered for pattern in _GAP_PATTERNS):
                 gap_candidates.append(sentence)
     gap_text = " ".join(gap_candidates[:3]) or _fallback_from_abstract(
         source_doc.abstract,

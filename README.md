@@ -5,7 +5,7 @@ Paper Distill is a human-approved research workflow for Obsidian. It helps you:
 - discover papers from multiple academic sources
 - stage candidates in `inbox/` for review
 - directly add user-confirmed papers into the vault with `add_paper`
-- capture cleaned `raw/source` notes from ar5iv or recovered PDF text
+- capture cleaned `raw/source` notes from native arXiv HTML, `ar5iv`, or recovered PDF text
 - generate `raw/notes` with the `CRGP-DNL` reading template
 - compile evidence-backed wiki pages
 - optionally hand approved papers off to Zotero
@@ -25,6 +25,24 @@ Direct-add flow for papers you already approved yourself:
 ```text
 add-paper -> raw/source -> raw/notes -> Zotero handoff -> wiki
 ```
+
+## Capture Pipeline
+
+Paper Distill now prefers HTML capture in this order:
+
+```text
+arxiv.org/html -> ar5iv -> PDF text fallback
+```
+
+The goal is to keep the cleaned source both readable and structurally useful for downstream compilation.
+
+Each successful `raw/source` write can include:
+
+- cleaned Markdown body text
+- a structured sidecar (`.assets.json`) with sections, appendix snapshots, figures, tables, and equations
+- capture provenance such as `capture_method`, `capture_source`, and `capture_fidelity`
+
+This means the pipeline does not just store a flattened Markdown artifact. It also preserves a structured evidence layer for note generation and wiki compilation.
 
 ## Vault Layout
 
@@ -99,6 +117,47 @@ Example:
 ```
 
 If you want to change “论文偏好”, this is the main place to do it.
+
+### 2.5. Configure Capture Behavior
+
+`paper_distill.capture` controls how Paper Distill cleans and preserves source material.
+
+Important fields:
+
+- `appendix_policy`: appendix handling policy. `summary_only` remains the practical default.
+- `preserve_math`: keep extracted equations and math-aware rendering
+- `preserve_figures`: keep figure snapshots in the structured output
+- `preserve_tables`: keep table snapshots and Markdown table rendering
+- `remove_refs`: drop bibliography / references sections from cleaned output
+- `remove_inline_citations`: remove inline citation text such as `(Author, 2024)`
+- `remove_internal_links`: strip internal arXiv section links down to plain text
+- `write_structured_sidecar`: write the `.assets.json` structured capture alongside `raw/source`
+
+Example:
+
+```json
+{
+  "paper_distill": {
+    "capture": {
+      "appendix_policy": "summary_only",
+      "min_body_chars": 1500,
+      "preserve_math": true,
+      "preserve_figures": true,
+      "preserve_tables": true,
+      "remove_refs": true,
+      "remove_inline_citations": false,
+      "remove_internal_links": true,
+      "write_structured_sidecar": true
+    }
+  }
+}
+```
+
+Short version:
+
+- if you want cleaner distillation notes, keep `remove_refs=true`
+- if you want citation-light source text for LLM consumption, set `remove_inline_citations=true`
+- if you want rawer internal arXiv links preserved in Markdown, set `remove_internal_links=false`
 
 ### 3. Choose a Zotero Mode
 
@@ -190,6 +249,8 @@ Frequently used commands:
 - `/query <question>`: ask questions against your approved knowledge base
 - `/ideas`: generate research ideas from the existing knowledge graph
 - `/summarize <doi|url>`: quickly inspect a paper before deciding what to do
+
+When `add-paper` or `process-inbox` succeeds, expect both Markdown and structured source artifacts to be written under `raw/source/`, plus a CRGP-DNL note under `raw/notes/`.
 
 ## Zotero Behavior Summary
 

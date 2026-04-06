@@ -17,6 +17,8 @@ class CleanedArxivDocument:
     tables: list[dict[str, Any]] = field(default_factory=list)
     equations: list[dict[str, Any]] = field(default_factory=list)
     capture_fidelity: str = "high"
+    capture_source: str = ""
+    capture_method: str = ""
 
 
 def build_cleaned_document(
@@ -31,6 +33,8 @@ def build_cleaned_document(
     tables: list[dict[str, Any]] | None = None,
     equations: list[dict[str, Any]] | None = None,
     capture_fidelity: str = "high",
+    capture_source: str = "",
+    capture_method: str = "",
 ) -> CleanedArxivDocument:
     return CleanedArxivDocument(
         title=title,
@@ -43,4 +47,6 @@ def build_cleaned_document(
         tables=list(tables or []),
         equations=list(equations or []),
         capture_fidelity=capture_fidelity,
+        capture_source=capture_source,
+        capture_method=capture_method,
     )

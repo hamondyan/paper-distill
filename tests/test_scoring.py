@@ -4,7 +4,13 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from server.server import _enrich_inbox_candidate, _selected_topics, discover_papers, score_papers
+from server.server import (
+    _enrich_inbox_candidate,
+    _selected_topics,
+    _score_rejected_keywords,
+    discover_papers,
+    score_papers,
+)
 
 
 class ScoringTest(unittest.TestCase):
@@ -145,3 +151,33 @@ class ScoringTest(unittest.TestCase):
         )
         self.assertEqual(enriched["venue_normalized"], "IROS")
         self.assertEqual(enriched["venue_tier"], "tier_s")
+
+    def test_rejected_keyword_in_title_gives_strong_penalty(self) -> None:
+        paper = {
+            "title": "Medical Image Segmentation with Vision Transformers",
+            "abstract": "We propose a new method for segmenting organs.",
+            "authors": ["Alice"],
+            "year": 2025,
+        }
+        penalty = _score_rejected_keywords(paper, ["medical"])
+        self.assertAlmostEqual(penalty, -0.80)
+
+    def test_rejected_keyword_in_abstract_gives_moderate_penalty(self) -> None:
+        paper = {
+            "title": "Efficient Vision Transformers for Robotics",
+            "abstract": "Unlike medical imaging approaches, we focus on robot control.",
+            "authors": ["Bob"],
+            "year": 2025,
+        }
+        penalty = _score_rejected_keywords(paper, ["medical"])
+        self.assertAlmostEqual(penalty, -0.40)
+
+    def test_rejected_keyword_no_match_gives_zero(self) -> None:
+        paper = {
+            "title": "Vision Language Action Models",
+            "abstract": "A VLA model for robot manipulation.",
+            "authors": ["Carol"],
+            "year": 2025,
+        }
+        penalty = _score_rejected_keywords(paper, ["medical", "autonomous driving"])
+        self.assertAlmostEqual(penalty, 0.0)

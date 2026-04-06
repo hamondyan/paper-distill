@@ -6,6 +6,7 @@ for the Paper Distill knowledge system.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import re
@@ -38,6 +39,7 @@ from server.paper_utils import (
     canonical_item_url,
     canonical_pdf_url,
     extract_arxiv_id,
+    first_author_surname,
     normalize_venue_tier,
     paper_arxiv_id,
     paper_id,
@@ -286,6 +288,7 @@ def _source_frontmatter(
     source_structured_rel_path: str = "",
     capture_method: str = "ar5iv_html_cleaned",
     capture_fidelity: str = "high",
+    capture_source: str = "",
     figure_count: int = 0,
     table_count: int = 0,
     equation_count: int = 0,
@@ -307,6 +310,7 @@ def _source_frontmatter(
         "canonical_pdf_url": paper.get("canonical_pdf_url") or paper.get("open_access_url", ""),
         "capture_method": capture_method,
         "capture_fidelity": capture_fidelity,
+        "capture_source": capture_source,
         "appendix_policy": appendix_policy,
         "source_structured_path": source_structured_rel_path,
         "figure_count": figure_count,
@@ -464,6 +468,32 @@ def _capture_options() -> dict[str, int | bool]:
     }
 
 
+def _capture_request_kwargs(
+    appendix_policy: str,
+    min_body_chars: int,
+    capture_options: dict[str, int | bool] | None = None,
+) -> dict[str, int | bool | str]:
+    options = capture_options or {}
+    return {
+        "appendix_policy": appendix_policy,
+        "min_body_chars": min_body_chars,
+        "preserve_math": bool(options.get("preserve_math", True)),
+        "preserve_figures": bool(options.get("preserve_figures", True)),
+        "preserve_tables": bool(options.get("preserve_tables", True)),
+        "max_figures": int(options.get("max_figures", 12)),
+        "max_tables": int(options.get("max_tables", 12)),
+        "max_equations": int(options.get("max_equations", 24)),
+        "remove_refs": bool(options.get("remove_refs", True)),
+        "remove_inline_citations": bool(options.get("remove_inline_citations", False)),
+        "remove_internal_links": bool(options.get("remove_internal_links", True)),
+    }
+
+
+def _capture_method_from_source_doc(source_doc: Any, fallback: str = "ar5iv_html_cleaned") -> str:
+    capture_method = str(getattr(source_doc, "capture_method", "")).strip()
+    return capture_method or fallback
+
+
 def _relative_to_vault_if_possible(vault_path: str, maybe_path: str) -> str:
     if not maybe_path:
         return ""
@@ -503,24 +533,39 @@ async def _prepare_ingestion_candidate(
     if not paper:
         return None, None, "arXiv binding failed during ingestion"
 
+    source_doc = None
+    capture_error = ""
     try:
-        options = capture_options or {}
         source_doc = await capture_arxiv_source(
             paper,
-            appendix_policy=appendix_policy,
-            min_body_chars=min_body_chars,
-            preserve_math=bool(options.get("preserve_math", True)),
-            preserve_figures=bool(options.get("preserve_figures", True)),
-            preserve_tables=bool(options.get("preserve_tables", True)),
-            max_figures=int(options.get("max_figures", 12)),
-            max_tables=int(options.get("max_tables", 12)),
-            max_equations=int(options.get("max_equations", 24)),
-            remove_refs=bool(options.get("remove_refs", True)),
-            remove_inline_citations=bool(options.get("remove_inline_citations", False)),
-            remove_internal_links=bool(options.get("remove_internal_links", True)),
+            **_capture_request_kwargs(
+                appendix_policy,
+                min_body_chars,
+                capture_options=capture_options,
+            ),
         )
+        paper["capture_method"] = _capture_method_from_source_doc(source_doc)
     except Exception as exc:
-        return None, None, str(exc)
+        capture_error = str(exc)
+        LOG.warning("ar5iv capture failed for %s, attempting PDF fallback: %s",
+                     paper.get("paper_id", ""), capture_error)
+
+    # PDF fallback when ar5iv fails
+    if source_doc is None:
+        pdf_url = canonical_pdf_url(paper)
+        if pdf_url:
+            try:
+                text = await fetch_pdf_text(pdf_url)
+                if not text.startswith("Error"):
+                    source_doc = _source_doc_from_text(paper, text, min_body_chars=min_body_chars)
+                    paper["capture_method"] = "pdf_text_recovered"
+                    LOG.info("PDF fallback succeeded for %s", paper.get("paper_id", ""))
+                else:
+                    return None, None, f"ar5iv failed ({capture_error}); PDF fallback also failed ({text})"
+            except Exception as pdf_exc:
+                return None, None, f"ar5iv failed ({capture_error}); PDF fallback also failed ({pdf_exc})"
+        else:
+            return None, None, f"ar5iv failed ({capture_error}); no PDF URL available for fallback"
 
     paper["title"] = source_doc.title or paper.get("title", "")
     paper["topic_tags"] = candidate.get("matched_topics", [])
@@ -587,7 +632,9 @@ async def _write_ingestion_outputs(
     capture_method: str = "ar5iv_html_cleaned",
 ) -> tuple[Path, Path, str, str]:
     capture_options = _capture_options()
+    capture_method = capture_method or _capture_method_from_source_doc(source_doc)
     capture_fidelity = str(getattr(source_doc, "capture_fidelity", "unknown"))
+    capture_source = str(getattr(source_doc, "capture_source", "")).strip()
     figures = list(getattr(source_doc, "figures", []) or [])
     tables = list(getattr(source_doc, "tables", []) or [])
     equations = list(getattr(source_doc, "equations", []) or [])
@@ -611,6 +658,7 @@ async def _write_ingestion_outputs(
             source_structured_rel_path=source_structured_rel_path,
             capture_method=capture_method,
             capture_fidelity=capture_fidelity,
+            capture_source=capture_source,
             figure_count=len(figures),
             table_count=len(tables),
             equation_count=len(equations),
@@ -661,7 +709,7 @@ async def _write_ingestion_outputs(
 def _existing_paper_ids(vault_path: str, sections: tuple[str, ...] = ("inbox", "raw", "papers")) -> set[str]:
     known: set[str] = set()
     for section in sections:
-        data = query_vault_sync(vault_path, section=section)
+        data = query_vault_sync(vault_path, section=section, detail="full")
         for item in data.get("sections", {}).get(section, []):
             pid = str(item.get("paper_id", "")).strip()
             if pid:
@@ -786,6 +834,8 @@ def _source_doc_from_text(
             "bibliography_ratio": 0.0,
         },
         capture_fidelity="low",
+        capture_source="pdf_text",
+        capture_method="pdf_text_recovered",
     )
 
 
@@ -794,6 +844,8 @@ def _source_doc_sidecar_payload(source_doc: CleanedArxivDocument) -> dict:
         "title": source_doc.title,
         "abstract": source_doc.abstract,
         "capture_fidelity": getattr(source_doc, "capture_fidelity", "unknown"),
+        "capture_source": getattr(source_doc, "capture_source", ""),
+        "capture_method": getattr(source_doc, "capture_method", ""),
         "quality": getattr(source_doc, "quality", {}),
         "sections": getattr(source_doc, "sections", []),
         "appendix_snapshot": getattr(source_doc, "appendix_snapshot", []),
@@ -891,8 +943,8 @@ def _find_existing_paper(vault_path: str, paper: dict) -> dict[str, Any] | None:
     if not identifiers:
         return None
 
-    raw_notes = query_vault_sync(vault_path, section="raw_notes").get("sections", {}).get("raw_notes", [])
-    wiki_papers = query_vault_sync(vault_path, section="papers").get("sections", {}).get("papers", [])
+    raw_notes = query_vault_sync(vault_path, section="raw_notes", detail="full").get("sections", {}).get("raw_notes", [])
+    wiki_papers = query_vault_sync(vault_path, section="papers", detail="full").get("sections", {}).get("papers", [])
 
     matched_note = next((item for item in raw_notes if _matches_existing_item(item, identifiers)), None)
     matched_wiki = [item for item in wiki_papers if _matches_existing_item(item, identifiers)]
@@ -968,26 +1020,19 @@ async def _prepare_direct_add_candidate(
 
     if prepared.get("arxiv_id"):
         try:
-            options = capture_options or {}
             source_doc = await capture_arxiv_source(
                 prepared,
-                appendix_policy=appendix_policy,
-                min_body_chars=min_body_chars,
-                preserve_math=bool(options.get("preserve_math", True)),
-                preserve_figures=bool(options.get("preserve_figures", True)),
-                preserve_tables=bool(options.get("preserve_tables", True)),
-                max_figures=int(options.get("max_figures", 12)),
-                max_tables=int(options.get("max_tables", 12)),
-                max_equations=int(options.get("max_equations", 24)),
-                remove_refs=bool(options.get("remove_refs", True)),
-                remove_inline_citations=bool(options.get("remove_inline_citations", False)),
-                remove_internal_links=bool(options.get("remove_internal_links", True)),
+                **_capture_request_kwargs(
+                    appendix_policy,
+                    min_body_chars,
+                    capture_options=capture_options,
+                ),
             )
         except Exception as exc:
             return prepared, None, "", str(exc)
         prepared["title"] = source_doc.title or prepared.get("title", "")
         prepared.setdefault("abstract", source_doc.abstract)
-        return _annotate_paper(prepared), source_doc, "ar5iv_html_cleaned", ""
+        return _annotate_paper(prepared), source_doc, _capture_method_from_source_doc(source_doc), ""
 
     pdf_url = canonical_pdf_url(prepared)
     if not pdf_url and identifier.lower().startswith(("http://", "https://")):
@@ -1027,6 +1072,9 @@ def _canonical_topics(
                 canonical[key] = {
                     "label": value.get("label", key),
                     "keywords": value.get("keywords", []),
+                    "aliases": value.get("aliases", []),
+                    "must_include": value.get("must_include", []),
+                    "must_exclude": value.get("must_exclude", []),
                 }
         if canonical:
             return canonical
@@ -1036,13 +1084,34 @@ def _canonical_topics(
             "ad-hoc": {
                 "label": "Ad Hoc Topic",
                 "keywords": topic_keywords,
+                "aliases": [],
+                "must_include": [],
+                "must_exclude": [],
             }
         }
 
     return {}
 
 
-def _score_topic_fit(paper: dict, topic_keywords: list[str]) -> float:
+_ACRONYM_MAP: dict[str, str] = {
+    "llm": "large language model",
+    "llms": "large language models",
+    "vlm": "vision language model",
+    "vla": "vision language action",
+    "rl": "reinforcement learning",
+    "il": "imitation learning",
+    "bc": "behavioral cloning",
+    "vit": "vision transformer",
+    "cnn": "convolutional neural network",
+    "gan": "generative adversarial network",
+    "diffusion": "denoising diffusion",
+    "nerf": "neural radiance field",
+    "slam": "simultaneous localization and mapping",
+    "mpc": "model predictive control",
+}
+
+
+def _score_topic_fit(paper: dict, topic_keywords: list[str], topic_aliases: list[str] | None = None) -> float:
     title = paper.get("title", "")
     abstract = paper.get("abstract", "")
     venue = paper.get("venue_normalized", paper.get("venue", ""))
@@ -1050,6 +1119,15 @@ def _score_topic_fit(paper: dict, topic_keywords: list[str]) -> float:
     keyword_tokens = set()
     for kw in topic_keywords:
         keyword_tokens.update(_tokenize(kw))
+    # Expand with aliases
+    for alias in (topic_aliases or []):
+        keyword_tokens.update(_tokenize(alias))
+    # Expand with built-in acronym map
+    expanded = set()
+    for token in keyword_tokens:
+        if token in _ACRONYM_MAP:
+            expanded.update(_tokenize(_ACRONYM_MAP[token]))
+    keyword_tokens.update(expanded)
     if not keyword_tokens:
         return 0.0
     overlap = len(paper_tokens & keyword_tokens)
@@ -1061,7 +1139,8 @@ def _best_topic_fit(paper: dict, topics: dict[str, dict]) -> tuple[str, float]:
     best_score = 0.0
     for topic_key, topic in topics.items():
         topic_keywords = topic.get("keywords", [])
-        score = _score_topic_fit(paper, topic_keywords)
+        topic_aliases = topic.get("aliases", [])
+        score = _score_topic_fit(paper, topic_keywords, topic_aliases)
         if score > best_score:
             best_topic = topic_key
             best_score = score
@@ -1109,7 +1188,18 @@ def _score_impact_v2(paper: dict) -> float:
     if citations is None:
         return 0.50
     cap = 200
-    return min(math.log(citations + 1) / math.log(cap + 1), 1.0)
+    base = min(math.log(citations + 1) / math.log(cap + 1), 1.0)
+    # Velocity bonus for papers older than 3 months
+    dt = _safe_parse_date(paper)
+    if dt is not None and citations > 0:
+        now = datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        months = max((now - dt).days / 30.0, 1.0)
+        if months >= 3:
+            velocity = min(citations / months / 10.0, 0.3)
+            return min(base + velocity, 1.0)
+    return base
 
 
 def _score_novelty_v2(paper: dict, known_ids: set[str]) -> float:
@@ -1153,6 +1243,43 @@ def _score_metadata_quality_v2(paper: dict) -> float:
         bool(paper.get("open_access_url") or paper.get("doi")),
     ]
     return sum(1 for passed in checks if passed) / len(checks)
+
+
+def _score_rejected_keywords(
+    paper: dict,
+    rejected_keywords: list[str] | None,
+) -> float:
+    """Return a negative penalty if rejected keywords are found.
+
+    Tiered penalties:
+      - title match:    -0.80 (strongest signal — paper is *about* the rejected topic)
+      - abstract match: -0.40 (moderate — could be related work mention)
+      - venue match:    -0.15 (weak — venue covers broad area)
+
+    Multiple matches within the same tier do NOT stack; the worst single tier
+    penalty is returned.  This avoids over-punishing papers that mention a
+    rejected term in *both* title and abstract.
+    """
+    if not rejected_keywords:
+        return 0.0
+
+    rejected_lower = [kw.strip().lower() for kw in rejected_keywords if kw.strip()]
+    if not rejected_lower:
+        return 0.0
+
+    title = (paper.get("title") or "").lower()
+    abstract = (paper.get("abstract") or "").lower()
+    venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
+
+    worst = 0.0
+    for kw in rejected_lower:
+        if kw in title:
+            worst = min(worst, -0.80)
+        elif kw in abstract:
+            worst = min(worst, -0.40)
+        elif kw in venue:
+            worst = min(worst, -0.15)
+    return worst
 
 
 # ---------------------------------------------------------------------------
@@ -1438,6 +1565,9 @@ async def score_papers(
     whitelist_authors = whitelist_authors or settings.get("research_profile", {}).get(
         "whitelist_authors", []
     )
+    rejected_keywords = settings.get("research_profile", {}).get(
+        "learned_preferences", {}
+    ).get("rejected_keywords", [])
 
     known_id_set = {item.strip().lower() for item in (known_ids or []) if item}
     known_id_set.update(
@@ -1458,6 +1588,7 @@ async def score_papers(
             preferred_venues=preferred_venues,
         )
         metadata_quality = _score_metadata_quality_v2(annotated)
+        rejected_penalty = _score_rejected_keywords(annotated, rejected_keywords)
 
         total = (
             weights.get("topic_fit", 0.40) * topic_fit
@@ -1467,6 +1598,7 @@ async def score_papers(
             + weights.get("venue_tier", 0.07) * venue_score
             + weights.get("author_preference", 0.05) * author_pref
             + weights.get("metadata_quality", 0.03) * metadata_quality
+            + rejected_penalty
         )
 
         scored_paper = dict(annotated)
@@ -1480,6 +1612,7 @@ async def score_papers(
             "venue_tier": round(venue_score, 4),
             "author_preference": round(author_pref, 4),
             "metadata_quality": round(metadata_quality, 4),
+            "rejected_penalty": round(rejected_penalty, 4),
         }
         scored.append(scored_paper)
 
@@ -1505,6 +1638,10 @@ async def query_vault(
     topic: str | None = None,
     uncompiled_only: bool = False,
     status: str | None = None,
+    detail: str = "compact",
+    limit: int | None = None,
+    sort_by: str = "updated_at",
+    days_back: int | None = None,
 ) -> dict:
     """Query the Paper Distill vault metadata by parsing YAML frontmatter.
 
@@ -1517,7 +1654,21 @@ async def query_vault(
             "methods", "topics", or "all"
         topic: Filter by topic tag (optional)
         uncompiled_only: If True, only return raw papers not yet compiled
-        status: Filter inbox notes by status (optional)
+        status: Filter inbox notes by status (optional).
+            Status values:
+              - proposed: AI-discovered, awaiting human review
+              - approved: human-approved, ready for ingestion
+              - rejected: human-rejected, will not be processed
+              - deferred: postponed for later review
+              - failed: capture attempted but errored
+        detail: "compact" (default) strips heavy text fields (abstract,
+            summary, why_recommended) and adds a short preview_text;
+            "full" returns all frontmatter fields as-is.
+        limit: Maximum number of items to return per section.
+        sort_by: Field to sort by ("updated_at", "retrieved_at", "_mtime").
+            The default "updated_at" falls back to the best available
+            timestamp when a section does not store updated_at explicitly.
+        days_back: Only return items modified/updated within this many days.
 
     Returns:
         Dict with "stats" (per-section counts) and "sections" (per-section
@@ -1528,7 +1679,8 @@ async def query_vault(
         return {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
 
     return await asyncio.to_thread(
-        query_vault_sync, vault_path, section, topic, uncompiled_only, status
+        query_vault_sync, vault_path, section, topic, uncompiled_only, status,
+        detail, limit, sort_by, days_back,
     )
 
 
@@ -1552,21 +1704,41 @@ async def bootstrap_vault(vault_path: str | None = None) -> dict:
 
 def _search_query_for_topic(topic_key: str, topic: dict) -> str:
     keywords = topic.get("keywords", [])
-    if keywords:
-        return " ".join(str(keyword) for keyword in keywords)
+    aliases = topic.get("aliases", [])
+    must_include = topic.get("must_include", [])
+    must_exclude = topic.get("must_exclude", [])
+    parts = [str(kw) for kw in keywords]
+    parts.extend(str(a) for a in aliases)
+    if must_include:
+        parts.extend(f"+{term}" for term in must_include)
+    if must_exclude:
+        parts.extend(f"-{term}" for term in must_exclude)
+    if parts:
+        return " ".join(parts)
     return topic.get("label", topic_key)
 
 
 def _limit_by_diversity(papers: list[dict], cap: int) -> list[dict]:
+    """Enforce two diversity constraints: title-cluster cap AND author cap."""
     if cap <= 0:
         return papers
+    author_cap = max(cap, 2)  # at least 2 per author
     clusters: dict[str, int] = {}
+    author_counts: dict[str, int] = {}
     kept: list[dict] = []
     for paper in papers:
+        # Title cluster diversity
         cluster_key = " ".join(sorted(_tokenize(paper.get("title", "")))) or str(paper.get("paper_id", ""))
         clusters.setdefault(cluster_key, 0)
         if clusters[cluster_key] >= cap:
             continue
+        # Author diversity
+        surname = first_author_surname(paper)
+        if surname:
+            author_counts.setdefault(surname, 0)
+            if author_counts[surname] >= author_cap:
+                continue
+            author_counts[surname] += 1
         clusters[cluster_key] += 1
         kept.append(paper)
     return kept
@@ -1674,6 +1846,68 @@ def _candidate_already_processed(candidate: dict, existing_raw_ids: set[str]) ->
 # Tool 9: discover_papers
 # ---------------------------------------------------------------------------
 
+
+def _diagnose_discovery_drift(
+    scored: list[dict],
+    topic: dict,
+    coverage_threshold: float = 0.30,
+    off_topic_threshold: float = 0.60,
+) -> dict:
+    """Diagnose whether scored results have drifted from the target topic.
+
+    Returns dict with 'drifted' bool and optional 'exclude_terms' for refinement.
+    """
+    keyword_tokens = set()
+    for kw in topic.get("keywords", []):
+        keyword_tokens.update(_tokenize(kw))
+    for alias in topic.get("aliases", []):
+        keyword_tokens.update(_tokenize(alias))
+
+    if not keyword_tokens or not scored:
+        return {"drifted": False}
+
+    # Check keyword coverage: how many papers mention at least one keyword
+    covered = 0
+    for paper in scored:
+        paper_tokens = _tokenize(
+            f"{paper.get('title', '')} {paper.get('abstract', '')}"
+        )
+        if paper_tokens & keyword_tokens:
+            covered += 1
+    coverage = covered / len(scored)
+
+    # Check venue drift: count papers from clearly off-topic venues
+    scoring_settings = get_scoring_settings()
+    known_venues = set()
+    for tier in scoring_settings.get("venue_tiers", {}).values():
+        known_venues.update(v.lower() for v in tier)
+
+    off_topic_count = 0
+    off_topic_venues: dict[str, int] = {}
+    for paper in scored:
+        venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
+        if venue and venue not in known_venues and "arxiv" not in venue:
+            off_topic_count += 1
+            off_topic_venues[venue] = off_topic_venues.get(venue, 0) + 1
+    off_topic_ratio = off_topic_count / len(scored)
+
+    drifted = coverage < coverage_threshold or off_topic_ratio > off_topic_threshold
+    exclude_terms = []
+    if drifted:
+        # Suggest excluding the most frequent off-topic venue keywords
+        for venue, count in sorted(off_topic_venues.items(), key=lambda x: -x[1])[:3]:
+            for token in _tokenize(venue):
+                if token not in keyword_tokens and len(token) > 3:
+                    exclude_terms.append(token)
+                    break
+
+    return {
+        "drifted": drifted,
+        "keyword_coverage": coverage,
+        "off_topic_venue_ratio": off_topic_ratio,
+        "exclude_terms": exclude_terms[:3],
+    }
+
 @mcp.tool()
 async def discover_papers(
     query: str | None = None,
@@ -1709,16 +1943,43 @@ async def discover_papers(
 
     for topic_key, topic in selected_topics.items():
         search_query = query or _search_query_for_topic(topic_key, topic)
-        results = await search_papers(
-            query=search_query,
-            sources=search_sources,
-            max_results=max_per_source,
-        )
-        scored = await score_papers(
-            papers=results,
-            topics={topic_key: topic},
-            known_ids=sorted(known_ids),
-        )
+
+        # Bounded 2-pass exploration
+        for pass_num in range(2):
+            results = await search_papers(
+                query=search_query,
+                sources=search_sources,
+                max_results=max_per_source,
+            )
+            scored = await score_papers(
+                papers=results,
+                topics={topic_key: topic},
+                known_ids=sorted(known_ids),
+            )
+
+            # After pass 1, diagnose drift and decide whether to refine
+            if pass_num == 0 and len(scored) >= 3:
+                drift = _diagnose_discovery_drift(scored, topic)
+                if drift.get("drifted"):
+                    exclude_terms = drift.get("exclude_terms", [])
+                    if exclude_terms:
+                        refined_parts = search_query.split()
+                        refined_parts.extend(f"-{t}" for t in exclude_terms)
+                        search_query = " ".join(refined_parts)
+                        LOG.info(
+                            "Discovery drift detected for %s (coverage=%.0f%%, off_topic=%.0f%%), "
+                            "refining query with excludes: %s",
+                            topic_key,
+                            drift.get("keyword_coverage", 0) * 100,
+                            drift.get("off_topic_venue_ratio", 0) * 100,
+                            exclude_terms,
+                        )
+                        continue  # go to pass 2
+                break  # no drift, skip pass 2
+
+            if pass_num == 1:
+                break  # always stop after pass 2
+
         capped = _limit_by_diversity(scored, diversity_cap)[:max_candidates]
         for paper in capped:
             bound = await bind_paper_to_arxiv(paper) if require_arxiv_binding else dict(paper)
@@ -1788,7 +2049,7 @@ async def process_inbox(
     capture_options = _capture_options()
 
     ensure_vault_structure(vault_path)
-    inbox = query_vault_sync(vault_path, section="inbox", status=status)
+    inbox = query_vault_sync(vault_path, section="inbox", status=status, detail="full")
     candidates = inbox.get("sections", {}).get("inbox", [])[:limit]
     existing_raw_ids = _existing_paper_ids(vault_path, sections=("raw", "raw_notes", "papers"))
     processed: list[dict] = []
@@ -1858,6 +2119,7 @@ async def process_inbox(
             zotero_key,
             zotero_uri,
             dnl_note,
+            capture_method=paper.get("capture_method", "ar5iv_html_cleaned"),
         )
 
         await asyncio.to_thread(
@@ -2086,13 +2348,179 @@ async def analyze_knowledge_graph(user_topics: list[str] | None = None) -> dict:
         return {"error": "VAULT_PATH not configured."}
     if user_topics is None:
         topics_config = get_topics()
-        user_topics = [t.get("key", t.get("name", "")) for t in topics_config]
+        if isinstance(topics_config, dict):
+            user_topics = [key for key in topics_config.keys() if str(key).strip()]
+        else:
+            user_topics = [
+                str(t.get("key", t.get("name", ""))).strip()
+                for t in topics_config
+                if isinstance(t, dict) and str(t.get("key", t.get("name", ""))).strip()
+            ]
     return await asyncio.to_thread(analyze_knowledge_graph_sync, vault_path, user_topics)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Tool 15: update_learned_preferences
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def update_learned_preferences(
+    accepted_keywords: list[str] | None = None,
+    rejected_keywords: list[str] | None = None,
+    preferred_venues: list[str] | None = None,
+) -> dict:
+    """Safely update the user's learned preferences in settings.json.
+
+    Atomically appends new items to existing lists without overwriting.
+    Validates schema before writing.
+
+    Args:
+        accepted_keywords: Keywords to add to accepted list.
+        rejected_keywords: Keywords to add to rejected list.
+        preferred_venues: Venues to add to preferred list.
+    """
+    from server.config import _settings_path
+
+    settings_path = _settings_path()
+    if not settings_path.exists():
+        return {"error": "settings.json not found"}
+
+    try:
+        with settings_path.open("r", encoding="utf-8") as f:
+            settings = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"error": f"Failed to read settings.json: {exc}"}
+
+    prefs = (
+        settings.setdefault("paper_distill", {})
+        .setdefault("research_profile", {})
+        .setdefault("learned_preferences", {})
+    )
+
+    added = {}
+    for field, new_items in [
+        ("accepted_keywords", accepted_keywords),
+        ("rejected_keywords", rejected_keywords),
+        ("preferred_venues", preferred_venues),
+    ]:
+        if not new_items:
+            continue
+        existing = prefs.setdefault(field, [])
+        if not isinstance(existing, list):
+            existing = []
+            prefs[field] = existing
+        new_unique = [item for item in new_items if item not in existing]
+        existing.extend(new_unique)
+        added[field] = new_unique
+
+    prefs["feedback_count"] = prefs.get("feedback_count", 0) + 1
+
+    try:
+        with settings_path.open("w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    except OSError as exc:
+        return {"error": f"Failed to write settings.json: {exc}"}
+
+    # Clear cached settings so next read picks up new data
+    from server.config import load_settings
+    load_settings.cache_clear()
+
+    return {"updated": True, "added": added}
+
+
+# ---------------------------------------------------------------------------
+# Tool 16: upsert_wiki_article
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def upsert_wiki_article(
+    citekey: str,
+    section: str,
+    content: str,
+    frontmatter: dict | None = None,
+) -> dict:
+    """Create or update a wiki article with path safety guards.
+
+    This is the safe, intent-based API for wiki writes. It validates paths
+    to prevent directory traversal and ensures frontmatter schema compliance.
+
+    Args:
+        citekey: Basename for the article file (e.g. "brohan2023rt2").
+        section: Wiki section — "papers", "concepts", or "methods".
+        content: Full markdown body content for the article.
+        frontmatter: Optional YAML frontmatter dict to merge/set.
+    """
+    if section not in ("papers", "concepts", "methods"):
+        return {"error": f"Invalid section: {section}. Must be papers, concepts, or methods."}
+
+    # Path safety: reject traversal attempts
+    if ".." in citekey or "/" in citekey or "\\" in citekey:
+        return {"error": "Invalid citekey — must not contain path separators or '..'"}
+
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    target_dir = Path(vault_path) / "Paper Distill" / "wiki" / section
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / f"{citekey}.md"
+
+    frontmatter_payload = dict(frontmatter or {})
+    if section == "papers":
+        frontmatter_payload.setdefault("citekey", citekey)
+    elif section == "concepts":
+        frontmatter_payload.setdefault("concept", citekey)
+    elif section == "methods":
+        frontmatter_payload.setdefault("method", citekey)
+
+    required_frontmatter = {
+        "papers": ("citekey", "title"),
+        "concepts": ("concept",),
+        "methods": (),
+    }
+    missing_fields = [
+        field
+        for field in required_frontmatter[section]
+        if not str(frontmatter_payload.get(field, "")).strip()
+    ]
+    if missing_fields:
+        return {
+            "error": (
+                f"Missing required frontmatter for {section}: "
+                + ", ".join(missing_fields)
+            )
+        }
+
+    # Build markdown with validated frontmatter
+    lines = []
+    if frontmatter_payload:
+        import yaml
+        lines.append("---")
+        lines.append(
+            yaml.dump(
+                frontmatter_payload,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            ).strip()
+        )
+        lines.append("---")
+        lines.append("")
+    lines.append(content)
+
+    await asyncio.to_thread(target_file.write_text, "\n".join(lines), "utf-8")
+
+    return {
+        "written": True,
+        "path": str(target_file),
+        "relative_path": f"Paper Distill/wiki/{section}/{citekey}.md",
+    }
+
 
 def main():
     mcp.run()

@@ -7,12 +7,18 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from server.arxiv_capture import CleanedArxivDocument
-from server.server import _capture_options, _prepare_direct_add_candidate, add_paper
+from server.server import _capture_options, _prepare_direct_add_candidate, _source_doc_sidecar_payload, add_paper
 from server.vault_ops import ensure_vault_structure, write_markdown
 from server.vault_query import query_vault_sync
 
 
-def _fake_source_doc(title: str, abstract: str) -> CleanedArxivDocument:
+def _fake_source_doc(
+    title: str,
+    abstract: str,
+    *,
+    capture_source: str = "ar5iv_html",
+    capture_method: str = "ar5iv_html_cleaned",
+) -> CleanedArxivDocument:
     return CleanedArxivDocument(
         title=title,
         abstract=abstract,
@@ -65,6 +71,8 @@ def _fake_source_doc(title: str, abstract: str) -> CleanedArxivDocument:
             }
         ],
         capture_fidelity="high",
+        capture_source=capture_source,
+        capture_method=capture_method,
     )
 
 
@@ -454,3 +462,53 @@ class PaperAddTest(unittest.TestCase):
         self.assertEqual(capture_mock.await_args.kwargs["remove_refs"], False)
         self.assertEqual(capture_mock.await_args.kwargs["remove_inline_citations"], True)
         self.assertEqual(capture_mock.await_args.kwargs["remove_internal_links"], False)
+
+    def test_prepare_direct_add_candidate_uses_native_capture_method_when_present(self) -> None:
+        paper = {
+            "paper_id": "arxiv:2601.00001",
+            "title": "A Direct Add Paper",
+            "authors": ["Jane Doe"],
+            "year": 2026,
+            "arxiv_id": "2601.00001",
+            "abstract": "An embodied AI paper.",
+            "canonical_pdf_url": "https://arxiv.org/pdf/2601.00001.pdf",
+            "canonical_html_url": "https://ar5iv.labs.arxiv.org/html/2601.00001",
+            "canonical_item_url": "https://ar5iv.labs.arxiv.org/html/2601.00001",
+            "venue": "ICRA 2026",
+            "venue_source": "arxiv",
+        }
+        capture_mock = AsyncMock(
+            return_value=_fake_source_doc(
+                paper["title"],
+                paper["abstract"],
+                capture_source="arxiv_native_html",
+                capture_method="arxiv_native_html_cleaned",
+            )
+        )
+
+        with patch("server.server.capture_arxiv_source", new=capture_mock):
+            _prepared, _source_doc, capture_method, error = asyncio.run(
+                _prepare_direct_add_candidate(
+                    paper,
+                    "arxiv:2601.00001",
+                    "summary_only",
+                    100,
+                    capture_options={},
+                )
+            )
+
+        self.assertEqual(error, "")
+        self.assertEqual(capture_method, "arxiv_native_html_cleaned")
+
+    def test_source_doc_sidecar_payload_includes_capture_provenance(self) -> None:
+        payload = _source_doc_sidecar_payload(
+            _fake_source_doc(
+                "A Direct Add Paper",
+                "An embodied AI paper.",
+                capture_source="arxiv_native_html",
+                capture_method="arxiv_native_html_cleaned",
+            )
+        )
+
+        self.assertEqual(payload["capture_source"], "arxiv_native_html")
+        self.assertEqual(payload["capture_method"], "arxiv_native_html_cleaned")

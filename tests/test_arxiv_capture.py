@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from server.arxiv_capture import bind_paper_to_arxiv, build_crgp_dnl, clean_ar5iv_html
+from server.arxiv_capture import bind_paper_to_arxiv, build_crgp_dnl, capture_arxiv_source, clean_ar5iv_html
 
 
 _SAMPLE_AR5IV_HTML = """
@@ -131,3 +131,29 @@ class ArxivCaptureTest(unittest.TestCase):
         cleaned = clean_ar5iv_html(html, min_body_chars=300, remove_inline_citations=True)
 
         self.assertNotIn("Anthropic", cleaned.markdown)
+
+    def test_clean_ar5iv_html_can_preserve_internal_links_when_requested(self) -> None:
+        html = _SAMPLE_AR5IV_HTML.replace(
+            "We study a source-backed pipeline that keeps arXiv captures stable enough for knowledge compilation, and we emphasize reliable section extraction for downstream note generation.",
+            "We study a source-backed pipeline and refer readers to <a class=\"ltx_ref\" href=\"https://arxiv.org/html/2501.00001#S2\">Section 2</a> for details on the method and evaluation coverage.",
+        )
+
+        cleaned = clean_ar5iv_html(html, min_body_chars=300, remove_internal_links=False)
+
+        self.assertIn("[Section 2](https://arxiv.org/html/2501.00001#S2)", cleaned.markdown)
+
+    def test_capture_arxiv_source_records_fetch_provenance(self) -> None:
+        paper = {"doi": "10.48550/arxiv.2501.00001"}
+
+        async def run() -> tuple[str, str]:
+            with patch(
+                "server.arxiv_capture.fetch_arxiv_html_with_fallback",
+                new=AsyncMock(return_value=(_SAMPLE_AR5IV_HTML, "arxiv_native_html")),
+            ):
+                cleaned = await capture_arxiv_source(paper, min_body_chars=300)
+            return cleaned.capture_source, cleaned.capture_method
+
+        capture_source, capture_method = asyncio.run(run())
+
+        self.assertEqual(capture_source, "arxiv_native_html")
+        self.assertEqual(capture_method, "arxiv_native_html_cleaned")
