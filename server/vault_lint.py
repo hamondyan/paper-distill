@@ -182,7 +182,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     results["stale_indexes"] = {"count": len(stale_indexes), "items": stale_indexes}
 
     # --- Uncompiled papers --------------------------------------------------
-    raw_notes_data = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True)
+    raw_notes_data = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True, detail="full")
     uncompiled = [
         {"file": item.get("_path", ""), "title": item.get("title", "")}
         for item in raw_notes_data.get("sections", {}).get("raw_notes", [])
@@ -205,6 +205,51 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
             missing_concepts.append(concept_key)
 
     results["missing_concept_stubs"] = {"count": len(missing_concepts), "items": sorted(missing_concepts)}
+
+    # --- Semantic duplicate suggestions (4.1) --------------------------------
+    _dedup_threshold = 0.75
+    _dedup_data = query_vault_sync(vault_path, section="all", detail="full")
+    _dedup_sections = _dedup_data.get("sections", {})
+    all_papers = list(_dedup_sections.get("raw_notes", [])) + list(_dedup_sections.get("papers", []))
+    title_entries: list[tuple[str, str, set[str], str, str]] = []  # (path, title, tokens, paper_id, citekey)
+    for item in all_papers:
+        title = str(item.get("title", "")).strip()
+        path = str(item.get("_path", ""))
+        paper_id = str(item.get("paper_id", "")).strip().lower()
+        citekey = str(item.get("citekey", "")).strip().lower()
+        if title:
+            tokens = set(re.sub(r"[^a-z0-9 ]", "", title.lower()).split())
+            if tokens:
+                title_entries.append((path, title, tokens, paper_id, citekey))
+
+    merge_candidates: list[dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for i, (path_a, title_a, tokens_a, paper_id_a, citekey_a) in enumerate(title_entries):
+        for j in range(i + 1, len(title_entries)):
+            path_b, title_b, tokens_b, paper_id_b, citekey_b = title_entries[j]
+            pair_key = tuple(sorted([path_a, path_b]))
+            if pair_key in seen_pairs:
+                continue
+            if paper_id_a and paper_id_a == paper_id_b:
+                continue
+            if citekey_a and citekey_a == citekey_b:
+                continue
+            intersection = len(tokens_a & tokens_b)
+            union = len(tokens_a | tokens_b)
+            if union > 0 and intersection / union >= _dedup_threshold:
+                merge_candidates.append({
+                    "file_a": path_a,
+                    "title_a": title_a,
+                    "file_b": path_b,
+                    "title_b": title_b,
+                    "similarity": round(intersection / union, 3),
+                })
+                seen_pairs.add(pair_key)
+
+    results["semantic_duplicates"] = {
+        "count": len(merge_candidates),
+        "items": merge_candidates[:20],  # cap output
+    }
 
     # --- Overall health -----------------------------------------------------
     total_issues = sum(v["count"] for v in results.values() if isinstance(v, dict) and "count" in v)
@@ -231,7 +276,7 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
         return {"error": f"Paper Distill root not found at {pd_root}"}
 
     # Reuse query_vault_sync for section counts
-    all_data = query_vault_sync(vault_path, section="all")
+    all_data = query_vault_sync(vault_path, section="all", detail="full")
     sections = all_data.get("sections", {})
 
     # Inbox breakdown by status
@@ -306,7 +351,123 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
         "daily_logs": daily_logs,
         "queries": queries,
         "last_activity": last_activity,
+        "promotion_candidates": _compute_promotion_candidates(
+            sections, topic_counts, threshold=5
+        ),
+        "stale_topics": _compute_stale_topics(
+            sections, vault_path, staleness_days=180, new_paper_threshold=3
+        ),
     }
+
+
+# ---------------------------------------------------------------------------
+# 2b. Promotion candidates & stale topics helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_promotion_candidates(
+    sections: dict[str, list],
+    topic_counts: dict[str, int],
+    threshold: int = 5,
+) -> list[dict[str, Any]]:
+    """Find concepts referenced by ≥threshold papers that aren't yet topics."""
+    existing_topics: set[str] = set()
+    for topic in sections.get("topics", []):
+        for candidate in (
+            str(topic.get("title", "")).strip().lower(),
+            str(topic.get("topic", "")).strip().lower(),
+        ):
+            if candidate:
+                existing_topics.add(candidate)
+        topic_path = str(topic.get("_path", "")).strip()
+        if topic_path:
+            existing_topics.add(os.path.splitext(os.path.basename(topic_path))[0].lower())
+
+    # Count concept references across compiled wiki papers.
+    # query_vault returns frontmatter, not article bodies, so the canonical
+    # source here is the `concepts` frontmatter field.
+    concept_refs: dict[str, int] = Counter()
+    for item in sections.get("papers", []):
+        concepts = item.get("concepts", [])
+        if isinstance(concepts, str):
+            concepts = [concepts]
+        for concept in concepts:
+            normalized = str(concept).strip().lower()
+            if normalized:
+                concept_refs[normalized] += 1
+
+    candidates = []
+    for name, count in concept_refs.items():
+        if count >= threshold and name not in existing_topics:
+            candidates.append({
+                "concept": name,
+                "paper_count": count,
+                "suggestion": f"Consider promoting '{name}' to a dedicated topic — referenced by {count} papers.",
+            })
+
+    return sorted(candidates, key=lambda x: -x["paper_count"])[:10]
+
+
+def _compute_stale_topics(
+    sections: dict[str, list],
+    vault_path: str,
+    staleness_days: int = 180,
+    new_paper_threshold: int = 3,
+) -> list[dict[str, Any]]:
+    """Find topics that may need their overview refreshed."""
+    pd_root = os.path.join(vault_path, _PD_ROOT)
+    now = datetime.now()
+    stale = []
+
+    for topic_item in sections.get("topics", []):
+        topic_name = str(topic_item.get("title", "")).strip()
+        topic_path = topic_item.get("_path", "")
+        if not topic_name:
+            continue
+
+        # Get last modification time
+        full_path = os.path.join(vault_path, topic_path) if topic_path else ""
+        last_updated = None
+        if full_path and os.path.exists(full_path):
+            try:
+                mtime = os.path.getmtime(full_path)
+                last_updated = datetime.fromtimestamp(mtime)
+            except OSError:
+                pass
+
+        # Count new raw notes tagged with this topic
+        new_count = 0
+        for item in sections.get("raw_notes", []):
+            topics = item.get("topics", item.get("matched_topics", []))
+            if isinstance(topics, str):
+                topics = [topics]
+            if topic_name.lower() in [t.lower() for t in topics]:
+                # Check if raw note is newer than topic
+                note_date = str(item.get("retrieved_at", item.get("updated_at", "")))
+                if last_updated and note_date:
+                    try:
+                        if note_date > last_updated.isoformat():
+                            new_count += 1
+                    except (TypeError, ValueError):
+                        pass
+
+        reasons = []
+        if new_count >= new_paper_threshold:
+            reasons.append(f"{new_count} new papers since last update")
+        if last_updated:
+            days_since = (now - last_updated).days
+            if days_since >= staleness_days and new_count > 0:
+                reasons.append(f"Last updated {days_since} days ago with {new_count} new papers")
+
+        if reasons:
+            stale.append({
+                "topic": topic_name,
+                "last_updated": last_updated.isoformat() if last_updated else "unknown",
+                "new_paper_count": new_count,
+                "reasons": reasons,
+            })
+
+    return sorted(stale, key=lambda x: -x["new_paper_count"])
 
 
 # ---------------------------------------------------------------------------

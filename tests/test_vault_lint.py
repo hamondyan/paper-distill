@@ -53,6 +53,30 @@ class LintVaultTest(unittest.TestCase):
             missing_fields = [i["missing_fields"] for i in items]
             self.assertTrue(any("status" in fields for fields in missing_fields))
 
+    def test_long_frontmatter_is_not_misdetected_as_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = _make_vault(tmpdir)
+            authors = [f"Author {index:03d} With A Long Name" for index in range(250)]
+            write_markdown(
+                root / "inbox" / "2026-04-05" / "long-frontmatter.md",
+                {
+                    "paper_id": "doi:long-frontmatter",
+                    "status": "approved",
+                    "title": "Long Frontmatter Paper",
+                    "authors": authors,
+                },
+                "# Long Frontmatter Paper",
+            )
+
+            result = lint_vault_sync(tmpdir)
+
+            flagged = [
+                item
+                for item in result["missing_frontmatter"]["items"]
+                if item["file"] == "inbox/2026-04-05/long-frontmatter.md"
+            ]
+            self.assertEqual(flagged, [])
+
     def test_uncompiled_papers_detected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = _make_vault(tmpdir)
@@ -91,6 +115,35 @@ class LintVaultTest(unittest.TestCase):
             self.assertTrue(
                 any("lonely-concept" in item for item in result["orphaned_articles"]["items"])
             )
+
+    def test_semantic_duplicates_ignore_raw_to_compiled_same_paper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = _make_vault(tmpdir)
+            frontmatter = {
+                "paper_id": "doi:same-paper",
+                "citekey": "same-paper",
+                "title": "Same Paper Title",
+                "compiled": True,
+            }
+            write_markdown(
+                root / "raw" / "notes" / "2026-04-05" / "same-paper.md",
+                frontmatter,
+                "# Raw Note",
+            )
+            write_markdown(
+                root / "wiki" / "papers" / "same-paper.md",
+                frontmatter,
+                "# Wiki Paper",
+            )
+
+            result = lint_vault_sync(tmpdir)
+
+            matches = [
+                item
+                for item in result["semantic_duplicates"]["items"]
+                if item["title_a"] == "Same Paper Title" and item["title_b"] == "Same Paper Title"
+            ]
+            self.assertEqual(matches, [])
 
 
 class VaultStatsTest(unittest.TestCase):
@@ -145,6 +198,26 @@ class VaultStatsTest(unittest.TestCase):
             self.assertEqual(stats["wiki"]["papers"], 1)
             self.assertEqual(stats["wiki"]["concepts"], 1)
             self.assertIn("vla", stats["by_topic"])
+
+    def test_promotion_candidates_count_frontmatter_concepts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = _make_vault(tmpdir)
+            for index in range(5):
+                write_markdown(
+                    root / "wiki" / "papers" / f"paper-{index}.md",
+                    {
+                        "citekey": f"paper-{index}",
+                        "title": f"Paper {index}",
+                        "concepts": ["diffusion-policy"],
+                        "topics": ["robotics"],
+                    },
+                    "# Paper\n\n[[concepts/diffusion-policy]]",
+                )
+
+            stats = vault_stats_sync(tmpdir)
+            candidates = stats["promotion_candidates"]
+
+            self.assertTrue(any(item["concept"] == "diffusion-policy" for item in candidates))
 
 
 class KnowledgeGraphTest(unittest.TestCase):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from server.server import _load_candidate_sections
@@ -126,3 +127,36 @@ Because it matches the topic.
             self.assertEqual(raw_alias["stats"]["raw"], 2)
             titles = {item["title"] for item in raw_alias["sections"]["raw"]}
             self.assertEqual(titles, {"Note", "Legacy"})
+
+    def test_query_vault_days_back_uses_best_available_timestamp_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir)
+            inbox_dir = vault / "Paper Distill" / "inbox" / "2026-04-04"
+            inbox_dir.mkdir(parents=True, exist_ok=True)
+            now = datetime.now()
+
+            write_markdown(
+                inbox_dir / "old-paper.md",
+                {
+                    "paper_id": "doi:old",
+                    "status": "proposed",
+                    "title": "Old Paper",
+                    "retrieved_at": (now - timedelta(days=30)).isoformat(),
+                },
+                "# Old Paper",
+            )
+            write_markdown(
+                inbox_dir / "new-paper.md",
+                {
+                    "paper_id": "doi:new",
+                    "status": "proposed",
+                    "title": "New Paper",
+                    "retrieved_at": (now - timedelta(days=1)).isoformat(),
+                },
+                "# New Paper",
+            )
+
+            data = query_vault_sync(tmpdir, section="inbox", days_back=7)
+
+            self.assertEqual(data["stats"]["inbox"], 1)
+            self.assertEqual(data["sections"]["inbox"][0]["title"], "New Paper")
