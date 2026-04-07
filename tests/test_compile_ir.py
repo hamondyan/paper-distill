@@ -26,10 +26,14 @@ _MINIMAL_IR = {
     "candidate_concepts": [
         {"name": "Diffusion Policy", "type": "method"},
     ],
+    "benchmark_scope": "Tabletop manipulation only",
+    "claimed_novelty": "First VLA adaptation to constrained tabletop tasks",
     "tension_fields": {
-        "limitations": [{"claim": "Only tested in simulation environments"}],
-        "assumptions": [{"claim": "Requires large training datasets"}],
-        "open_questions": [{"question": "How does this scale to real robots?"}],
+        "limitations": [{"claim": "Only tested in simulation environments", "source_ref": "raw/source/smith2024/section-6"}],
+        "assumptions": [{"claim": "Requires large training datasets", "source_ref": "raw/source/smith2024/section-2"}],
+        "failure_modes": [{"claim": "Fails when more than three objects occlude the goal", "source_ref": "raw/source/smith2024/table-4"}],
+        "transfer_constraints": [{"claim": "Sim-to-real transfer was not evaluated", "source_ref": "raw/source/smith2024/section-7"}],
+        "open_questions": [{"question": "How does this scale to real robots?", "source_ref": "raw/source/smith2024/section-8"}],
         "negative_results": [],
     },
 }
@@ -78,6 +82,12 @@ class ValidateIRTest(unittest.TestCase):
         ir = {**_MINIMAL_IR, "tension_fields": "not a dict"}
         errors = validate_ir(ir)
         assert any("tension_fields" in e for e in errors)
+
+    def test_invalid_source_ref_type(self):
+        ir = json.loads(json.dumps(_MINIMAL_IR))
+        ir["tension_fields"]["limitations"][0]["source_ref"] = 123
+        errors = validate_ir(ir)
+        assert any("source_ref" in e for e in errors)
 
 
 # ============================================================================
@@ -149,9 +159,13 @@ class AggregateTensionTest(_VaultBase):
         """Write a synthetic resolved IR directly."""
         ir = {
             "citekey": citekey,
+            "benchmark_scope": "tabletop only",
+            "claimed_novelty": "Novel attention head",
             "tension_fields": {
                 "limitations": limitations,
                 "assumptions": [],
+                "failure_modes": [],
+                "transfer_constraints": [],
                 "open_questions": open_questions,
                 "negative_results": [],
             },
@@ -184,6 +198,12 @@ class AggregateTensionTest(_VaultBase):
         result = aggregate_tension_signals(self.tmp)
         assert result["papers_scanned"] == 2
         assert len(result["open_question_clusters"]) > 0
+
+    def test_collects_benchmark_scope_and_claimed_novelty(self):
+        self._write_resolved("p1", [], [])
+        result = aggregate_tension_signals(self.tmp)
+        assert len(result["benchmark_scopes"]) == 1
+        assert len(result["claimed_novelties"]) == 1
 
 
 # ============================================================================

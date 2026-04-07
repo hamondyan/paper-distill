@@ -26,6 +26,11 @@ These require judgment and cannot be automated:
 
 - **Concept gaps:** Topics with ingested papers but no concept article. Use `query_vault(section="concepts")` and compare against paper topics.
 - **Outdated summaries:** Topic landscape articles not updated after recent compilations. Compare `wiki/topics/` updated dates against latest compiled paper dates.
+- **Advanced trigger candidates:** inspect `query_trigger_candidates()` for:
+  - contradiction candidates
+  - recurring limitation spikes
+  - cross-cluster bridges
+  - benchmark evaluation splits
 
 ### Step 3: Present Report
 
@@ -42,5 +47,19 @@ Overall health: {from lint_vault result}
 - **Auto-fixable:** Stale indexes (rebuild), missing concept stubs (create stub if referenced by ≥2 papers)
 - **Needs /compile:** Uncompiled papers
 - **Needs review:** Orphaned articles (ask user: link or remove?)
+- **Controller-backed:** Confirmed merge/promote/refresh tasks can be executed via `execute_maintenance_task(task_id)`
+
+Suggested loop:
+
+1. `lint_vault`
+2. `vault_stats`
+3. `reconcile_maintenance(auto_confirm=true|false)`
+4. Review `get_maintenance_queue(...)`
+5. Execute selected confirmed tasks with `execute_maintenance_task(task_id)`
+
+For manual/adjudicated maintenance actions that do not come from lint/stats directly:
+
+6. `enqueue_maintenance_task(task_type, payload, ...)`
+7. `execute_maintenance_task(task_id)`
 
 Ask user: "Fix auto-fixable issues now?" If yes, proceed.

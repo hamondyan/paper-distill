@@ -83,6 +83,7 @@ For each uncompiled paper:
 2. Produce a structured IR dict with required fields:
    - `citekey`, `title`, `authors`, `candidate_concepts`, `tension_fields`
    - `tension_fields` must include: `limitations`, `assumptions`, `open_questions`, `negative_results`
+   - Prefer also populating: `failure_modes`, `transfer_constraints`, `benchmark_scope`, `claimed_novelty`
 3. Submit to `write_compile_ir(citekey, ir_json)` — validates schema and persists to `compiled_ir/{citekey}.json`
 
 ### Stage 2: Resolve (Pure Python)
@@ -94,14 +95,18 @@ Call `resolve_compile_ir(citekeys)` — no LLM needed.
 
 ### Stage 3: Write (Agent)
 
-Before writing, check `get_maintenance_queue(status="confirmed")` and process any pending merge/promote tasks.
+Before writing, check `get_maintenance_queue(status="confirmed")`.
+
+- If execution controllers are available, consume confirmed `merge_candidate`, `promote_to_topic`, and `stale_topic_refresh` tasks via `execute_maintenance_task(task_id)`.
+- If a confirmed task has no execution controller yet, surface it before writing and proceed conservatively.
 
 For each paper:
 1. Render wiki markdown from resolved IR
 2. Call `commit_compile_result(page_id, page_type, content, frontmatter, ir_path, deps)`
    - This is the sole write exit — records compile_state and deps in SQLite
-   - Wraps managed sections with `<!-- managed:start -->` / `<!-- managed:end -->` markers
+   - Wraps managed sections with `<!-- managed:start section=... -->` / `<!-- managed:end section=... -->` markers
    - `## My Notes` sections are **never** inside managed markers — always preserved
+   - If a managed block was manually edited and cannot be safely patched, the write returns `conflict_detected` instead of silently overwriting
 
 ### Subagent Usage (>3 papers)
 

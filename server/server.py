@@ -2924,6 +2924,111 @@ async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool 31: execute_maintenance_task
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def execute_maintenance_task(task_id: int) -> dict:
+    """Execute a confirmed maintenance task through the Phase 3 controller.
+
+    Supported task types:
+    - merge_candidate      → execute_merge
+    - promote_to_topic     → execute_promote
+    - stale_topic_refresh  → execute_refresh
+
+    Tasks without a controller yet remain pending/confirmed and return an error.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.maintenance import _load_task, execute_merge, execute_promote, execute_refresh
+
+    task = await asyncio.to_thread(_load_task, vault_path, task_id)
+    if "error" in task:
+        return task
+
+    task_type = task.get("task_type")
+    if task_type == "merge_candidate":
+        return await asyncio.to_thread(execute_merge, vault_path, task_id)
+    if task_type == "promote_to_topic":
+        return await asyncio.to_thread(execute_promote, vault_path, task_id)
+    if task_type == "stale_topic_refresh":
+        return await asyncio.to_thread(execute_refresh, vault_path, task_id)
+    return {"error": f"No execution controller implemented for task type '{task_type}'"}
+
+
+# ---------------------------------------------------------------------------
+# Tool 32: enqueue_maintenance_task
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def enqueue_maintenance_task(
+    task_type: str,
+    payload: dict,
+    confidence: float = 1.0,
+    status: str = "pending",
+    auto_confirm: bool = False,
+) -> dict:
+    """Create a maintenance task explicitly.
+
+    Use this after a human or agent has adjudicated a candidate and decided
+    it should become a real maintenance action. This is the proper path for
+    concept merges, promotions, and refreshes that do not originate directly
+    from `reconcile_maintenance`.
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.maintenance import enqueue_task
+    return await asyncio.to_thread(
+        enqueue_task,
+        vault_path,
+        task_type,
+        payload,
+        confidence=confidence,
+        status=status,
+        auto_confirm=auto_confirm,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 33: query_trigger_candidates
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def query_trigger_candidates(user_topics: list[str] | None = None) -> dict:
+    """Return advanced Phase 3 trigger candidates for maintenance and ideation.
+
+    This is a narrowed view over `analyze_knowledge_graph` focused on:
+    - contradiction_candidates
+    - recurring_limitation_spikes
+    - cross_cluster_bridges
+    - benchmark_evaluation_splits
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    result = await asyncio.to_thread(analyze_knowledge_graph_sync, vault_path, user_topics)
+    if "error" in result:
+        return result
+
+    gaps = result.get("gaps", {})
+    return {
+        "paper_count": result.get("paper_count", 0),
+        "concept_count": result.get("concept_count", 0),
+        "trigger_candidates": {
+            "contradiction_candidates": gaps.get("contradiction_candidates", []),
+            "recurring_limitation_spikes": gaps.get("recurring_limitation_spikes", []),
+            "cross_cluster_bridges": gaps.get("cross_cluster_bridges", []),
+            "benchmark_evaluation_splits": gaps.get("benchmark_evaluation_splits", []),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS compile_state (
     compiled_at       TEXT NOT NULL,
     ir_path           TEXT,              -- points to compiled_ir/ JSON
     content_hash      TEXT,              -- hash of managed sections for conflict detect
+    managed_hashes_json TEXT,            -- per-section managed block hashes
+    managed_blocks_json TEXT,            -- previous generated managed block contents
     PRIMARY KEY (page_id, page_type)
 );
 
@@ -149,6 +151,7 @@ def get_db(vault_path: str) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_SCHEMA_SQL)
+        _run_migrations(conn)
         conn.commit()
 
         _connections[key] = conn
@@ -167,8 +170,25 @@ def close_db(vault_path: str) -> None:
 
 def init_db(vault_path: str) -> Path:
     """Ensure the database file and tables exist.  Returns the DB path."""
-    get_db(vault_path)
+    conn = get_db(vault_path)
+    _run_migrations(conn)
+    conn.commit()
     return _db_path(vault_path)
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply additive schema migrations for older local databases."""
+    _ensure_column(conn, "compile_state", "managed_hashes_json", "TEXT")
+    _ensure_column(conn, "compile_state", "managed_blocks_json", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
+    cols = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ from server.database import close_db, export_authority_state, get_db, import_aut
 from server.maintenance import (
     complete_task,
     confirm_task,
+    enqueue_task,
     get_pending_tasks,
     reconcile_maintenance_queue,
     reject_task,
@@ -279,6 +280,7 @@ class ReconcileTest(_VaultTestBase):
         assert result["created"] == 3
         tasks = get_pending_tasks(self.vault_path)
         assert len(tasks) == 3
+        assert any(task["task_type"] == "paper_duplicate_review" for task in tasks)
 
     def test_deduplicates_on_second_run(self):
         lint_results = {
@@ -333,6 +335,18 @@ class TaskLifecycleTest(_VaultTestBase):
         reject_task(self.vault_path, task_id, "not needed")
         active = get_pending_tasks(self.vault_path)
         assert len(active) == 0
+
+    def test_enqueue_manual_merge_task(self):
+        result = enqueue_task(
+            self.vault_path,
+            "merge_candidate",
+            {"from_id": "concept-a", "to_id": "concept-b", "reason": "manual adjudication"},
+            status="confirmed",
+        )
+        assert result["created"] is True
+        tasks = get_pending_tasks(self.vault_path, status="confirmed")
+        assert len(tasks) == 1
+        assert tasks[0]["task_type"] == "merge_candidate"
 
 
 # ============================================================================

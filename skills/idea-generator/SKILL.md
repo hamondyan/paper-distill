@@ -23,8 +23,19 @@ Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists from two
 - **ir_recurring_limitations:** Structured limitation claims from ≥2 papers (higher precision than text scan)
 - **ir_open_question_clusters:** Open questions grouped by keyword theme
 - **ir_negative_results:** Explicit null/negative results from paper IRs
+- **ir_failure_modes:** Structured failure modes from paper IRs
+- **ir_transfer_constraints:** Explicit transfer barriers and deployment constraints
 
 For deeper tension analysis, also call `query_tension_signals(min_occurrence=2)` — this returns the full `all_assumptions` list that the LLM can scan for conflicting premises across papers.
+
+For Phase 3 trigger-aware ideation, also call `query_trigger_candidates()` to inspect:
+
+- `contradiction_candidates`
+- `recurring_limitation_spikes`
+- `cross_cluster_bridges`
+- `benchmark_evaluation_splits`
+
+If a trigger candidate should become a real wiki maintenance action (for example, it clearly warrants topic refresh), do **not** write to the maintenance queue implicitly. Instead, explicitly call `enqueue_maintenance_task(...)` after adjudication.
 
 ### Step 2: Qualitative Interpretation (LLM)
 
@@ -48,6 +59,12 @@ For deeper tension analysis, also call `query_tension_signals(min_occurrence=2)`
 **Novelty:** {Low/Medium/High}
 **Priority:** {novelty × feasibility}
 ```
+
+When trigger candidates exist, prefer building at least one idea card from:
+
+- a recurring limitation spike with clear `source_ref` evidence
+- a cross-cluster bridge that has not yet become a topic
+- a contradiction candidate that weakens an existing local assumption
 
 ### Step 3: Save Results
 

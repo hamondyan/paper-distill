@@ -11,6 +11,7 @@ import os
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
+from itertools import combinations
 from typing import Any
 
 from server.vault_query import _parse_frontmatter, query_vault_sync
@@ -676,6 +677,26 @@ def analyze_knowledge_graph_sync(
             gaps["ir_recurring_limitations"] = ir_signals.get("recurring_limitations", [])
             gaps["ir_open_question_clusters"] = ir_signals.get("open_question_clusters", [])
             gaps["ir_negative_results"] = ir_signals.get("negative_results", [])
+            gaps["ir_failure_modes"] = ir_signals.get("failure_modes", [])
+            gaps["ir_transfer_constraints"] = ir_signals.get("transfer_constraints", [])
+            gaps["benchmark_evaluation_splits"] = _benchmark_evaluation_splits(
+                paper_meta,
+                ir_signals.get("benchmark_scopes", []),
+            )
+            gaps["cross_cluster_bridges"] = _cross_cluster_bridges(
+                paper_to_concepts,
+                concept_to_papers,
+                paper_meta,
+            )
+            gaps["recurring_limitation_spikes"] = [
+                item for item in ir_signals.get("recurring_limitations", [])
+                if item.get("count", 0) >= 3
+            ]
+            gaps["contradiction_candidates"] = _contradiction_candidates(
+                paper_meta,
+                ir_signals.get("negative_results", []),
+                ir_signals.get("claimed_novelties", []),
+            )
     except Exception as exc:  # noqa: BLE001
         LOG.debug("IR tension signal aggregation skipped: %s", exc)
 
@@ -689,6 +710,10 @@ def analyze_knowledge_graph_sync(
         summary["ir_papers_scanned"] = ir_signals["papers_scanned"]
         summary["ir_recurring_limitations"] = len(gaps.get("ir_recurring_limitations", []))
         summary["ir_open_question_clusters"] = len(gaps.get("ir_open_question_clusters", []))
+        summary["cross_cluster_bridges"] = len(gaps.get("cross_cluster_bridges", []))
+        summary["benchmark_evaluation_splits"] = len(gaps.get("benchmark_evaluation_splits", []))
+        summary["contradiction_candidates"] = len(gaps.get("contradiction_candidates", []))
+        summary["recurring_limitation_spikes"] = len(gaps.get("recurring_limitation_spikes", []))
 
     return {
         "paper_count": len(paper_meta),
@@ -696,3 +721,96 @@ def analyze_knowledge_graph_sync(
         "gaps": gaps,
         "gap_summary": summary,
     }
+
+
+def _cross_cluster_bridges(
+    paper_to_concepts: dict[str, set[str]],
+    concept_to_papers: dict[str, set[str]],
+    paper_meta: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for paper, concepts in paper_to_concepts.items():
+        if len(concepts) < 2:
+            continue
+        for c1, c2 in combinations(sorted(concepts), 2):
+            prior_overlap = (concept_to_papers.get(c1, set()) & concept_to_papers.get(c2, set())) - {paper}
+            if prior_overlap:
+                continue
+            candidates.append({
+                "paper": paper,
+                "concept_pair": [c1, c2],
+                "topics": paper_meta.get(paper, {}).get("topics", []),
+                "reason": f"{paper} is the first observed bridge between {c1} and {c2}",
+            })
+    return candidates[:20]
+
+
+def _benchmark_evaluation_splits(
+    paper_meta: dict[str, dict[str, Any]],
+    benchmark_scopes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_topic: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for entry in benchmark_scopes:
+        paper = entry.get("paper", "")
+        claim = str(entry.get("claim", "")).strip()
+        if not paper or not claim:
+            continue
+        topics = paper_meta.get(paper, {}).get("topics", [])
+        if isinstance(topics, str):
+            topics = [topics]
+        for topic in topics:
+            by_topic[topic][claim.lower()].append(paper)
+
+    candidates: list[dict[str, Any]] = []
+    for topic, scopes in by_topic.items():
+        if len(scopes) < 2:
+            continue
+        candidates.append({
+            "topic": topic,
+            "benchmark_scopes": [
+                {"scope": scope, "papers": sorted(set(papers))[:5]}
+                for scope, papers in sorted(scopes.items(), key=lambda item: -len(item[1]))
+            ],
+            "reason": f"{topic} contains multiple benchmark/evaluation regimes",
+        })
+    return candidates[:10]
+
+
+def _contradiction_candidates(
+    paper_meta: dict[str, dict[str, Any]],
+    negative_results: list[dict[str, Any]],
+    claimed_novelties: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    novelty_by_paper = {entry.get("paper", ""): str(entry.get("claim", "")).lower() for entry in claimed_novelties}
+    candidates: list[dict[str, Any]] = []
+
+    for neg in negative_results:
+        paper = neg.get("paper", "")
+        claim = str(neg.get("claim", "")).lower()
+        if not paper or not claim:
+            continue
+        topics = paper_meta.get(paper, {}).get("topics", [])
+        if isinstance(topics, str):
+            topics = [topics]
+        neg_keywords = set(re.findall(r"[a-z]{5,}", claim))
+        if not neg_keywords:
+            continue
+
+        for other_paper, novelty in novelty_by_paper.items():
+            if not novelty or other_paper == paper:
+                continue
+            other_topics = paper_meta.get(other_paper, {}).get("topics", [])
+            if isinstance(other_topics, str):
+                other_topics = [other_topics]
+            if set(topics) & set(other_topics):
+                novelty_keywords = set(re.findall(r"[a-z]{5,}", novelty))
+                overlap = sorted(neg_keywords & novelty_keywords)
+                if len(overlap) >= 2:
+                    candidates.append({
+                        "paper": paper,
+                        "other_paper": other_paper,
+                        "shared_topics": sorted(set(topics) & set(other_topics)),
+                        "keyword_overlap": overlap[:6],
+                        "reason": f"Negative result in {paper} overlaps novelty claims in {other_paper}",
+                    })
+    return candidates[:20]
