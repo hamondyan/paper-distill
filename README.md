@@ -82,7 +82,38 @@ Paper Distill 当前以统一 bundle 形式提供给：
 
 ## 3 分钟上手
 
-### 1. 安装依赖
+### 推荐：让 agent 协助你完成配置
+
+在 Claude、Codex、OpenClaw 这类 agent 环境中，最自然的启动方式不是手工逐步安装，而是让 agent 直接帮你完成大部分 setup。
+
+你通常只需要提供：
+
+- 你的 Obsidian vault 路径
+- 是否要启用 Zotero
+- 如果启用 Zotero，对应的凭据
+- 你的研究方向、topics、seed papers 等偏好
+
+一个最小启动对话通常类似：
+
+```text
+请帮我把 Paper Distill 配到这个 vault：
+/absolute/path/to/my/obsidian-vault
+
+我先不用 Zotero。
+研究方向是：Embodied AI with vision-language-action policies for robot manipulation
+```
+
+在具备本地 shell 和文件权限的前提下，agent 通常可以帮你完成：
+
+1. 安装依赖
+2. 检查 `.mcp.json` 和 launcher
+3. 生成或修正 `settings.json`
+4. 启动 MCP server
+5. 验证基础工作流是否可用
+
+### 如果你更喜欢手动安装
+
+#### 1. 安装依赖
 
 推荐使用 `uv`：
 
@@ -90,7 +121,7 @@ Paper Distill 当前以统一 bundle 形式提供给：
 uv sync
 ```
 
-### 2. 配置你的 Obsidian Vault
+#### 2. 配置你的 Obsidian Vault
 
 复制并修改 [`settings.example.json`](settings.example.json) 的结构，在本地创建 `settings.json`：
 
@@ -108,7 +139,7 @@ uv sync
 export VAULT_PATH="/absolute/path/to/your/obsidian/vault"
 ```
 
-### 3. 启动 MCP Server
+#### 3. 启动 MCP Server
 
 ```bash
 uv run paper-distill-server
