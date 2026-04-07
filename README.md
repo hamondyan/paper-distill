@@ -12,6 +12,16 @@ Paper Distill is a human-approved research workflow for Obsidian. It helps you:
 
 The repository is packaged as one MCP-backed bundle for Claude, Codex, and OpenClaw.
 
+## Maintainer Model
+
+Paper Distill works best when you treat the system as:
+
+- the **LLM** = knowledge maintainer
+- the **wiki** = living research codebase
+- the **user** = editor, reviewer, and research lead
+
+Discovery, ingest, compile, lint, query, and idea generation are all maintenance actions on the same evolving knowledge graph.
+
 ## Core Flow
 
 Normal discovery flow:
@@ -51,6 +61,8 @@ Paper Distill writes into your Obsidian vault under:
 ```text
 {vault}/Paper Distill/
 ├── inbox/
+├── index.md
+├── log.md
 ├── raw/
 │   ├── source/
 │   └── notes/
@@ -64,6 +76,11 @@ Paper Distill writes into your Obsidian vault under:
 ├── daily-log/
 └── queries/
 ```
+
+Two new navigation files make growth more visible:
+
+- `index.md`: content-oriented map of the current knowledge base
+- `log.md`: append-only timeline of ingest, query, compile, and maintenance events
 
 ## Quick Start
 
@@ -242,15 +259,17 @@ Short version:
 
 Frequently used commands:
 
-- `/discover <query>`: search and stage candidate papers into `inbox/`
-- `/add-paper <doi|arxiv|url>`: directly add a paper you already approved
-- `/process-inbox`: process `status=approved` inbox notes into `raw/`
-- `/compile`: compile approved raw notes into `wiki/`
-- `/query <question>`: ask questions against your approved knowledge base
-- `/ideas`: generate research ideas from the existing knowledge graph
+- `/discover <query>`: let the maintainer discover and stage candidate evidence in `inbox/`
+- `/add-paper <doi|arxiv|url>`: let the maintainer ingest a user-approved paper directly
+- `/process-inbox`: let the maintainer move approved inbox notes into `raw/`
+- `/compile`: let the maintainer recompile approved notes into the wiki
+- `/query <question>`: ask against the maintained knowledge base and save substantive query assets
+- `/ideas`: generate research ideas from the maintained knowledge graph and save idea analyses
 - `/summarize <doi|url>`: quickly inspect a paper before deciding what to do
 
 When `add-paper` or `process-inbox` succeeds, expect both Markdown and structured source artifacts to be written under `raw/source/`, plus a CRGP-DNL note under `raw/notes/`.
+
+Substantive `/query` and `/ideas` results are also part of the growth path: they are saved under `queries/` and can later be promoted into canonical wiki pages.
 
 ## Zotero Behavior Summary
 

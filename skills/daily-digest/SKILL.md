@@ -21,7 +21,8 @@ Daily candidate discovery: search all configured topics, stage inbox candidates,
 5. Generate two optional insight sections (LLM-powered):
    - **Emerging Patterns**: Cross-paper methodological trends observed in today's batch
    - **Challenges to Existing Notes**: Conflicts or updates to existing vault knowledge surfaced by new candidates
-6. Tell the user to approve or reject candidates in Obsidian by editing the `status` field
+6. Mention that `Paper Distill/index.md` and `Paper Distill/log.md` are the cross-day navigation surfaces for visible knowledge growth
+7. Tell the user to approve or reject candidates in Obsidian by editing the `status` field
 
 ## Important
 

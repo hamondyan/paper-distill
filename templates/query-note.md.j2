@@ -1,0 +1,41 @@
+# {{ title }}
+
+> **Question:** {{ question }}
+
+## Summary
+
+{{ summary }}
+
+## Answer
+
+{{ answer }}
+
+## Source Pages
+
+{% if source_pages %}
+{% for page in source_pages %}
+- {{ page }}
+{% endfor %}
+{% else %}
+- No source pages recorded yet.
+{% endif %}
+
+## Promotion Targets
+
+{% if promotion_targets %}
+{% for target in promotion_targets %}
+- `{{ target.page_type if target.page_type is defined else target["page_type"] }}` → `{{ target.page_id if target.page_id is defined else target["page_id"] }}`
+{% endfor %}
+{% else %}
+- No promotion targets recorded yet.
+{% endif %}
+
+## Derived Actions
+
+{% if derived_actions %}
+{% for action in derived_actions %}
+- {{ action }}
+{% endfor %}
+{% else %}
+- No follow-up actions recorded yet.
+{% endif %}

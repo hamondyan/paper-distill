@@ -59,6 +59,8 @@ Because it matches the topic.
             self.assertTrue((root / "raw" / "notes" / "_index.md").exists())
             self.assertTrue((root / "zotero" / "_index.md").exists())
             self.assertTrue((root / "zotero" / "imports" / "_index.md").exists())
+            self.assertTrue((root / "index.md").exists())
+            self.assertTrue((root / "log.md").exists())
 
     def test_query_vault_filters_inbox_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

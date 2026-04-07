@@ -2,6 +2,11 @@
 
 {{ paper_count }} candidates discovered today.
 
+## Maintainer View
+
+- The LLM maintainer scanned configured topics and staged candidate evidence.
+- Your role is to approve, reject, defer, and redirect what should become part of the long-term knowledge graph.
+
 ## Candidates
 
 {{ paper_list }}
@@ -17,6 +22,11 @@
 ## Challenges to Existing Notes
 
 {{ challenges | default('No conflicts with existing vault knowledge detected.') }}
+
+## Knowledge Growth Signals
+
+- Review `Paper Distill/log.md` for the cross-day timeline of ingest, query, compile, and maintenance changes.
+- Review `Paper Distill/index.md` for the current content map and recently saved query assets.
 
 ## Pending Review
 

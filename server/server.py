@@ -62,12 +62,15 @@ from server.vault_lint import (
     vault_stats_sync,
 )
 from server.vault_ops import (
+    append_knowledge_log,
     build_inbox_body,
     build_raw_note_body,
     build_raw_source_body,
     citekey_for_paper,
     ensure_vault_structure,
     inbox_note_path,
+    normalize_knowledge_impact,
+    refresh_global_navigation,
     raw_source_path,
     raw_source_sidecar_path,
     raw_note_path,
@@ -2053,6 +2056,10 @@ async def process_inbox(
     candidates = inbox.get("sections", {}).get("inbox", [])[:limit]
     existing_raw_ids = _existing_paper_ids(vault_path, sections=("raw", "raw_notes", "papers"))
     processed: list[dict] = []
+    created_pages: list[str] = []
+    updated_pages: list[str] = []
+    conflicts_or_skips: list[str] = []
+    processed_titles: list[str] = []
 
     for candidate in candidates:
         pid = str(candidate.get("paper_id", "")).lower()
@@ -2076,6 +2083,7 @@ async def process_inbox(
                 error,
             )
             processed.append(_processed_error(candidate, error))
+            conflicts_or_skips.append(f"{candidate.get('paper_id', '')}: {error}")
             continue
 
         dnl_note = build_crgp_dnl(paper, source_doc)
@@ -2138,6 +2146,9 @@ async def process_inbox(
             ),
         )
         existing_raw_ids.add(pid)
+        created_pages.extend([source_rel_path, note_rel_path])
+        updated_pages.append(str(candidate.get("_path", "")))
+        processed_titles.append(str(candidate.get("title", "")).strip() or candidate.get("paper_id", "paper"))
         processed.append(
             _processed_success(
                 candidate,
@@ -2150,8 +2161,24 @@ async def process_inbox(
                 note_path,
             )
         )
+    impact = normalize_knowledge_impact(
+        {
+            "created_pages": created_pages,
+            "updated_pages": updated_pages,
+            "conflicts_or_skips": conflicts_or_skips,
+        }
+    )
+    if processed:
+        append_knowledge_log(
+            vault_path,
+            event_type="process-inbox",
+            title=", ".join(title for title in processed_titles if title) or f"{len(processed)} inbox papers",
+            summary=f"Processed {len(processed)} approved inbox item(s) into the maintained knowledge base.",
+            impact=impact,
+        )
+        refresh_global_navigation(vault_path)
 
-    return {"processed": processed}
+    return {"processed": processed, "knowledge_impact": impact}
 
 
 # ---------------------------------------------------------------------------
@@ -2196,6 +2223,7 @@ async def add_paper(
         return {
             "added": False,
             "existing": True,
+            "knowledge_impact": normalize_knowledge_impact(),
             **existing,
         }
 
@@ -2224,6 +2252,9 @@ async def add_paper(
             "paper_id": paper.get("paper_id", ""),
             "title": paper.get("title", ""),
             "error": capture_error or "Capture failed",
+            "knowledge_impact": normalize_knowledge_impact(
+                {"conflicts_or_skips": [capture_error or "Capture failed"]}
+            ),
         }
 
     candidate["paper_id"] = paper.get("paper_id", candidate.get("paper_id", ""))
@@ -2273,6 +2304,21 @@ async def add_paper(
         capture_method=capture_method,
     )
 
+    impact = normalize_knowledge_impact(
+        {
+            "created_pages": [source_rel_path, note_rel_path],
+            "conflicts_or_skips": [zotero_warning] if zotero_warning else [],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="add-paper",
+        title=paper.get("title", "") or paper.get("paper_id", "paper"),
+        summary="Added a user-approved paper directly into raw/source and raw/notes.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
+
     return {
         "added": True,
         "existing": False,
@@ -2291,6 +2337,7 @@ async def add_paper(
         "source_structured_path": source_rel_path.replace(".md", ".assets.json"),
         "source_note_path": note_rel_path,
         "warning": zotero_warning,
+        "knowledge_impact": impact,
     }
 
 

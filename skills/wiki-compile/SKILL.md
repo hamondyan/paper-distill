@@ -5,7 +5,7 @@ description: Use when the user says "compile", "update wiki", "编译wiki", "cre
 
 # Wiki Compile
 
-Compile approved raw papers into structured wiki knowledge. You are the sole writer of wiki/.
+Compile approved raw papers into structured wiki knowledge. You are the sole writer of wiki/, and your job is to keep it useful as a thinking interface rather than a static archive.
 
 ## Two Modes
 
@@ -49,8 +49,8 @@ After creating the wiki note, set `compiled: true` in the raw paper's frontmatte
 
 Follow `templates/wiki-concept.md.j2` structure.
 
-- **Existing concept:** Add new paper to "Representative Papers", update paper_count
-- **New concept (referenced by ≥2 papers):** Create article with definition, key ideas, representative papers, related concepts
+- **Existing concept:** Add new paper to "Representative Papers", update paper_count, and refresh `Boundary Cases`, `Nearby Concepts`, or `Unresolved Ambiguity` when the new evidence changes them
+- **New concept (referenced by ≥2 papers):** Create article with canonical definition, key ideas, representative papers, nearby concepts, and unresolved ambiguity notes
 
 ### Step 4: Update Method Articles
 
@@ -58,7 +58,13 @@ If multiple papers describe competing methods for the same task, create/update `
 
 ### Step 5: Update Topic Landscapes
 
-Create/update `wiki/topics/{topic}.md` with landscape overview, key papers, trends, open problems.
+Create/update `wiki/topics/{topic}.md` with the thinking-surface structure:
+- `Established Understanding`
+- `Recent Developments`
+- `Open Tensions`
+- `Next Questions`
+
+Use `templates/wiki-topic.md.j2` for the target shape.
 
 ### Step 6: Ensure Index Integrity
 
@@ -107,6 +113,7 @@ For each paper:
    - Wraps managed sections with `<!-- managed:start section=... -->` / `<!-- managed:end section=... -->` markers
    - `## My Notes` sections are **never** inside managed markers — always preserved
    - If a managed block was manually edited and cannot be safely patched, the write returns `conflict_detected` instead of silently overwriting
+   - Report the resulting knowledge impact panel: created pages, updated pages, linked pages, topic refreshes, and conflicts
 
 ### Subagent Usage (>3 papers)
 
@@ -119,3 +126,4 @@ Main agent runs batch Resolve, then sequential Write.
 - If resolved: link to existing; if not: the Resolve stage will register it
 - After Write stage: call `register_concept` for any hand-crafted aliases
 - Promotion candidates (concept referenced by ≥5 papers): note for `reconcile_maintenance`
+- High-value query assets and idea memos should be treated as supporting evidence when they clarify tensions, but canonical pages remain controlled by compile and maintenance decisions

@@ -11,4 +11,4 @@ The argument can be a DOI, arXiv ID, paper URL, or PDF URL. Examples:
 - `/add-paper arxiv:2410.24164`
 - `/add-paper https://arxiv.org/abs/2410.24164`
 
-This skips `inbox/`, writes approved raw layers directly, performs Zotero handoff, and can then be compiled into the wiki.
+This skips `inbox/`, lets the knowledge maintainer write approved raw layers directly, performs Zotero handoff, and prepares the paper for wiki compilation.

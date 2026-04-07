@@ -5,7 +5,7 @@ description: Use when the user says "research ideas", "gap analysis", "给我一
 
 # Idea Generator
 
-Identify research gaps and generate actionable ideas. Uses `analyze_knowledge_graph` MCP tool for structural analysis, then LLM for qualitative interpretation.
+Identify research gaps and generate actionable ideas. Uses `analyze_knowledge_graph` MCP tool for structural analysis, then LLM for qualitative interpretation. Idea outputs should become knowledge assets, not vanish into chat.
 
 ## Workflow
 
@@ -74,10 +74,19 @@ type: idea-analysis
 date: {today}
 topics_analyzed: [{topics}]
 gaps_found: {count}
+source_pages: [supporting wiki/raw pages]
+promotion_targets:
+  - page_type: topic
+    page_id: "{topic id}"
+status: saved
 ```
+
+When a single idea is strong enough to stand alone, also save an `idea-memo` asset that links back to the driving topic or concept tension.
+
+Every saved idea asset should point back to the topic or concept page where the tension belongs.
 
 ## Output
 
 Present **top 5 ideas** ranked by priority. Then offer:
 - "Want me to search for papers related to any of these ideas?"
-- "Shall I save the full analysis to the wiki?"
+- "Shall I promote one of these into a topic or concept tension section?"

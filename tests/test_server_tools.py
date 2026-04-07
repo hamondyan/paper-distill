@@ -238,3 +238,9 @@ class ProcessInboxRegressionTest(unittest.TestCase):
                 raw_source["sections"]["raw_source"][0]["capture_method"],
                 "pdf_text_recovered",
             )
+            self.assertIn("knowledge_impact", result)
+            self.assertEqual(len(result["knowledge_impact"]["created_pages"]), 2)
+            self.assertEqual(len(result["knowledge_impact"]["updated_pages"]), 1)
+            log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
+            self.assertIn("process-inbox", log_text)
+            self.assertIn("Fallback Paper", log_text)

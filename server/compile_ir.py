@@ -23,7 +23,14 @@ from pathlib import Path
 from typing import Any
 
 from server.database import get_db
-from server.vault_ops import compiled_ir_path, compiled_ir_resolved_path, paper_distill_root
+from server.vault_ops import (
+    append_knowledge_log,
+    compiled_ir_path,
+    compiled_ir_resolved_path,
+    normalize_knowledge_impact,
+    paper_distill_root,
+    refresh_global_navigation,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -129,7 +136,18 @@ def write_ir(vault_path: str, citekey: str, ir_data: dict) -> dict[str, Any]:
     dest.write_text(json.dumps(ir_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     LOG.info("Wrote IR for %s → %s", citekey, dest)
-    return {"valid": True, "errors": [], "path": str(dest)}
+    impact = normalize_knowledge_impact(
+        {"created_pages": [str(dest.relative_to(Path(vault_path)))]}
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="compile-extract",
+        title=f"Wrote IR for {citekey}",
+        summary=f"Stored the Extract-stage IR for {citekey}.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
+    return {"valid": True, "errors": [], "path": str(dest), "knowledge_impact": impact}
 
 
 def read_ir(vault_path: str, citekey: str, resolved: bool = False) -> dict | None:
@@ -203,11 +221,29 @@ def resolve_ir(vault_path: str, citekey: str) -> dict[str, Any]:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(resolved_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    impact = normalize_knowledge_impact(
+        {
+            "created_pages": [str(dest.relative_to(Path(vault_path)))],
+            "concepts_canonicalized": [
+                item["canonical_id"] for item in resolutions if item.get("canonical_id")
+            ],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="compile-resolve",
+        title=f"Resolved IR for {citekey}",
+        summary=f"Linked candidate concepts for {citekey} into the canonical registry.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
+
     return {
         "resolved_count": len(resolutions),
         "registered_new": registered_new,
         "path": str(dest),
         "resolutions": resolutions,
+        "knowledge_impact": impact,
     }
 
 
@@ -434,8 +470,9 @@ def commit_compile_result(
         (page_id, page_type),
     ).fetchone()
 
+    existed_before = dest.exists()
     current_body = ""
-    if dest.exists():
+    if existed_before:
         current_body = _strip_frontmatter(dest.read_text(encoding="utf-8"))
 
     previous_managed_blocks = _decode_json_column(existing_state, "managed_blocks_json")
@@ -534,11 +571,32 @@ def commit_compile_result(
 
     conn.commit()
 
+    impact = normalize_knowledge_impact(
+        {
+            "created_pages": [] if existed_before else [str(dest.relative_to(pd_root.parent))],
+            "updated_pages": [str(dest.relative_to(pd_root.parent))] if existed_before else [],
+            "linked_pages": [
+                f"{dep.get('dep_type', 'concept')}:{dep.get('dep_id', '')}"
+                for dep in (deps or [])
+                if dep.get("dep_id")
+            ],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="compile-write",
+        title=f"Committed {page_type} page {page_id}",
+        summary=f"Wrote compiled {page_type} content and refreshed compile state for {page_id}.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
+
     return {
         "written": True,
         "path": str(dest),
         "compile_version": new_version,
         "content_hash": content_hash,
+        "knowledge_impact": impact,
     }
 
 

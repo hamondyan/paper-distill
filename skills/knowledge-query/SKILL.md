@@ -5,7 +5,7 @@ description: Use when the user asks research questions, says "based on my papers
 
 # Knowledge Query
 
-Answer research questions by navigating and synthesizing from the wiki. Save valuable results back to compound knowledge.
+Answer research questions by navigating and synthesizing from the wiki. Treat substantive answers as assets that grow the knowledge base, not disposable chat output.
 
 ## Workflow
 
@@ -37,24 +37,39 @@ Categorize:
 - Be explicit about gaps: "Your wiki has 5 papers on VLA but none on X"
 - Never fabricate wiki content
 
-### Step 4: Save Result (if valuable)
+### Step 4: Save Result (default for substantive answers)
 
-If substantive (not a simple lookup), save to `queries/{slug}.md`:
+If substantive (not a simple lookup), save to `queries/{slug}.md` using the query-asset protocol:
 
 ```yaml
+type: query-note | comparison-note | topic-synthesis | contradiction-note
+title: "{short asset title}"
 question: "{original question}"
 date: {YYYY-MM-DD}
+source_pages: [paths read during synthesis]
 papers_referenced: [{citekeys}]
 concepts_referenced: [{concepts}]
+topics_referenced: [{topics}]
+derived_actions: [{follow-up suggestions}]
+promotion_targets:
+  - page_type: topic | concept | method | paper
+    page_id: "{target id}"
+status: saved
 ```
+
+Comparative answers should usually become `comparison-note`.
+Landscape syntheses should usually become `topic-synthesis`.
+Contradiction or tension-focused answers should usually become `contradiction-note`.
 
 ### Step 5: Suggest Follow-ups
 
 If gaps found:
 - "You might want to search for papers on X"
 - "3 raw papers mention this but aren't compiled yet — run /compile"
+- "This note should probably promote into `wiki/topics/{topic}`"
 
 ## Rules
 
 - **Approved evidence first.** Prefer `raw/` + `wiki/`; inbox is pending, not established knowledge.
-- **Knowledge compounds.** Saved queries become part of the wiki for future reference.
+- **Knowledge compounds.** Saved queries become part of the wiki for future reference and future promotion into canonical pages.
+- **Show impact.** Report what this query created, what it linked, and what it suggests updating.

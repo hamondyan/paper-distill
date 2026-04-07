@@ -10,6 +10,11 @@ updated: {{ date }}
 > Paper Distill knowledge base — auto-maintained by LLM compilation.
 > AI agents: use `query_vault` MCP tool instead of reading this file.
 
+## Maintainer Model
+
+- LLM role: maintain the knowledge graph, summarize changes, and keep cross-links coherent
+- User role: approve evidence, steer priorities, and judge when a synthesis should become canonical
+
 ## Stats
 
 - Papers ingested: `= length(filter(pages("Paper Distill/raw"), (p) => p.citekey))`
@@ -35,6 +40,11 @@ LIST
 FROM "Paper Distill/wiki/topics"
 SORT file.name ASC
 ```
+
+## Visible Growth
+
+- Review `index.md` for the content-oriented knowledge map
+- Review `log.md` for the chronological timeline of maintainership actions
 {% endif %}
 
 {% if section == "inbox" %}
@@ -125,4 +135,19 @@ LIST
 FROM "Paper Distill/wiki/topics"
 SORT file.name ASC
 ```
+{% endif %}
+
+{% if section == "queries" %}
+> Saved query assets and idea memos. These are part of the knowledge growth path, not just chat leftovers.
+
+```dataview
+TABLE type, status, join(topics_referenced, ", ") as Topics
+FROM "Paper Distill/queries"
+WHERE question
+SORT date DESC
+```
+{% endif %}
+
+{% if section == "daily-log" %}
+> Daily digests show day-by-day discovery. Use `log.md` for the cross-day operational timeline.
 {% endif %}

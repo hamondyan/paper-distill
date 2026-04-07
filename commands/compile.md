@@ -6,4 +6,4 @@ user_invocable: true
 
 Run deep wiki compilation using the `paper-distill:wiki-compile` skill in deep mode.
 
-This compiles all uncompiled raw papers into structured wiki articles, creates/updates concept articles, method comparisons, topic landscapes, and rebuilds all indexes.
+This asks the knowledge maintainer to recompile uncompiled raw papers into structured wiki articles, update concept and method pages, refresh topic landscapes, and rebuild navigation surfaces.

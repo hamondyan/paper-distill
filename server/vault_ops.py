@@ -189,6 +189,16 @@ _RAW_NOTE_SECTIONS = (
     "Discussion",
     "Next Steps",
 )
+_KNOWLEDGE_IMPACT_KEYS = (
+    "created_pages",
+    "updated_pages",
+    "linked_pages",
+    "concepts_canonicalized",
+    "topics_refreshed",
+    "queries_saved",
+    "maintenance_tasks_created",
+    "conflicts_or_skips",
+)
 
 
 def _now_date() -> str:
@@ -197,6 +207,14 @@ def _now_date() -> str:
 
 def paper_distill_root(vault_path: str) -> Path:
     return Path(vault_path).expanduser() / PAPER_DISTILL_ROOT
+
+
+def global_index_path(vault_path: str) -> Path:
+    return paper_distill_root(vault_path) / "index.md"
+
+
+def knowledge_log_path(vault_path: str) -> Path:
+    return paper_distill_root(vault_path) / "log.md"
 
 
 def _index_path(root: Path, key: str) -> Path:
@@ -230,6 +248,20 @@ def ensure_vault_structure(vault_path: str) -> Path:
     # Initialize SQLite database
     from server.database import init_db
     init_db(vault_path)
+
+    index_path = root / "index.md"
+    if not index_path.exists():
+        index_path.write_text(
+            "# Paper Distill Index\n\nKnowledge map coming online. Run an ingest, query, compile, or maintenance action to refresh this overview.\n",
+            encoding="utf-8",
+        )
+
+    log_path = root / "log.md"
+    if not log_path.exists():
+        log_path.write_text(
+            "# Paper Distill Log\n\nAppend-only timeline of ingest, query, compile, maintenance, and idea activity.\n",
+            encoding="utf-8",
+        )
 
     return root
 
@@ -314,6 +346,170 @@ def state_db_path(vault_path: str) -> Path:
     """Return path to the SQLite database."""
     root = paper_distill_root(vault_path)
     return root / ".state" / "paper-distill.db"
+
+
+def normalize_knowledge_impact(impact: dict[str, Any] | None = None) -> dict[str, list[Any]]:
+    payload = dict(impact or {})
+    normalized: dict[str, list[Any]] = {}
+    for key in _KNOWLEDGE_IMPACT_KEYS:
+        value = payload.get(key, [])
+        if value is None:
+            normalized[key] = []
+        elif isinstance(value, list):
+            normalized[key] = value
+        else:
+            normalized[key] = [value]
+    return normalized
+
+
+def build_knowledge_impact_summary(impact: dict[str, Any]) -> str:
+    normalized = normalize_knowledge_impact(impact)
+    sections = []
+    for key in _KNOWLEDGE_IMPACT_KEYS:
+        if normalized[key]:
+            sections.append((key, normalized[key]))
+    return render_template(
+        "knowledge-impact-summary.md.j2",
+        {
+            "sections": sections,
+            "has_any": bool(sections),
+        },
+    )
+
+
+def build_query_asset_frontmatter(
+    *,
+    note_type: str,
+    title: str,
+    question: str,
+    source_pages: list[str] | None = None,
+    papers_referenced: list[str] | None = None,
+    concepts_referenced: list[str] | None = None,
+    topics_referenced: list[str] | None = None,
+    derived_actions: list[str] | None = None,
+    promotion_targets: list[dict[str, Any]] | None = None,
+    status: str = "saved",
+) -> dict[str, Any]:
+    return {
+        "type": note_type,
+        "title": title,
+        "question": question,
+        "date": _now_date(),
+        "source_pages": list(source_pages or []),
+        "papers_referenced": list(papers_referenced or []),
+        "concepts_referenced": list(concepts_referenced or []),
+        "topics_referenced": list(topics_referenced or []),
+        "derived_actions": list(derived_actions or []),
+        "promotion_targets": list(promotion_targets or []),
+        "status": status,
+    }
+
+
+def build_query_asset_body(payload: dict[str, Any]) -> str:
+    return render_template(
+        "query-note.md.j2",
+        {
+            "title": payload.get("title", "Untitled Query Asset"),
+            "question": payload.get("question", ""),
+            "summary": payload.get("summary", "Summary not provided yet."),
+            "answer": payload.get("answer", ""),
+            "source_pages": list(payload.get("source_pages", [])),
+            "promotion_targets": list(payload.get("promotion_targets", [])),
+            "derived_actions": list(payload.get("derived_actions", [])),
+        },
+    )
+
+
+def _read_frontmatter(path: Path) -> dict[str, Any]:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not content.startswith("---\n"):
+        return {}
+    _, remainder = content.split("---\n", 1)
+    if "\n---\n" not in remainder:
+        return {}
+    fm_text, _body = remainder.split("\n---\n", 1)
+    frontmatter = yaml.safe_load(fm_text) or {}
+    return frontmatter if isinstance(frontmatter, dict) else {}
+
+
+def _recent_items(directory: Path, *, limit: int = 5, title_key: str = "title") -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if not directory.exists():
+        return items
+    for path in directory.rglob("*.md"):
+        if path.name == "_index.md":
+            continue
+        fm = _read_frontmatter(path)
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        items.append(
+            {
+                "path": str(path),
+                "relative_path": str(path.relative_to(directory.parents[0])),
+                "title": str(fm.get(title_key) or fm.get("title") or path.stem),
+                "type": str(fm.get("type", "")),
+                "mtime": mtime,
+            }
+        )
+    items.sort(key=lambda item: item["mtime"], reverse=True)
+    return items[:limit]
+
+
+def refresh_global_navigation(vault_path: str) -> Path:
+    root = ensure_vault_structure(vault_path)
+
+    from server.maintenance import get_pending_tasks
+    from server.vault_query import query_vault_sync
+
+    all_sections = query_vault_sync(vault_path, section="all", detail="full")
+    queries = _recent_items(root / "queries", limit=5)
+    concepts = _recent_items(root / "wiki" / "concepts", limit=5, title_key="concept")
+    topics = _recent_items(root / "wiki" / "topics", limit=5, title_key="topic")
+    pending_tasks = get_pending_tasks(vault_path)
+    uncompiled = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True, detail="full")
+
+    body = render_template(
+        "global-index.md.j2",
+        {
+            "date": _now_date(),
+            "stats": all_sections.get("stats", {}),
+            "recent_queries": queries,
+            "recent_concepts": concepts,
+            "recent_topics": topics,
+            "pending_maintenance_count": len(pending_tasks),
+            "uncompiled_count": uncompiled.get("stats", {}).get("raw_notes", 0),
+        },
+    )
+    global_index_path(vault_path).write_text(body, encoding="utf-8")
+    return global_index_path(vault_path)
+
+
+def append_knowledge_log(
+    vault_path: str,
+    *,
+    event_type: str,
+    title: str,
+    summary: str,
+    impact: dict[str, Any] | None = None,
+) -> Path:
+    root = ensure_vault_structure(vault_path)
+    log_path = root / "log.md"
+    normalized = normalize_knowledge_impact(impact)
+    impact_count = sum(len(items) for items in normalized.values())
+    entry = (
+        f"\n## [{datetime.now().isoformat(timespec='seconds')}] {event_type} | {title}\n\n"
+        f"{summary}\n\n"
+        f"- Impact count: {impact_count}\n\n"
+        f"{build_knowledge_impact_summary(normalized).strip()}\n"
+    )
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(entry)
+    return log_path
 
 
 def build_inbox_body(paper: dict[str, Any]) -> str:

@@ -33,6 +33,7 @@ import yaml
 from server.concept_registry import auto_merge_eligible, get_concept, merge_concepts, promote_concept, slugify
 from server.compile_ir import commit_compile_result
 from server.database import get_db, _now_iso
+from server.vault_ops import append_knowledge_log, normalize_knowledge_impact, refresh_global_navigation
 
 LOG = logging.getLogger(__name__)
 
@@ -159,11 +160,26 @@ def reconcile_maintenance_queue(
             created += 1
 
     conn.commit()
+    impact = normalize_knowledge_impact(
+        {
+            "maintenance_tasks_created": new_ids,
+            "conflicts_or_skips": [f"duplicate:{skipped}"] if skipped else [],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="maintenance-reconcile",
+        title="Reconciled maintenance queue",
+        summary=f"Created {created} task(s) from lint and stats results.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
     return {
         "created": created,
         "skipped_duplicate": skipped,
         "auto_confirmed": auto_confirmed,
         "new_task_ids": new_ids,
+        "knowledge_impact": impact,
     }
 
 
@@ -394,11 +410,28 @@ def execute_merge(vault_path: str, task_id: int) -> dict[str, Any]:
     for page in impacted_pages:
         _rewrite_page_links(vault_path, page["page_id"], page["page_type"], from_id, to_id)
     complete_task(vault_path, task_id)
+    impact = normalize_knowledge_impact(
+        {
+            "updated_pages": [
+                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
+                for page in impacted_pages
+            ],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="maintenance-execute",
+        title=f"Merged concept {from_id} into {to_id}",
+        summary=f"Executed merge task {task_id} and rewrote impacted page links.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
     return {
         **result,
         "completed": True,
         "task_id": task_id,
         "impacted_pages": impacted_pages,
+        "knowledge_impact": impact,
     }
 
 
@@ -452,12 +485,30 @@ def execute_promote(vault_path: str, task_id: int) -> dict[str, Any]:
         _rewrite_page_links(vault_path, page["page_id"], page["page_type"], concept_id, concept_id, to_section="topics")
     refresh_summary = _refresh_topic_page(vault_path, concept_id)
     complete_task(vault_path, task_id)
+    impact = normalize_knowledge_impact(
+        {
+            "updated_pages": [
+                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
+                for page in impacted_pages
+            ],
+            "topics_refreshed": [concept_id],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="maintenance-execute",
+        title=f"Promoted concept {concept_id} to topic",
+        summary=f"Executed promotion task {task_id} and refreshed the topic page.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
     return {
         **result,
         "completed": True,
         "task_id": task_id,
         "impacted_pages": impacted_pages,
         "refresh": refresh_summary,
+        "knowledge_impact": impact,
     }
 
 
@@ -489,12 +540,30 @@ def execute_refresh(vault_path: str, task_id: int) -> dict[str, Any]:
     impacted_pages = _dependent_pages_for_ids(conn, [topic])
     refresh_summary = _refresh_topic_page(vault_path, topic)
     complete_task(vault_path, task_id)
+    impact = normalize_knowledge_impact(
+        {
+            "updated_pages": [
+                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
+                for page in impacted_pages
+            ],
+            "topics_refreshed": [topic],
+        }
+    )
+    append_knowledge_log(
+        vault_path,
+        event_type="maintenance-execute",
+        title=f"Refreshed topic {topic}",
+        summary=f"Executed refresh task {task_id} and updated the topic summary.",
+        impact=impact,
+    )
+    refresh_global_navigation(vault_path)
     return {
         "completed": True,
         "task_id": task_id,
         "topic": topic,
         "impacted_pages": impacted_pages,
         "refresh": refresh_summary,
+        "knowledge_impact": impact,
     }
 
 

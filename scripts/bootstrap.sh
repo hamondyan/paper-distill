@@ -24,6 +24,22 @@ mkdir -p "${PD_ROOT}/wiki/topics"
 mkdir -p "${PD_ROOT}/daily-log"
 mkdir -p "${PD_ROOT}/queries"
 
+if [[ ! -f "${PD_ROOT}/index.md" ]]; then
+cat > "${PD_ROOT}/index.md" << 'EOF'
+# Paper Distill Index
+
+Knowledge map coming online. Run ingest, query, compile, or maintenance actions to refresh this overview.
+EOF
+fi
+
+if [[ ! -f "${PD_ROOT}/log.md" ]]; then
+cat > "${PD_ROOT}/log.md" << 'EOF'
+# Paper Distill Log
+
+Append-only timeline of ingest, query, compile, maintenance, and idea activity.
+EOF
+fi
+
 # Master index
 if [[ ! -f "${PD_ROOT}/_index.md" ]]; then
 cat > "${PD_ROOT}/_index.md" << 'EOF'

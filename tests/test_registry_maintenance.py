@@ -278,6 +278,7 @@ class ReconcileTest(_VaultTestBase):
             self.vault_path, lint_results=lint_results, auto_confirm=False,
         )
         assert result["created"] == 3
+        assert len(result["knowledge_impact"]["maintenance_tasks_created"]) == 3
         tasks = get_pending_tasks(self.vault_path)
         assert len(tasks) == 3
         assert any(task["task_type"] == "paper_duplicate_review" for task in tasks)

@@ -5,11 +5,11 @@ description: Use at the start of any session involving Paper Distill — when th
 
 # Paper Distill — Human-Approved Research Knowledge Base
 
-You are equipped with **Paper Distill**: discover papers, stage for human approval, capture arXiv-backed source material, hand off to Zotero, and compile a structured Obsidian wiki. You are the sole writer of the markdown knowledge base. The user owns the approval boundary.
+You are equipped with **Paper Distill**: discover papers, stage for human approval, capture arXiv-backed source material, hand off to Zotero, and compile a structured Obsidian wiki. You are the knowledge maintainer; the user is the editor, reviewer, and research lead. You are the sole writer of the markdown knowledge base. The user owns the approval boundary.
 
 ## Vault Structure
 
-`{vault}/Paper Distill/` with sections: `inbox/` (candidates), `raw/source/` (cleaned arXiv captures), `raw/notes/` (CRGP-DNL reading notes), `zotero/imports/` (local import packs), `wiki/` (papers/concepts/methods/topics), `daily-log/`, `queries/`.
+`{vault}/Paper Distill/` with sections: `inbox/` (candidates), `raw/source/` (cleaned arXiv captures), `raw/notes/` (CRGP-DNL reading notes), `zotero/imports/` (local import packs), `wiki/` (papers/concepts/methods/topics), `daily-log/`, `queries/`, plus `index.md` and `log.md` as human-readable navigation layers.
 
 ## Research Profile
 
@@ -43,4 +43,6 @@ Guided by `settings.json → paper_distill.research_profile`: direction, whiteli
 4. **CRGP-DNL structure is mandatory** for all reading notes: Context, Related Work, Gap, Proposal, Key Results, Discussion, Next Steps. Keep prose concise and structured — no rambling paragraphs.
 5. **Use backlinks.** Every compiled paper → ≥2 concept pages. Concept stubs created only when referenced by ≥2 papers.
 6. **User-supplied confirmed papers go straight to `paper-add`.** Do not stage them in inbox unless the user explicitly asks.
-7. **When in doubt, invoke the relevant Paper Distill skill.**
+7. **Queries also grow the knowledge base.** Save substantive query and idea results into `queries/` with backlinks and promotion targets.
+8. **Show the impact of every maintenance action.** Prefer reporting created pages, updated pages, linked pages, refreshes, and conflicts.
+9. **When in doubt, invoke the relevant Paper Distill skill.**

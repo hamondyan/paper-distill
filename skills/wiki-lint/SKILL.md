@@ -5,7 +5,7 @@ description: Use when the user says "/lint", "check wiki health", "wiki维护", 
 
 # Wiki Lint
 
-Health check and maintenance for the wiki. Deterministic checks run via `lint_vault` MCP tool; only semantic checks need LLM judgment.
+Health check and maintenance for the wiki. Deterministic checks run via `lint_vault` MCP tool; only semantic checks need LLM judgment. Present results like a maintainer's inspection of a living knowledge graph.
 
 ## Workflow
 
@@ -41,6 +41,11 @@ Wiki Health Report — {date}
 
 Overall health: {from lint_vault result}
 ```
+
+Also summarize the likely knowledge impact of fixing the current issues:
+- which pages would be refreshed
+- which missing concepts or topics would become visible
+- which confirmed maintenance tasks are ready to execute
 
 ### Step 4: Fix
 

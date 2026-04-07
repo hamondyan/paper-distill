@@ -8,4 +8,4 @@ Answer a research question by navigating the wiki using the `paper-distill:knowl
 
 The argument is the question. Example: `/query what VLA architectures exist and how do they compare?`
 
-The answer is synthesized from wiki articles with backlinks. Valuable results are saved to queries/ for future reference.
+The answer is synthesized from the maintained wiki. Substantive results are saved to `queries/` as reusable knowledge assets and may propose controlled updates back into the wiki.

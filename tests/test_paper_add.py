@@ -236,6 +236,14 @@ class PaperAddTest(unittest.TestCase):
             self.assertEqual(raw_notes["sections"]["raw_notes"][0]["paper_id"], paper["paper_id"])
             self.assertEqual(raw_notes["sections"]["raw_notes"][0]["zotero_status"], "local_exported")
             self.assertEqual(raw_notes["sections"]["raw_notes"][0]["capture_fidelity"], "high")
+            self.assertEqual(
+                result["knowledge_impact"]["created_pages"],
+                [result["source_raw_path"], result["source_note_path"]],
+            )
+            self.assertEqual(result["knowledge_impact"]["queries_saved"], [])
+            log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
+            self.assertIn("add-paper", log_text)
+            self.assertIn("A Direct Add Paper", log_text)
 
     def test_add_paper_returns_existing_record_without_rewriting(self) -> None:
         paper = {

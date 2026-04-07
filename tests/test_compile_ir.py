@@ -100,6 +100,9 @@ class WriteIRTest(_VaultBase):
         assert result["valid"] is True
         assert result["errors"] == []
         assert "smith2024.json" in result["path"]
+        assert result["knowledge_impact"]["created_pages"] == [
+            "Paper Distill/compiled_ir/smith2024.json"
+        ]
 
         # File should exist
         path = os.path.join(self.tmp, "Paper Distill", "compiled_ir", "smith2024.json")
@@ -127,6 +130,7 @@ class ResolveIRTest(_VaultBase):
         assert "error" not in result
         assert result["resolved_count"] == 1
         assert result["registered_new"] == 1
+        assert result["knowledge_impact"]["concepts_canonicalized"] == ["diffusion-policy"]
 
         # Resolved JSON should exist
         resolved_path = os.path.join(
@@ -220,6 +224,12 @@ class CommitCompileResultTest(_VaultBase):
         assert result["written"] is True
         assert "smith2024.md" in result["path"]
         assert os.path.exists(result["path"])
+        assert result["knowledge_impact"]["created_pages"] == [
+            "Paper Distill/wiki/papers/smith2024.md"
+        ]
+        log_path = os.path.join(self.tmp, "Paper Distill", "log.md")
+        assert os.path.exists(log_path)
+        assert "compile-write" in open(log_path, encoding="utf-8").read()
 
         state = get_compile_state(self.tmp, "smith2024", "paper")
         assert state is not None
