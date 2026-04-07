@@ -1,62 +1,149 @@
 # Paper Distill
 
-Paper Distill is a human-approved research workflow for Obsidian. It helps you:
+Paper Distill 是一款面向 Obsidian 的、**人类审批 + LLM 维护** 的研究知识库工作流。
 
-- discover papers from multiple academic sources
-- stage candidates in `inbox/` for review
-- directly add user-confirmed papers into the vault with `add_paper`
-- capture cleaned `raw/source` notes from native arXiv HTML, `ar5iv`, or recovered PDF text
-- generate `raw/notes` with the `CRGP-DNL` reading template
-- compile evidence-backed wiki pages
-- optionally hand approved papers off to Zotero
+它的目标不是做一次性的论文问答，而是把论文发现、证据采集、阅读笔记、知识编译、查询沉淀、研究想法生成，统一到一个可持续增长的知识系统里。
 
-The repository is packaged as one MCP-backed bundle for Claude, Codex, and OpenClaw.
+- **用户角色**：编辑者、审稿人、研究负责人
+- **LLM 角色**：知识维护者
+- **知识资产**：不是聊天记录，而是持续更新的 Obsidian wiki
 
-## Maintainer Model
+## English Summary
 
-Paper Distill works best when you treat the system as:
+Paper Distill is a human-approved research knowledge workflow for Obsidian.
+It packages one MCP-backed runtime for **Claude**, **Codex**, and **OpenClaw**, and turns paper discovery, ingestion, synthesis, querying, and idea generation into a maintained wiki rather than disposable chat output.
 
-- the **LLM** = knowledge maintainer
-- the **wiki** = living research codebase
-- the **user** = editor, reviewer, and research lead
+For English-side integration details, see [docs/integration/clients.md](docs/integration/clients.md).
 
-Discovery, ingest, compile, lint, query, and idea generation are all maintenance actions on the same evolving knowledge graph.
+## 它解决什么问题
 
-## Core Flow
+大多数 LLM 文档工作流停留在 “上传文件 -> 检索 -> 回答”。
 
-Normal discovery flow:
+Paper Distill 走的是另一条路线：
+
+1. 先发现或指定论文
+2. 由人决定是否纳入知识库
+3. 把原始论文转成稳定的证据层
+4. 生成结构化阅读笔记
+5. 再编译成可链接、可维护、可持续演化的 wiki
+6. 之后的查询、综述、idea 结果也继续沉淀为知识资产
+
+一句话说：**它把论文知识从“每次临时检索”变成“持续维护的研究系统”。**
+
+## 适合谁
+
+- 做长期论文追踪、综述、选题和研究方向管理的研究者
+- 已经使用 Obsidian，希望让 LLM 帮你维护 wiki 的个人研究工作流
+- 需要同时兼容 Claude、Codex、OpenClaw 的 MCP / agent 工作流
+- 希望保留 Zotero，但不想把知识组织完全交给 Zotero 的用户
+
+## 核心特性
+
+- **Human-in-the-loop**：论文发现先进入 `inbox/`，人工审批后才进入知识库
+- **双层原始资产**：`raw/source/` 保存稳定证据，`raw/notes/` 保存结构化阅读理解
+- **结构化知识编译**：把原始笔记编译到 `wiki/papers`、`wiki/concepts`、`wiki/methods`、`wiki/topics`
+- **查询结果继续沉淀**：高价值 `/query` 和 `/ideas` 结果会进入 `queries/`
+- **可见的知识增长**：`index.md` 提供内容地图，`log.md` 提供时间线
+- **研究友好的维护层**：概念注册表、编译状态、维护队列、张力信号聚合
+- **兼容 Zotero**：支持 `local_first`、`web_api`、`disabled`
+- **多客户端兼容**：同一套 MCP bundle 支持 Claude、Codex、OpenClaw
+
+## 支持的客户端
+
+Paper Distill 当前以统一 bundle 形式提供给：
+
+- **Claude**
+- **Codex**
+- **OpenClaw**
+
+三者共享同一个 MCP 入口：
+
+- [`.mcp.json`](.mcp.json)
+- [`scripts/run-mcp.sh`](scripts/run-mcp.sh)
+
+详细兼容说明见：[docs/integration/clients.md](docs/integration/clients.md)
+
+## 3 分钟上手
+
+### 1. 安装依赖
+
+推荐使用 `uv`：
+
+```bash
+uv sync
+```
+
+### 2. 配置你的 Obsidian Vault
+
+复制并修改 [`settings.example.json`](settings.example.json) 的结构，在本地创建 `settings.json`：
+
+```json
+{
+  "paper_distill": {
+    "vault_path": "/absolute/path/to/your/obsidian/vault"
+  }
+}
+```
+
+也可以直接使用环境变量：
+
+```bash
+export VAULT_PATH="/absolute/path/to/your/obsidian/vault"
+```
+
+### 3. 启动 MCP Server
+
+```bash
+uv run paper-distill-server
+```
+
+如果你使用的是仓库自带 launcher，本质运行的是：
+
+```bash
+uv --directory <repo-root> run paper-distill-server
+```
+
+## 核心工作流
+
+### 常规发现流
 
 ```text
 discover -> inbox approval -> raw/source -> raw/notes -> Zotero handoff -> wiki
 ```
 
-Direct-add flow for papers you already approved yourself:
+### 直接纳入流
 
 ```text
 add-paper -> raw/source -> raw/notes -> Zotero handoff -> wiki
 ```
 
-## Capture Pipeline
-
-Paper Distill now prefers HTML capture in this order:
+### 查询与复利流
 
 ```text
-arxiv.org/html -> ar5iv -> PDF text fallback
+query / ideas -> queries -> promotion targets -> wiki updates
 ```
 
-The goal is to keep the cleaned source both readable and structurally useful for downstream compilation.
+## Knowledge Maintainer 心智模型
 
-Each successful `raw/source` write can include:
+Paper Distill 最适合这样使用：
 
-- cleaned Markdown body text
-- a structured sidecar (`.assets.json`) with sections, appendix snapshots, figures, tables, and equations
-- capture provenance such as `capture_method`, `capture_source`, and `capture_fidelity`
+- **Obsidian** 是研究 IDE
+- **wiki** 是长期维护的知识代码库
+- **LLM** 是知识维护者
+- **你** 决定纳入什么、强调什么、相信什么、继续追什么
 
-This means the pipeline does not just store a flattened Markdown artifact. It also preserves a structured evidence layer for note generation and wiki compilation.
+这意味着：
 
-## Vault Layout
+- `/discover` 是让维护者发现候选证据
+- `/process-inbox` / `/add-paper` 是让维护者摄取新证据
+- `/compile` 是让维护者重编译知识结构
+- `/lint` 是让维护者体检知识图谱
+- `/query` 是让维护者在现有结构上回答并沉淀新认知
+- `/ideas` 是让维护者把张力、空白和桥接机会转成研究假设
 
-Paper Distill writes into your Obsidian vault under:
+## Vault 目录结构
+
+Paper Distill 在你的 Obsidian Vault 中写入：
 
 ```text
 {vault}/Paper Distill/
@@ -77,210 +164,65 @@ Paper Distill writes into your Obsidian vault under:
 └── queries/
 ```
 
-Two new navigation files make growth more visible:
+其中：
 
-- `index.md`: content-oriented map of the current knowledge base
-- `log.md`: append-only timeline of ingest, query, compile, and maintenance events
+- `index.md`：当前知识版图
+- `log.md`：知识维护时间线
+- `queries/`：查询资产、比较笔记、topic synthesis、idea analysis
 
-## Quick Start
+更详细的目录说明见：[docs/reference/vault-layout.md](docs/reference/vault-layout.md)
 
-### 1. Point Paper Distill at Your Obsidian Vault
+## 常用命令
 
-The repository ships a tracked template at [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json). Keep your real local configuration in `settings.json`, which is git-ignored, or provide `VAULT_PATH` as an environment variable.
+- `/discover <query>`：发现并写入候选 inbox
+- `/add-paper <doi|arxiv|url>`：直接纳入用户已批准论文
+- `/process-inbox`：处理 `approved` inbox 项
+- `/compile`：把原始笔记编译为 wiki
+- `/query <question>`：查询知识库并沉淀高价值结果
+- `/ideas`：基于知识图谱生成研究思路
+- `/lint`：体检知识库与维护状态
+- `/summarize <doi|url>`：快速预览论文
 
-Set your vault path under `paper_distill.vault_path`.
+完整命令说明见：[docs/reference/commands.md](docs/reference/commands.md)
 
-Example:
+## Zotero 模式
 
-```json
-{
-  "paper_distill": {
-    "vault_path": "/absolute/path/to/your/obsidian/vault"
-  }
-}
-```
+支持三种模式：
 
-`VAULT_PATH` overrides local `settings.json` when both are present.
+- `local_first`：写本地导入包到 `Paper Distill/zotero/imports/`
+- `web_api`：通过 Zotero Web API 创建条目
+- `disabled`：完全跳过 Zotero handoff
 
-### 2. Configure Your Research Profile
+如果你的目标是“**不要把 PDF 保存到 Zotero 目录**”，优先使用：
 
-Paper ranking, recommendations, and downstream compilation are guided by `paper_distill.research_profile` in your local `settings.json`, using [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json) as the tracked template.
+- `local_first`
+- 或 `disabled`
 
-The most important fields are:
+## 文档导航
 
-- `direction`: your current research direction in one sentence
-- `whitelist_authors`: authors you want the discovery pipeline to prioritize
-- `seed_papers`: representative DOI list for topic calibration
-- `learned_preferences`: feedback memory that can evolve over time
+- [docs/README.md](docs/README.md)：文档总入口
+- [docs/product/overview.md](docs/product/overview.md)：产品概览
+- [docs/product/workflow.md](docs/product/workflow.md)：核心工作流
+- [docs/product/knowledge-model.md](docs/product/knowledge-model.md)：知识模型
+- [docs/integration/installation.md](docs/integration/installation.md)：安装与启动
+- [docs/integration/clients.md](docs/integration/clients.md)：Claude / Codex / OpenClaw 兼容性
+- [docs/reference/configuration.md](docs/reference/configuration.md)：配置项说明
+- [docs/reference/vault-layout.md](docs/reference/vault-layout.md)：目录结构与资产关系
+- [docs/reference/commands.md](docs/reference/commands.md)：命令参考
+- [docs/releases/v1-launch.md](docs/releases/v1-launch.md)：初代发布说明
 
-Example:
+## 文档版本与追溯
 
-```json
-{
-  "paper_distill": {
-    "research_profile": {
-      "direction": "Embodied AI with vision-language-action policies for robot manipulation",
-      "whitelist_authors": ["Sergey Levine", "Chelsea Finn"],
-      "seed_papers": ["10.48550/arxiv.2410.24164"],
-      "learned_preferences": {
-        "accepted_keywords": [],
-        "rejected_keywords": [],
-        "preferred_venues": [],
-        "feedback_count": 0
-      }
-    }
-  }
-}
-```
+当前 `docs/` 已按“发布文档”和“历史文档”分层：
 
-If you want to change “论文偏好”, this is the main place to do it.
+- 当前发布与使用文档：`docs/product`、`docs/integration`、`docs/reference`、`docs/releases`
+- 历史计划与评审文档：`docs/archive`
 
-### 2.5. Configure Capture Behavior
+这意味着：
 
-`paper_distill.capture` controls how Paper Distill cleans and preserves source material.
+- 新用户看到的是产品文档
+- 历史架构演进仍然保留，可追溯
 
-Important fields:
+## License
 
-- `appendix_policy`: appendix handling policy. `summary_only` remains the practical default.
-- `preserve_math`: keep extracted equations and math-aware rendering
-- `preserve_figures`: keep figure snapshots in the structured output
-- `preserve_tables`: keep table snapshots and Markdown table rendering
-- `remove_refs`: drop bibliography / references sections from cleaned output
-- `remove_inline_citations`: remove inline citation text such as `(Author, 2024)`
-- `remove_internal_links`: strip internal arXiv section links down to plain text
-- `write_structured_sidecar`: write the `.assets.json` structured capture alongside `raw/source`
-
-Example:
-
-```json
-{
-  "paper_distill": {
-    "capture": {
-      "appendix_policy": "summary_only",
-      "min_body_chars": 1500,
-      "preserve_math": true,
-      "preserve_figures": true,
-      "preserve_tables": true,
-      "remove_refs": true,
-      "remove_inline_citations": false,
-      "remove_internal_links": true,
-      "write_structured_sidecar": true
-    }
-  }
-}
-```
-
-Short version:
-
-- if you want cleaner distillation notes, keep `remove_refs=true`
-- if you want citation-light source text for LLM consumption, set `remove_inline_citations=true`
-- if you want rawer internal arXiv links preserved in Markdown, set `remove_internal_links=false`
-
-### 3. Choose a Zotero Mode
-
-Paper Distill supports three Zotero modes:
-
-- `local_first`: write local CSL-JSON import packs under `Paper Distill/zotero/imports/`
-- `web_api`: create items in your Zotero library through the Zotero Web API
-- `disabled`: skip Zotero handoff entirely
-
-Important behavior differences:
-
-- `local_first` does not write PDFs into Zotero `storage/` and does not choose a Zotero collection for you
-- `web_api` can create Zotero items and may attempt to import or link PDF attachments
-- `disabled` keeps the Paper Distill knowledge-base workflow but performs no Zotero action
-
-The template default in [settings.example.json](/Users/huang/Desktop/paper-distill-v2/settings.example.json) is `local_first`.
-
-### 4. Set Zotero Credentials Only If You Need Them
-
-You only need `ZOTERO_LIBRARY_ID` and `ZOTERO_API_KEY` for `web_api` mode.
-
-Recommended environment variables:
-
-- `VAULT_PATH`
-- `OPENALEX_EMAIL`
-- `S2_API_KEY`
-- `ZOTERO_MODE`
-- `ZOTERO_COLLECTION_NAME`
-- `ZOTERO_LOCAL_EXPORT_DIR`
-- `ZOTERO_LIBRARY_ID`
-- `ZOTERO_API_KEY`
-
-Notes:
-
-- `OPENALEX_EMAIL` is recommended for polite API usage
-- `S2_API_KEY` is optional but improves Semantic Scholar access
-- `ZOTERO_LOCAL_EXPORT_DIR` is used only in `local_first`
-- relative `ZOTERO_LOCAL_EXPORT_DIR` values are resolved relative to your vault
-
-## Running the Server
-
-### Recommended: `uv`
-
-The bundle launcher in [scripts/run-mcp.sh](/Users/huang/Desktop/paper-distill-v2/scripts/run-mcp.sh) uses `uv`:
-
-```bash
-uv --directory <repo-root> run paper-distill-server
-```
-
-So if you want to use this repo as-is with the bundled MCP setup, `uv` is the easiest and most direct option.
-
-Typical commands:
-
-```bash
-uv sync
-uv run paper-distill-server
-```
-
-### Using `conda`
-
-You can still use `conda`, but there is one operational difference: the shipped launcher still expects `uv`.
-
-Typical `conda` setup:
-
-```bash
-conda create -n paper-distill python=3.11
-conda activate paper-distill
-pip install -e .
-paper-distill-server
-```
-
-If you run the server manually inside a `conda` environment, this is fine.
-
-If you want to use the bundled plugin launcher unchanged, install `uv` as well, or edit [scripts/run-mcp.sh](/Users/huang/Desktop/paper-distill-v2/scripts/run-mcp.sh) to launch `paper-distill-server` from your activated environment.
-
-Short version:
-
-- `uv`: recommended, matches the repo's bundled runtime
-- `conda`: workable, but you either keep `uv` installed or customize the launcher
-
-## Commands and Workflows
-
-Frequently used commands:
-
-- `/discover <query>`: let the maintainer discover and stage candidate evidence in `inbox/`
-- `/add-paper <doi|arxiv|url>`: let the maintainer ingest a user-approved paper directly
-- `/process-inbox`: let the maintainer move approved inbox notes into `raw/`
-- `/compile`: let the maintainer recompile approved notes into the wiki
-- `/query <question>`: ask against the maintained knowledge base and save substantive query assets
-- `/ideas`: generate research ideas from the maintained knowledge graph and save idea analyses
-- `/summarize <doi|url>`: quickly inspect a paper before deciding what to do
-
-When `add-paper` or `process-inbox` succeeds, expect both Markdown and structured source artifacts to be written under `raw/source/`, plus a CRGP-DNL note under `raw/notes/`.
-
-Substantive `/query` and `/ideas` results are also part of the growth path: they are saved under `queries/` and can later be promoted into canonical wiki pages.
-
-## Zotero Behavior Summary
-
-If you are deciding how tightly to integrate Zotero, this is the practical summary:
-
-- `local_first`: Paper Distill writes import packs into the vault, not into Zotero's storage directory
-- `web_api`: Paper Distill talks to the Zotero library API and may import/link attachments there
-- `disabled`: no Zotero writes at all
-
-So if your goal is “不要保存 PDF 到 Zotero 目录”, use `local_first` or `disabled`.
-
-## Client Support
-
-All supported clients share the same MCP server entrypoint through [./.mcp.json](/Users/huang/Desktop/paper-distill-v2/.mcp.json). Client-specific notes are summarized in [docs/CLIENTS.md](/Users/huang/Desktop/paper-distill-v2/docs/CLIENTS.md).
+MIT
