@@ -666,7 +666,7 @@ async def _write_ingestion_outputs(
             table_count=len(tables),
             equation_count=len(equations),
         ),
-        build_raw_source_body(source_doc),
+        build_raw_source_body(source_doc, source_structured_rel_path),
     )
     if bool(capture_options.get("write_structured_sidecar", True)):
         await asyncio.to_thread(

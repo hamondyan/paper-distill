@@ -8,6 +8,7 @@ from bs4.element import NavigableString, Tag
 
 
 _EQUATION_TABLE_RE = re.compile(r"ltx_equationgroup|ltx_eqn_align|ltx_eqn_table")
+_DISPLAY_MATH_CLASS_RE = re.compile(r"ltx_equation|ltx_equationgroup|ltx_eqn_table")
 
 
 def convert_fragment_to_markdown(
@@ -89,14 +90,54 @@ def _strip_unwanted_elements(soup: BeautifulSoup) -> None:
         tag.decompose()
 
 
+def extract_math_text(node: Tag) -> str:
+    annotation = node.select_one("annotation[encoding*='tex'], annotation[encoding*='latex']")
+    if isinstance(annotation, Tag):
+        text = annotation.get_text(" ", strip=True)
+        if text:
+            return normalize_math_text(text)
+    for attr in ("alttext", "aria-label"):
+        value = str(node.get(attr, "")).strip()
+        if value:
+            return normalize_math_text(value)
+    return normalize_math_text(node.get_text(" ", strip=True))
+
+
+def normalize_math_text(text: str) -> str:
+    value = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not value:
+        return ""
+    value = re.sub(r"(?<!\\)%", "", value)
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = value.strip()
+    while True:
+        updated = value
+        if updated.startswith("\\[") and updated.endswith("\\]"):
+            updated = updated[2:-2].strip()
+        elif updated.startswith("\\(") and updated.endswith("\\)"):
+            updated = updated[2:-2].strip()
+        elif updated.startswith("$$") and updated.endswith("$$"):
+            updated = updated[2:-2].strip()
+        elif updated.startswith("$") and updated.endswith("$"):
+            updated = updated[1:-1].strip()
+        if updated == value:
+            break
+        value = updated
+    return value.strip()
+
+
+def render_display_math(text: str) -> str:
+    normalized = normalize_math_text(text)
+    if not normalized:
+        return ""
+    return f"$$\n{normalized}\n$$"
+
+
 def convert_all_mathml_to_latex(root: BeautifulSoup) -> None:
     for math in root.find_all("math"):
-        annotation = math.find("annotation", attrs={"encoding": "application/x-tex"})
-        if annotation and annotation.text:
-            latex_source = annotation.text.strip()
-            latex_source = re.sub(r"(?<!\\)%", "", latex_source)
-            latex_source = re.sub(r"\\([_^])", r"\1", latex_source)
-            latex_source = re.sub(r"\\(?=[\[\]])", "", latex_source)
+        latex_source = extract_math_text(math)
+        if latex_source:
             math.replace_with(f"${latex_source}$")
         else:
             math.replace_with(math.get_text(" ", strip=True))
@@ -142,6 +183,10 @@ def _serialize_block(
     remove_inline_citations: bool = False,
     remove_internal_links: bool = True,
 ) -> list[str]:
+    if _is_display_math_container(tag):
+        math_text = _display_math_from_container(tag)
+        display = render_display_math(math_text)
+        return [display] if display else []
     if tag.name in {"section", "article", "div", "span"}:
         return _serialize_children(
             tag,
@@ -257,7 +302,7 @@ def _serialize_inline(
             remove_internal_links=remove_internal_links,
         )
     if node.name == "math":
-        text = node.get_text(" ", strip=True)
+        text = extract_math_text(node)
         return f"${text}$" if text else ""
     if "ltx_note" in node.get("class", []):
         text = _normalize_text(
@@ -336,8 +381,7 @@ def _serialize_table(
 ) -> str:
     classes = " ".join(table.get("class", []))
     if _EQUATION_TABLE_RE.search(classes):
-        eqn_text = _normalize_text(table.get_text(" ", strip=True))
-        return f"$$ {eqn_text} $$" if eqn_text else ""
+        return render_display_math(table.get_text(" ", strip=True))
 
     rows: list[list[str]] = []
     tbody_elements = table.find_all(["tbody", "thead", "tfoot"], recursive=False)
@@ -440,3 +484,17 @@ def _cleanup_inline_text(text: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\s*\n\s*", "\n", text)
     return text.strip()
+
+
+def _is_display_math_container(tag: Tag) -> bool:
+    if tag.name == "math":
+        return str(tag.get("display", "")).lower() == "block"
+    classes = " ".join(tag.get("class", []))
+    return bool(_DISPLAY_MATH_CLASS_RE.search(classes))
+
+
+def _display_math_from_container(tag: Tag) -> str:
+    math = tag.find("math")
+    if isinstance(math, Tag):
+        return extract_math_text(math)
+    return normalize_math_text(tag.get_text(" ", strip=True))

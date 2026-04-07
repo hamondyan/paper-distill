@@ -26,7 +26,7 @@ Paper Distill 是一套面向 Obsidian 的研究知识工作流，用来把论�
 
 ### 2. 证据层与知识层分离
 
-- `raw/source/`：稳定证据层
+- `raw/source/`：稳定证据层，默认采用 inline evidence Markdown + `.assets.json` sidecar
 - `raw/notes/`：结构化阅读理解层
 - `wiki/`：编译后的知识层
 

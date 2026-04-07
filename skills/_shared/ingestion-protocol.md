@@ -22,6 +22,11 @@ The canonical resolve → capture → zotero → write flow for adding papers to
 1. If `arxiv_id` exists: use `capture_arxiv_source` (ar5iv HTML cleaning)
 2. If ar5iv fails: automatic PDF fallback via `fetch_pdf_text`
 3. Generate `raw/source/{date}/{citekey}.md` and `raw/source/{date}/{citekey}.assets.json`
+4. Treat `raw/source/*.md` as the agent-facing inline evidence layer:
+   - figures, tables, and display equations should appear near their正文位置
+   - `Appendix Snapshot` may remain for summary-only appendix capture
+   - `Captured Assets Index` points readers back to the `.assets.json` sidecar
+5. Treat `.assets.json` as the authoritative structured evidence layer for sections, figures, tables, equations, and capture provenance
 
 ### 4. Generate CRGP-DNL Note
 

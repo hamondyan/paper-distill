@@ -230,6 +230,9 @@ class PaperAddTest(unittest.TestCase):
             self.assertTrue(Path(result["raw_source_path"]).exists())
             self.assertTrue(Path(result["raw_note_path"]).exists())
             self.assertTrue((Path(tmpdir) / result["source_structured_path"]).exists())
+            raw_source_text = Path(result["raw_source_path"]).read_text(encoding="utf-8")
+            self.assertIn("## Captured Assets Index", raw_source_text)
+            self.assertIn(f"Structured data: {result['source_structured_path']}", raw_source_text)
 
             raw_notes = query_vault_sync(tmpdir, section="raw_notes")
             self.assertEqual(raw_notes["stats"]["raw_notes"], 1)

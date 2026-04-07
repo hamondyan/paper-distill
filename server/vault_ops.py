@@ -531,8 +531,33 @@ def build_inbox_body(paper: dict[str, Any]) -> str:
     })
 
 
-def build_raw_source_body(source_doc: Any) -> str:
-    return str(getattr(source_doc, "markdown", "")).strip()
+def build_raw_source_body(source_doc: Any, source_structured_path: str = "") -> str:
+    body = str(getattr(source_doc, "markdown", "")).strip()
+    figures = list(getattr(source_doc, "figures", []) or [])
+    tables = list(getattr(source_doc, "tables", []) or [])
+    equations = list(getattr(source_doc, "equations", []) or [])
+    if not (figures or tables or equations):
+        return body
+
+    index_lines = [
+        "## Captured Assets Index",
+        "",
+        f"- Figures captured: {len(figures)}",
+        f"- Tables captured: {len(tables)}",
+        f"- Equations captured: {len(equations)}",
+    ]
+    if source_structured_path:
+        index_lines.append(f"- Structured data: {source_structured_path}")
+
+    if "## Captured Assets Index" in body:
+        if source_structured_path and f"- Structured data: {source_structured_path}" not in body:
+            body = f"{body}\n- Structured data: {source_structured_path}"
+        return body
+
+    index_block = "\n".join(index_lines).strip()
+    if not body:
+        return index_block
+    return f"{body}\n\n{index_block}"
 
 
 def build_raw_note_body(note_payload: dict[str, Any]) -> str:

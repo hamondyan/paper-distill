@@ -33,8 +33,9 @@ Paper Distill 把知识拆成几层：
 
 内容通常包括：
 
-- 清洗后的正文 Markdown
-- 结构化 sidecar
+- 贴近正文的 inline evidence Markdown
+- `Appendix Snapshot` 与 `Captured Assets Index`
+- 结构化 `.assets.json` sidecar
 - capture provenance
 
 它回答的是：**“这篇论文里实际说了什么？”**
