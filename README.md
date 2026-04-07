@@ -80,6 +80,11 @@ Paper Distill 当前以统一 bundle 形式提供给：
 
 详细兼容说明见：[docs/integration/clients.md](docs/integration/clients.md)
 
+## Todo
+- zotero 链接功能仍不稳定, 推荐暂时使用 disabled
+- 论文检索后提供给用户的 inbox 界面简陋, 需后期美化并提炼更多信息
+- 只在 codex 和 uv 环境下测试通过, conda环境和 openclaw, claude 安装测试仍未完成
+
 ## 3 分钟上手
 
 ### 推荐：让 agent 协助你完成配置
