@@ -14,7 +14,7 @@
 - `integration/`：安装、运行、客户端兼容
 - `reference/`：配置、目录结构、命令参考
 - `releases/`：版本说明、发布说明
-- `archive/`：旧计划、旧评审、旧设计文档，保留追溯性
+- `archive/`：旧计划、旧评审、已实施设计与历史工作流文档，保留追溯性
 
 ## 推荐阅读路径
 
@@ -65,3 +65,4 @@
 ### 历史归档
 
 - [archive/README.md](archive/README.md)
+- [archive/designs/raw-source-inline-v2.md](archive/designs/raw-source-inline-v2.md)

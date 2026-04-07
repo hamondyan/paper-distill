@@ -13,7 +13,12 @@ from rapidfuzz import fuzz
 from server.arxiv_capture_adapter import CleanedArxivDocument, build_cleaned_document
 from server.arxiv_html_fetch import fetch_arxiv_html_with_fallback
 from server.arxiv_html_parser import parse_arxiv_html_document
-from server.arxiv_markdown import node_text_content, table_html_to_markdown
+from server.arxiv_markdown import (
+    extract_math_text,
+    node_text_content,
+    render_display_math,
+    table_html_to_markdown,
+)
 from server.paper_utils import (
     canonical_html_url,
     canonical_item_url,
@@ -261,17 +266,7 @@ def _label_from_caption(caption: str, prefix: str, fallback_index: int) -> str:
 
 
 def _math_text(node: Tag) -> str:
-    for attr in ("alttext", "aria-label", "data-mathml"):
-        value = str(node.get(attr, "")).strip()
-        if value:
-            return _collapse_ws(value)
-    annotation = node.select_one("annotation[encoding*='tex'], annotation[encoding*='latex']")
-    if isinstance(annotation, Tag):
-        text = annotation.get_text(" ", strip=True)
-        if text:
-            return _collapse_ws(text)
-    text = node.get_text(" ", strip=True)
-    return _collapse_ws(text)
+    return extract_math_text(node)
 
 
 def _table_markdown(rows: list[list[str]]) -> str:
@@ -301,6 +296,81 @@ def _table_summary(rows: list[list[str]], caption: str) -> str:
     return f"Columns: {header}."
 
 
+def _is_table_figure(figure: Tag) -> bool:
+    caption_node = figure.find("figcaption")
+    caption = _clean_text(caption_node.get_text(" ", strip=True)) if isinstance(caption_node, Tag) else ""
+    return figure.find("table") is not None or caption.lower().startswith("table ")
+
+
+def _is_equation_node(node: Tag) -> bool:
+    classes = " ".join(node.get("class", [])).lower()
+    if node.name == "math":
+        return str(node.get("display", "")).lower() == "block"
+    return "ltx_equation" in classes or "ltx_equationgroup" in classes or "ltx_eqn_table" in classes
+
+
+def _mark_handled(node: Tag, handled_node_ids: set[int]) -> None:
+    handled_node_ids.add(id(node))
+    for descendant in node.find_all(True):
+        handled_node_ids.add(id(descendant))
+
+
+def _append_section_caption(current_section: dict[str, Any] | None, caption: str) -> None:
+    if current_section is None or not caption:
+        return
+    captions = current_section.setdefault("captions", [])
+    if caption not in captions:
+        captions.append(caption)
+
+
+def _render_figure_block(item: dict[str, Any]) -> str:
+    blocks = [f"**{item['label']}**"]
+    caption = str(item.get("caption", "")).strip()
+    if caption:
+        blocks.append(caption)
+    image_url = str(item.get("image_url", "")).strip()
+    if image_url:
+        blocks.append(f"Image URL: {image_url}")
+    return "\n\n".join(block for block in blocks if block).strip()
+
+
+def _render_table_block(item: dict[str, Any]) -> str:
+    blocks = [f"**{item['label']}**"]
+    caption = str(item.get("caption", "")).strip()
+    if caption:
+        blocks.append(caption)
+    markdown = str(item.get("markdown", "")).strip()
+    if markdown:
+        blocks.append(markdown)
+    return "\n\n".join(block for block in blocks if block).strip()
+
+
+def _render_equation_block(item: dict[str, Any]) -> str:
+    display = render_display_math(str(item.get("text", "")))
+    blocks = [f"**{item['label']}**"]
+    if display:
+        blocks.append(display)
+    return "\n\n".join(block for block in blocks if block).strip()
+
+
+def _captured_assets_index_block(
+    figures: list[dict[str, Any]],
+    tables: list[dict[str, Any]],
+    equations: list[dict[str, Any]],
+) -> str:
+    if not (figures or tables or equations):
+        return ""
+    return "\n".join(
+        [
+            "## Captured Assets Index",
+            "",
+            f"- Figures captured: {len(figures)}",
+            f"- Tables captured: {len(tables)}",
+            f"- Equations captured: {len(equations)}",
+        ]
+    ).strip()
+
+
 def _extract_figures(
     article: Tag,
     *,
@@ -322,7 +392,7 @@ def _extract_figures(
             continue
         caption_node = figure.find("figcaption")
         caption = _clean_text(caption_node.get_text(" ", strip=True)) if isinstance(caption_node, Tag) else ""
-        if figure.find("table") is not None or caption.lower().startswith("table "):
+        if _is_table_figure(figure):
             continue
         image = figure.find("img")
         image_url = ""
@@ -494,6 +564,10 @@ def clean_ar5iv_html(
     appendix_snapshot: list[dict[str, str]] = []
     in_appendix = False
     current_appendix: dict[str, str] | None = None
+    handled_node_ids: set[int] = set()
+    figure_index = 0
+    table_index = 0
+    equation_index = 0
 
     def ensure_section(heading: str, level: int) -> dict[str, Any]:
         nonlocal current_section
@@ -502,8 +576,10 @@ def clean_ar5iv_html(
         current_section = section
         return section
 
-    for node in article.find_all(["h2", "h3", "h4", "p", "figcaption"], recursive=True):
+    for node in article.find_all(["h2", "h3", "h4", "p", "figure", "table", "div", "math"], recursive=True):
         if not isinstance(node, Tag):
+            continue
+        if id(node) in handled_node_ids:
             continue
         if node.name == "p" and _has_ancestor_with_class(node, "ltx_abstract"):
             continue
@@ -535,6 +611,88 @@ def clean_ar5iv_html(
             ensure_section(text, level)
             continue
 
+        if in_appendix and appendix_mode in {"summary", "drop"}:
+            if appendix_mode == "drop":
+                _mark_handled(node, handled_node_ids)
+                continue
+            if node.name == "p":
+                text = _clean_text_body(
+                    node_text_content(
+                        node,
+                        remove_inline_citations=remove_inline_citations,
+                        remove_internal_links=remove_internal_links,
+                    )
+                )
+                if current_appendix and not current_appendix["summary"] and len(text) >= 20:
+                    current_appendix["summary"] = text
+            else:
+                _mark_handled(node, handled_node_ids)
+            continue
+
+        if node.name == "figure":
+            _mark_handled(node, handled_node_ids)
+            if _is_table_figure(node):
+                if table_index >= len(tables):
+                    continue
+                table_item = tables[table_index]
+                table_index += 1
+                _append_section_caption(current_section, str(table_item.get("caption", "")))
+                table_block = _render_table_block(table_item)
+                if table_block:
+                    body_blocks.append(table_block)
+                continue
+            if figure_index >= len(figures):
+                continue
+            figure_item = figures[figure_index]
+            figure_index += 1
+            _append_section_caption(current_section, str(figure_item.get("caption", "")))
+            figure_block = _render_figure_block(figure_item)
+            if figure_block:
+                body_blocks.append(figure_block)
+            continue
+
+        if node.name == "table":
+            if isinstance(node.find_parent("figure"), Tag):
+                continue
+            _mark_handled(node, handled_node_ids)
+            if _is_equation_node(node):
+                if equation_index >= len(equations):
+                    continue
+                equation_item = equations[equation_index]
+                equation_index += 1
+                equation_block = _render_equation_block(equation_item)
+                if equation_block:
+                    body_blocks.append(equation_block)
+                continue
+            table_classes = " ".join(node.get("class", [])).lower()
+            if "ltx_tabular" not in table_classes:
+                continue
+            if table_index >= len(tables):
+                continue
+            table_item = tables[table_index]
+            table_index += 1
+            _append_section_caption(current_section, str(table_item.get("caption", "")))
+            table_block = _render_table_block(table_item)
+            if table_block:
+                body_blocks.append(table_block)
+            continue
+
+        if node.name in {"div", "math"} and _is_equation_node(node):
+            if node.name == "math" and _has_ancestor_with_class(node, "ltx_equation"):
+                continue
+            _mark_handled(node, handled_node_ids)
+            if equation_index >= len(equations):
+                continue
+            equation_item = equations[equation_index]
+            equation_index += 1
+            equation_block = _render_equation_block(equation_item)
+            if equation_block:
+                body_blocks.append(equation_block)
+            continue
+
+        if node.name != "p":
+            continue
+
         text = _clean_text_body(
             node_text_content(
                 node,
@@ -543,19 +701,6 @@ def clean_ar5iv_html(
             )
         )
         if len(text) < 20:
-            continue
-
-        if in_appendix and appendix_mode in {"summary", "drop"}:
-            if appendix_mode == "drop":
-                continue
-            if current_appendix and not current_appendix["summary"] and node.name == "p":
-                current_appendix["summary"] = text
-            continue
-
-        if node.name == "figcaption":
-            body_blocks.append(f"> Caption: {text}")
-            if current_section is not None:
-                current_section["captions"].append(text)
             continue
 
         body_blocks.append(text)
@@ -575,49 +720,26 @@ def clean_ar5iv_html(
     if bibliography_ratio > 0.45:
         raise ValueError(f"bibliography ratio too high ({bibliography_ratio:.2f})")
 
-    lines = [
+    blocks = [
         f"# {title}",
-        "",
         "## Abstract",
-        "",
         abstract or "Abstract unavailable.",
-        "",
+        *body_blocks,
     ]
-    lines.extend(body_blocks)
     if appendix_snapshot:
-        lines.extend(["", "## Appendix Snapshot", ""])
+        blocks.append("## Appendix Snapshot")
         for item in appendix_snapshot:
-            lines.append(f"### {item['heading']}")
-            lines.append("")
-            lines.append(item["summary"] or "Appendix section detected, but no stable paragraph survived cleaning.")
-            lines.append("")
-    if figures:
-        lines.extend(["", "## Figure Snapshot", ""])
-        for item in figures:
-            lines.append(f"### {item['label']} ({item['section']})")
-            lines.append("")
-            lines.append(item["caption"])
-            if item.get("image_url"):
-                lines.append("")
-                lines.append(f"Image URL: {item['image_url']}")
-            lines.append("")
-    if tables:
-        lines.extend(["", "## Table Snapshot", ""])
-        for item in tables:
-            lines.append(f"### {item['label']} ({item['section']})")
-            lines.append("")
-            lines.append(item["summary"])
-            if item.get("markdown"):
-                lines.append("")
-                lines.append(item["markdown"])
-            lines.append("")
-    if equations:
-        lines.extend(["", "## Equation Snapshot", ""])
-        for item in equations:
-            lines.append(f"### {item['label']} ({item['section']})")
-            lines.append("")
-            lines.append(item["text"])
-            lines.append("")
+            blocks.append(
+                "\n\n".join(
+                    [
+                        f"### {item['heading']}",
+                        item["summary"] or "Appendix section detected, but no stable paragraph survived cleaning.",
+                    ]
+                )
+            )
+    assets_index = _captured_assets_index_block(figures, tables, equations)
+    if assets_index:
+        blocks.append(assets_index)
 
     quality = {
         "body_chars": main_body_chars,
@@ -633,7 +755,7 @@ def clean_ar5iv_html(
     return build_cleaned_document(
         title=title,
         abstract=abstract,
-        markdown="\n".join(lines).strip(),
+        markdown="\n\n".join(block for block in blocks if block).strip(),
         sections=sections,
         appendix_snapshot=appendix_snapshot,
         quality=quality,
@@ -763,6 +885,26 @@ def _structured_items_for_bucket(
     return texts
 
 
+def _structured_labels_for_bucket(
+    items: list[dict[str, Any]],
+    bucket: str,
+    *,
+    limit: int = 2,
+) -> list[str]:
+    labels: list[str] = []
+    keywords = _SECTION_KEYWORDS.get(bucket, ())
+    for item in items:
+        section = str(item.get("section", "")).lower()
+        if keywords and not any(keyword in section for keyword in keywords):
+            continue
+        label = _collapse_ws(str(item.get("label", "")))
+        if label and label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
 def _fallback_from_abstract(abstract: str, default: str) -> str:
     summary = _take_sentences([abstract], limit=3)
     return summary or default
@@ -870,17 +1012,20 @@ def build_crgp_dnl(
         "Gap": [section["heading"] for section in intro_sections[:1]] or ["Abstract"],
         "Proposal": (
             [section["heading"] for section in proposal_sections[:2]]
-            + (["Equation Snapshot"] if proposal_support else [])
+            + _structured_labels_for_bucket(source_doc.equations, "proposal")
         ) or ["Abstract"],
         "Key Results": (
             [section["heading"] for section in result_sections[:2]]
-            + (["Figure Snapshot"] if source_doc.figures else [])
-            + (["Table Snapshot"] if source_doc.tables else [])
+            + _structured_labels_for_bucket(source_doc.figures, "results")
+            + _structured_labels_for_bucket(source_doc.tables, "results")
         ) or ["Abstract"],
         "Discussion": [section["heading"] for section in discussion_sections[:2]] + (
-            ["Appendix Snapshot"] if source_doc.appendix_snapshot else []
+            [item["heading"] for item in source_doc.appendix_snapshot[:1]]
         ),
-        "Next Steps": [section["heading"] for section in discussion_sections[:1]] or ["Appendix Snapshot"],
+        "Next Steps": (
+            [section["heading"] for section in discussion_sections[:1]]
+            + [item["heading"] for item in source_doc.appendix_snapshot[:1]]
+        ) or ["Abstract"],
     }
 
     confidence_hits = sum(

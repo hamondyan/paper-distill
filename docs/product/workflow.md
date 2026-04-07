@@ -52,7 +52,7 @@ discover -> inbox approval -> raw/source -> raw/notes -> wiki -> query / ideas -
 行为：
 
 - 抓取 HTML 或 PDF
-- 生成清洗后的 `raw/source/`
+- 生成清洗后的 `raw/source/` inline evidence Markdown 与 `.assets.json`
 - 生成结构化的 `raw/notes/`
 - 可选执行 Zotero handoff
 

@@ -35,6 +35,10 @@ Call `query_vault(section="raw_notes", uncompiled_only=true)`.
 
 Read `raw/notes/{date}/{citekey}.md` and consult `raw/source/{date}/{citekey}.md` as needed. Create `wiki/papers/{citekey}.md` following the structure in `templates/wiki-paper.md.j2`.
 
+When reading `raw/source`, assume it is inline evidence markdown:
+- figures, tables, and equations are usually rendered near the surrounding section text rather than in trailing snapshot sections
+- use the `.assets.json` sidecar when you need the authoritative structured figure/table/equation payload
+
 Required frontmatter: citekey, paper_id, title, authors, year, doi, arxiv_id, venue, topics, concepts, methods, claims, limitations, open_questions, source_raw_path, source_note_path, zotero_uri, compiled, quality_score, relevance_score, confidence, updated_at.
 
 Key requirements:

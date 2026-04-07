@@ -37,3 +37,18 @@ class ArxivMarkdownTest(unittest.TestCase):
         self.assertIn("We study", markdown)
         self.assertIn("systems.", markdown)
         self.assertNotIn("Anthropic", markdown)
+
+    def test_convert_fragment_normalizes_math_wrappers_for_display_blocks(self) -> None:
+        html = """
+        <div class="ltx_equation">
+          <math alttext="\\[x + y\\]">x + y</math>
+        </div>
+        <table class="ltx_eqn_table">
+          <tr><td><math><annotation encoding="application/x-tex">$z = 1$</annotation></math></td></tr>
+        </table>
+        """
+
+        markdown = convert_fragment_to_markdown(html)
+
+        self.assertIn("$$\nx + y\n$$", markdown)
+        self.assertIn("$$\nz = 1\n$$", markdown)

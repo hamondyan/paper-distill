@@ -37,7 +37,9 @@
 ### `raw/source/`
 
 - 存放清洗后的论文证据层
-- 可含 `.assets.json` sidecar
+- 默认采用 inline evidence Markdown：图、表、公式尽量贴近正文位置
+- 可能保留 `Appendix Snapshot` 与 `Captured Assets Index`
+- 配套 `.assets.json` sidecar 是结构化证据主契约
 
 ### `raw/notes/`
 
