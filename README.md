@@ -51,9 +51,9 @@ Paper Distill 走的是另一条路线：
 ## 核心特性
 
 - **Human-in-the-loop**：论文发现先进入 `inbox/`，人工审批后才进入知识库
-- **双层原始资产**：`raw/source/` 保存稳定证据，`raw/notes/` 保存结构化阅读理解
+- **双层 source 资产**：`sources/evidence/` 保存稳定证据，`sources/notes/` 保存结构化阅读理解
 - **结构化知识编译**：把原始笔记编译到 `wiki/papers`、`wiki/concepts`、`wiki/methods`、`wiki/topics`
-- **查询结果继续沉淀**：高价值 `/query` 和 `/ideas` 结果会进入 `queries/`
+- **查询结果继续沉淀**：高价值 `/query` 和 `/ideas` 结果会进入 `insights/queries/`
 - **可见的知识增长**：`index.md` 提供内容地图，`log.md` 提供时间线
 - **研究友好的维护层**：概念注册表、编译状态、维护队列、张力信号聚合
 - **兼容 Zotero**：支持 `local_first`、`web_api`、`disabled`
@@ -161,19 +161,19 @@ uv --directory <repo-root> run paper-distill-server
 ### 常规发现流
 
 ```text
-discover -> inbox approval -> raw/source -> raw/notes -> Zotero handoff -> wiki
+discover -> inbox approval -> sources/evidence -> sources/notes -> Zotero handoff -> wiki
 ```
 
 ### 直接纳入流
 
 ```text
-add-paper -> raw/source -> raw/notes -> Zotero handoff -> wiki
+add-paper -> sources/evidence -> sources/notes -> Zotero handoff -> wiki
 ```
 
 ### 查询与复利流
 
 ```text
-query / ideas -> queries -> promotion targets -> wiki updates
+query / ideas -> insights/queries -> promotion targets -> wiki updates
 ```
 
 ## 使用用例
@@ -195,7 +195,7 @@ LLM 会做什么：
 
 - 从多源检索论文
 - 给出候选卡片和推荐理由
-- 对批准论文生成 `raw/source/` 和 `raw/notes/`
+- 对批准论文生成 `sources/evidence/` 和 `sources/notes/`
 - 在你需要时继续编译进 `wiki/`
 
 最终产出：
@@ -217,7 +217,7 @@ LLM 会做什么：
 
 - 解析论文元数据
 - 抓取并清洗正文
-- 生成 `raw/source/` 和 `raw/notes/`
+- 生成 `sources/evidence/` 和 `sources/notes/`
 - 可选写入 Zotero
 - 为后续 `/compile` 做准备
 
@@ -238,9 +238,9 @@ LLM 会做什么：
 
 LLM 会做什么：
 
-- 遍历 `wiki/` 和必要的 `raw/`
+- 遍历 `wiki/` 和必要的 `sources/`
 - 给出基于已有知识层的回答
-- 将高价值结果沉淀到 `queries/`
+- 将高价值结果沉淀到 `insights/queries/`
 - 生成 promotion targets，供后续升格到 canonical wiki 页面
 
 最终产出：
@@ -284,11 +284,11 @@ Paper Distill 最适合这样使用：
 这意味着：
 
 - `/discover` 是让维护者发现候选证据
-- `/process-inbox` / `/add-paper` 是让维护者摄取新证据
-- `/compile` 是让维护者重编译知识结构
+- `/process-inbox` / `/add-paper` / `/ingest` 是让维护者执行 source ingest
+- `/compile` 是让维护者执行 knowledge compile
 - `/lint` 是让维护者体检知识图谱
-- `/query` 是让维护者在现有结构上回答并沉淀新认知
-- `/ideas` 是让维护者把张力、空白和桥接机会转成研究假设
+- `/query` 是让维护者在现有结构上做 wiki query
+- `/ideas` 是让维护者把张力、空白和桥接机会转成 idea drafts
 
 ## Vault 目录结构
 
@@ -299,9 +299,10 @@ Paper Distill 在你的 Obsidian Vault 中写入：
 ├── inbox/
 ├── index.md
 ├── log.md
-├── raw/
-│   ├── source/
+├── sources/
+│   ├── evidence/
 │   └── notes/
+├── memory/
 ├── zotero/
 │   └── imports/
 ├── wiki/
@@ -309,15 +310,21 @@ Paper Distill 在你的 Obsidian Vault 中写入：
 │   ├── concepts/
 │   ├── methods/
 │   └── topics/
-├── daily-log/
-└── queries/
+└── insights/
+    ├── digests/
+    ├── dialogues/
+    ├── ideas/
+    ├── queries/
+    └── verification/
 ```
 
 其中：
 
 - `index.md`：当前知识版图
 - `log.md`：知识维护时间线
-- `queries/`：查询资产、比较笔记、topic synthesis、idea analysis
+- `sources/`：证据与结构化 source notes
+- `memory/`：当前 memory views
+- `insights/queries/`：查询资产、比较笔记、topic synthesis、idea analysis
 
 更详细的目录说明见：[docs/reference/vault-layout.md](docs/reference/vault-layout.md)
 
@@ -338,9 +345,9 @@ Paper Distill 同时支持：
 如果你希望行为更稳定、更可预测，推荐优先使用 `/命令`。
 
 - `/discover <query>`：发现并写入候选 inbox
-- `/add-paper <doi|arxiv|url>`：直接纳入用户已批准论文
-- `/process-inbox`：处理 `approved` inbox 项
-- `/compile`：把原始笔记编译为 wiki
+- `/add-paper <doi|arxiv|url>`：通过 `source-ingest` 直接纳入用户已批准论文
+- `/process-inbox`：通过 `source-ingest` 处理 `approved` inbox 项
+- `/compile`：把 `sources/notes/` 编译为 wiki
 - `/query <question>`：查询知识库并沉淀高价值结果
 - `/ideas`：基于知识图谱生成研究思路
 - `/lint`：体检知识库与维护状态

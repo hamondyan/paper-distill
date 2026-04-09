@@ -1,17 +1,17 @@
 ---
-name: idea-generator
+name: idea-discover
 description: Use when the user says "research ideas", "gap analysis", "给我一些研究思路", "研究方向", "有什么可以做的", "open problems", "what should I work on", "what are the research gaps", "帮我找研究方向", "/ideas", or asks for novel angles and directions based on their paper collection.
 ---
 
-# Idea Generator
+# Idea Discover
 
-Identify research gaps and generate actionable ideas. Uses `analyze_knowledge_graph` MCP tool for structural analysis, then LLM for qualitative interpretation. Idea outputs should become knowledge assets, not vanish into chat.
+Identify research gaps and generate actionable idea drafts. Uses `idea-discover` for structural analysis, then LLM for qualitative interpretation. Idea outputs should become knowledge assets, not vanish into chat.
 
 ## Workflow
 
 ### Step 1: Structural Analysis (Python)
 
-Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists from two sources:
+Call `idea-discover` MCP tool. It returns condensed gap lists from two sources:
 
 **Graph-based (always available):**
 - **Methodology mismatches:** Concepts proven in domain A but not applied to user's topics
@@ -26,9 +26,9 @@ Call `analyze_knowledge_graph` MCP tool. It returns condensed gap lists from two
 - **ir_failure_modes:** Structured failure modes from paper IRs
 - **ir_transfer_constraints:** Explicit transfer barriers and deployment constraints
 
-For deeper tension analysis, also call `query_tension_signals(min_occurrence=2)` — this returns the full `all_assumptions` list that the LLM can scan for conflicting premises across papers.
+For deeper tension analysis, also call `idea-tension-signals(min_occurrence=2)` — this returns the full `all_assumptions` list that the LLM can scan for conflicting premises across papers.
 
-For Phase 3 trigger-aware ideation, also call `query_trigger_candidates()` to inspect:
+For Phase 3 trigger-aware ideation, also call `idea-trigger-candidates()` to inspect:
 
 - `contradiction_candidates`
 - `recurring_limitation_spikes`
@@ -68,13 +68,13 @@ When trigger candidates exist, prefer building at least one idea card from:
 
 ### Step 3: Save Results
 
-Write to `queries/idea-analysis-{YYYY-MM-DD}.md` with frontmatter:
+Write to `insights/queries/idea-analysis-{YYYY-MM-DD}.md` with frontmatter:
 ```yaml
 type: idea-analysis
 date: {today}
 topics_analyzed: [{topics}]
 gaps_found: {count}
-source_pages: [supporting wiki/raw pages]
+source_pages: [supporting wiki/source pages]
 promotion_targets:
   - page_type: topic
     page_id: "{topic id}"
@@ -84,6 +84,7 @@ status: saved
 When a single idea is strong enough to stand alone, also save an `idea-memo` asset that links back to the driving topic or concept tension.
 
 Every saved idea asset should point back to the topic or concept page where the tension belongs.
+These are local evidence-backed idea drafts, not externally verified memos.
 
 ## Output
 

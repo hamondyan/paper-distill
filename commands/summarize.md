@@ -8,4 +8,4 @@ Summarize a paper given a DOI, URL, or pasted abstract. Provides structured extr
 
 Usage: `/summarize <DOI or URL>`
 
-Invoke `paper-distill:paper-summarize`.
+Invoke `paper-distill:paper-distill`.

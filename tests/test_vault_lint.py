@@ -81,7 +81,7 @@ class LintVaultTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = _make_vault(tmpdir)
             write_markdown(
-                root / "raw" / "notes" / "2026-04-05" / "jones2024-bar.md",
+                root / "sources" / "notes" / "2026-04-05" / "jones2024-bar.md",
                 {"paper_id": "arxiv:2401.00001", "compiled": False, "title": "Bar"},
                 "# Bar",
             )
@@ -126,7 +126,7 @@ class LintVaultTest(unittest.TestCase):
                 "compiled": True,
             }
             write_markdown(
-                root / "raw" / "notes" / "2026-04-05" / "same-paper.md",
+                root / "sources" / "notes" / "2026-04-05" / "same-paper.md",
                 frontmatter,
                 "# Raw Note",
             )
@@ -172,7 +172,7 @@ class VaultStatsTest(unittest.TestCase):
             )
             # Add raw note
             write_markdown(
-                root / "raw" / "notes" / "2026-04-05" / "c.md",
+                root / "sources" / "notes" / "2026-04-05" / "c.md",
                 {"paper_id": "doi:c", "compiled": True, "topics": ["vla"]},
                 "# C",
             )

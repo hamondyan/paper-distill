@@ -17,7 +17,7 @@ updated: {{ date }}
 
 ## Stats
 
-- Papers ingested: `= length(filter(pages("Paper Distill/raw"), (p) => p.citekey))`
+- Papers ingested: `= length(filter(pages("Paper Distill/sources/notes"), (p) => p.citekey))`
 - Papers compiled: `= length(filter(pages("Paper Distill/wiki/papers"), (p) => p.citekey))`
 - Concepts: `= length(pages("Paper Distill/wiki/concepts"))`
 - Methods: `= length(pages("Paper Distill/wiki/methods"))`
@@ -27,7 +27,7 @@ updated: {{ date }}
 
 ```dataview
 TABLE year, join(topics, ", ") as Topics
-FROM "Paper Distill/raw"
+FROM "Paper Distill/sources/notes"
 WHERE citekey
 SORT ingested DESC
 LIMIT 10
@@ -58,14 +58,14 @@ SORT retrieved_at DESC
 ```
 {% endif %}
 
-{% if section == "raw" %}
-> Chronological list of all ingested papers. AI agents: use `query_vault(section="raw")`.
+{% if section == "sources" %}
+> Chronological list of all ingested source notes. AI agents: use `query_vault(section="sources")`.
 
-## All Raw Papers
+## All Source Notes
 
 ```dataview
 TABLE year, join(topics, ", ") as Topics, compiled as Compiled
-FROM "Paper Distill/raw"
+FROM "Paper Distill/sources/notes"
 WHERE citekey
 SORT ingested DESC
 ```
@@ -74,7 +74,7 @@ SORT ingested DESC
 
 ```dataview
 LIST
-FROM "Paper Distill/raw"
+FROM "Paper Distill/sources/notes"
 WHERE compiled = false
 SORT ingested DESC
 ```
@@ -142,12 +142,12 @@ SORT file.name ASC
 
 ```dataview
 TABLE type, status, join(topics_referenced, ", ") as Topics
-FROM "Paper Distill/queries"
+FROM "Paper Distill/insights/queries"
 WHERE question
 SORT date DESC
 ```
 {% endif %}
 
-{% if section == "daily-log" %}
+{% if section == "digests" %}
 > Daily digests show day-by-day discovery. Use `log.md` for the cross-day operational timeline.
 {% endif %}

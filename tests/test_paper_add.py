@@ -245,7 +245,7 @@ class PaperAddTest(unittest.TestCase):
             )
             self.assertEqual(result["knowledge_impact"]["queries_saved"], [])
             log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
-            self.assertIn("add-paper", log_text)
+            self.assertIn("source-ingest", log_text)
             self.assertIn("A Direct Add Paper", log_text)
 
     def test_add_paper_returns_existing_record_without_rewriting(self) -> None:
@@ -260,7 +260,7 @@ class PaperAddTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            note_path = root / "raw" / "notes" / "2026-04-05" / "doe2026-existing.md"
+            note_path = root / "sources" / "notes" / "2026-04-05" / "doe2026-existing.md"
             write_markdown(
                 note_path,
                 {
@@ -269,7 +269,7 @@ class PaperAddTest(unittest.TestCase):
                     "title": paper["title"],
                     "doi": paper["doi"],
                     "compiled": False,
-                    "source_raw_path": "Paper Distill/raw/source/2026-04-05/doe2026-existing.md",
+                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-05/doe2026-existing.md",
                 },
                 "# Existing",
             )
@@ -349,7 +349,7 @@ class PaperAddTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            note_path = root / "raw" / "notes" / "2026-04-05" / "url-dedup.md"
+            note_path = root / "sources" / "notes" / "2026-04-05" / "url-dedup.md"
             write_markdown(
                 note_path,
                 {
@@ -357,7 +357,7 @@ class PaperAddTest(unittest.TestCase):
                     "title": "Existing URL Paper",
                     "compiled": False,
                     "canonical_pdf_url": "https://example.com/dedup.pdf",
-                    "source_raw_path": "Paper Distill/raw/source/2026-04-05/url-dedup-source.md",
+                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-05/url-dedup-source.md",
                 },
                 "# Existing URL Paper",
             )

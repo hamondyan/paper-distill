@@ -11,27 +11,20 @@ import yaml
 
 from server.paper_utils import first_author_surname, normalise_title
 from server.template_render import render_template
+from server.vault_contract import (
+    PAPER_DISTILL_ROOT,
+    ROOT_DIRS,
+    assert_supported_write_path,
+    paper_distill_root,
+    root_path,
+    root_rel_path,
+    template_contract_context,
+)
 
 LOG = logging.getLogger(__name__)
 
-PAPER_DISTILL_ROOT = "Paper Distill"
-
 _SECTION_DIRS = {
-    "inbox": "inbox",
-    "raw": "raw",
-    "raw_source": "raw/source",
-    "raw_notes": "raw/notes",
-    "zotero": "zotero",
-    "zotero_imports": "zotero/imports",
-    "wiki": "wiki",
-    "papers": "wiki/papers",
-    "concepts": "wiki/concepts",
-    "methods": "wiki/methods",
-    "topics": "wiki/topics",
-    "daily-log": "daily-log",
-    "queries": "queries",
-    "compiled_ir": "compiled_ir",
-    "state": ".state",
+    key: rel_path for key, rel_path in ROOT_DIRS.items()
 }
 
 _INDEX_CONTENT = {
@@ -43,15 +36,16 @@ updated: ""
 
 # Paper Distill
 
-Research knowledge system with human approval, arXiv-backed source capture, Zotero grounding, and AI-maintained wiki layers.
+Research knowledge system with human approval, evidence-first source capture, insight assets, and AI-maintained wiki layers.
 
 ## Sections
 
 - `inbox/` candidate papers awaiting review
-- `raw/source/` cleaned arXiv source captures
-- `raw/notes/` CRGP-DNL structured reading notes
+- `sources/evidence/` source-grounded evidence captures
+- `sources/notes/` CRGP-DNL structured source notes
 - `wiki/` compiled knowledge pages
-- `queries/` saved answers and idea analyses
+- `insights/` saved digests, query assets, ideas, and dialogue artifacts
+- `memory/` current-view advisory memory surfaces
 """,
     "inbox": """---
 type: index
@@ -68,38 +62,38 @@ Candidate papers discovered by AI. Review the `status` field in each note:
 - `rejected`
 - `deferred`
 """,
-    "raw": """---
+    "sources": """---
 type: index
-section: raw
+section: sources
 updated: ""
 ---
 
-# Raw Layer
+# Sources
 
-Dual-layer source capture for approved papers.
+Evidence-first source layer for approved papers.
 
-- `source/` holds cleaned arXiv captures
-- `notes/` holds CRGP-DNL reading notes
+- `evidence/` holds cleaned source captures plus sidecars
+- `notes/` holds CRGP-DNL reading notes grounded in source evidence
 """,
-    "raw_source": """---
+    "sources_evidence": """---
 type: index
-section: raw/source
+section: sources/evidence
 updated: ""
 ---
 
-# Raw Source
+# Source Evidence
 
-Cleaned arXiv full-text captures. This is the stable evidence layer.
+Cleaned source captures. This is the stable evidence layer.
 """,
-    "raw_notes": """---
+    "sources_notes": """---
 type: index
-section: raw/notes
+section: sources/notes
 updated: ""
 ---
 
-# Raw Notes
+# Source Notes
 
-CRGP-DNL structured reading notes generated from `raw/source`.
+CRGP-DNL structured reading notes generated from `sources/evidence`.
 """,
     "zotero": """---
 type: index
@@ -129,7 +123,7 @@ updated: ""
 
 # Wiki
 
-Compiled knowledge derived only from approved raw notes.
+Compiled knowledge derived only from approved source notes.
 """,
     "papers": """---
 type: index
@@ -163,21 +157,63 @@ updated: ""
 
 # Topics
 """,
+    "insights": """---
+type: index
+section: insights
+updated: ""
+---
+
+# Insights
+
+Saved research-facing outputs that are not canonical wiki pages.
+""",
     "queries": """---
 type: index
-section: queries
+section: insights/queries
 updated: ""
 ---
 
-# Queries
+# Query Assets
 """,
-    "daily-log": """---
+    "ideas": """---
 type: index
-section: daily-log
+section: insights/ideas
 updated: ""
 ---
 
-# Daily Log
+# Ideas
+""",
+    "dialogues": """---
+type: index
+section: insights/dialogues
+updated: ""
+---
+
+# Dialogues
+""",
+    "verification": """---
+type: index
+section: insights/verification
+updated: ""
+---
+
+# Verification
+""",
+    "digests": """---
+type: index
+section: insights/digests
+updated: ""
+---
+
+# Digests
+""",
+    "memory": """---
+type: index
+section: memory
+updated: ""
+---
+
+# Memory
 """,
 }
 _RAW_NOTE_SECTIONS = (
@@ -205,10 +241,6 @@ def _now_date() -> str:
     return datetime.now().date().isoformat()
 
 
-def paper_distill_root(vault_path: str) -> Path:
-    return Path(vault_path).expanduser() / PAPER_DISTILL_ROOT
-
-
 def global_index_path(vault_path: str) -> Path:
     return paper_distill_root(vault_path) / "index.md"
 
@@ -220,17 +252,7 @@ def knowledge_log_path(vault_path: str) -> Path:
 def _index_path(root: Path, key: str) -> Path:
     if key == "master":
         return root / "_index.md"
-    if key == "wiki":
-        return root / "wiki" / "_index.md"
-    if key in {"inbox", "raw", "queries", "daily-log"}:
-        return root / key / "_index.md"
-    if key in {"raw_source", "raw_notes"}:
-        return root / "raw" / key.split("_", 1)[1] / "_index.md"
-    if key == "zotero":
-        return root / "zotero" / "_index.md"
-    if key == "zotero_imports":
-        return root / "zotero" / "imports" / "_index.md"
-    return root / "wiki" / key / "_index.md"
+    return root / root_rel_path(key) / "_index.md"
 
 
 def ensure_vault_structure(vault_path: str) -> Path:
@@ -277,12 +299,14 @@ def _frontmatter_block(data: dict[str, Any]) -> str:
 
 
 def write_markdown(path: Path, frontmatter: dict[str, Any], body: str) -> Path:
+    assert_supported_write_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{_frontmatter_block(frontmatter)}\n{body.strip()}\n", encoding="utf-8")
     return path
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> Path:
+    assert_supported_write_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
@@ -309,25 +333,25 @@ def citekey_for_paper(paper: dict[str, Any]) -> str:
 
 
 def inbox_note_path(vault_path: str, paper: dict[str, Any]) -> Path:
-    root = ensure_vault_structure(vault_path)
-    day_dir = root / "inbox" / _now_date()
+    ensure_vault_structure(vault_path)
+    day_dir = root_path(vault_path, "inbox") / _now_date()
     slug = (paper.get("paper_id") or "paper").replace(":", "-").replace("/", "-")
     return day_dir / f"{slug}.md"
 
 
 def raw_source_path(vault_path: str, citekey: str) -> Path:
-    root = ensure_vault_structure(vault_path)
-    return root / "raw" / "source" / _now_date() / f"{citekey}.md"
+    ensure_vault_structure(vault_path)
+    return root_path(vault_path, "sources_evidence") / _now_date() / f"{citekey}.md"
 
 
 def raw_source_sidecar_path(vault_path: str, citekey: str) -> Path:
-    root = ensure_vault_structure(vault_path)
-    return root / "raw" / "source" / _now_date() / f"{citekey}.assets.json"
+    ensure_vault_structure(vault_path)
+    return root_path(vault_path, "sources_evidence") / _now_date() / f"{citekey}.assets.json"
 
 
 def raw_note_path(vault_path: str, citekey: str) -> Path:
-    root = ensure_vault_structure(vault_path)
-    return root / "raw" / "notes" / _now_date() / f"{citekey}.md"
+    ensure_vault_structure(vault_path)
+    return root_path(vault_path, "sources_notes") / _now_date() / f"{citekey}.md"
 
 
 def compiled_ir_path(vault_path: str, citekey: str) -> Path:
@@ -344,8 +368,7 @@ def compiled_ir_resolved_path(vault_path: str, citekey: str) -> Path:
 
 def state_db_path(vault_path: str) -> Path:
     """Return path to the SQLite database."""
-    root = paper_distill_root(vault_path)
-    return root / ".state" / "paper-distill.db"
+    return root_path(vault_path, "state") / "paper-distill.db"
 
 
 def normalize_knowledge_impact(impact: dict[str, Any] | None = None) -> dict[str, list[Any]]:
@@ -373,6 +396,7 @@ def build_knowledge_impact_summary(impact: dict[str, Any]) -> str:
         {
             "sections": sections,
             "has_any": bool(sections),
+            **template_contract_context(),
         },
     )
 
@@ -416,6 +440,7 @@ def build_query_asset_body(payload: dict[str, Any]) -> str:
             "source_pages": list(payload.get("source_pages", [])),
             "promotion_targets": list(payload.get("promotion_targets", [])),
             "derived_actions": list(payload.get("derived_actions", [])),
+            **template_contract_context(),
         },
     )
 
@@ -467,9 +492,9 @@ def refresh_global_navigation(vault_path: str) -> Path:
     from server.vault_query import query_vault_sync
 
     all_sections = query_vault_sync(vault_path, section="all", detail="full")
-    queries = _recent_items(root / "queries", limit=5)
-    concepts = _recent_items(root / "wiki" / "concepts", limit=5, title_key="concept")
-    topics = _recent_items(root / "wiki" / "topics", limit=5, title_key="topic")
+    queries = _recent_items(root_path(vault_path, "queries"), limit=5)
+    concepts = _recent_items(root_path(vault_path, "concepts"), limit=5, title_key="concept")
+    topics = _recent_items(root_path(vault_path, "topics"), limit=5, title_key="topic")
     pending_tasks = get_pending_tasks(vault_path)
     uncompiled = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True, detail="full")
 
@@ -483,6 +508,7 @@ def refresh_global_navigation(vault_path: str) -> Path:
             "recent_topics": topics,
             "pending_maintenance_count": len(pending_tasks),
             "uncompiled_count": uncompiled.get("stats", {}).get("raw_notes", 0),
+            **template_contract_context(),
         },
     )
     global_index_path(vault_path).write_text(body, encoding="utf-8")
@@ -528,6 +554,7 @@ def build_inbox_body(paper: dict[str, Any]) -> str:
         "canonical_html_url": paper.get("canonical_html_url") or "N/A",
         "canonical_pdf_url": paper.get("canonical_pdf_url") or paper.get("open_access_url") or "N/A",
         "canonical_item_url": paper.get("canonical_item_url") or "N/A",
+        **template_contract_context(),
     })
 
 
@@ -578,6 +605,7 @@ def build_raw_note_body(note_payload: dict[str, Any]) -> str:
         "canonical_html_url": paper.get("canonical_html_url") or "N/A",
         "canonical_pdf_url": paper.get("canonical_pdf_url") or "N/A",
         "capture_fidelity": paper.get("capture_fidelity") or "N/A",
+        **template_contract_context(),
     })
 
 

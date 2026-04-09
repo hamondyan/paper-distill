@@ -9,18 +9,9 @@ from typing import Any
 
 import yaml
 
-LOG = logging.getLogger(__name__)
+from server.vault_contract import DEFAULT_QUERY_SECTIONS, query_section_paths
 
-_VAULT_SECTIONS = {
-    "inbox": ["Paper Distill/inbox"],
-    "raw": ["Paper Distill/raw/notes", "Paper Distill/raw"],
-    "raw_source": ["Paper Distill/raw/source"],
-    "raw_notes": ["Paper Distill/raw/notes"],
-    "papers": ["Paper Distill/wiki/papers"],
-    "concepts": ["Paper Distill/wiki/concepts"],
-    "methods": ["Paper Distill/wiki/methods"],
-    "topics": ["Paper Distill/wiki/topics"],
-}
+LOG = logging.getLogger(__name__)
 
 def _parse_frontmatter(filepath: str) -> dict[str, Any] | None:
     try:
@@ -61,11 +52,6 @@ def _iter_markdown_files(root: str, rel_paths: list[str]) -> list[str]:
             continue
         for md_file in glob.glob(os.path.join(dir_path, "**", "*.md"), recursive=True):
             if os.path.basename(md_file) == "_index.md":
-                continue
-            rel_file = os.path.relpath(md_file, root)
-            if rel_file.startswith("Paper Distill/raw/source") and rel_paths == _VAULT_SECTIONS["raw"]:
-                continue
-            if rel_file.startswith("Paper Distill/raw/notes") and md_file in seen:
                 continue
             if md_file not in seen:
                 seen.add(md_file)
@@ -137,7 +123,7 @@ def query_vault_sync(
             file mtime) if updated_at is absent.
         days_back: Only return items modified/updated within this many days.
     """
-    sections = list(_VAULT_SECTIONS.keys()) if section == "all" else [section]
+    sections = list(DEFAULT_QUERY_SECTIONS) if section == "all" else [section]
     result: dict[str, Any] = {"stats": {}, "sections": {}}
 
     cutoff_date: str | None = None
@@ -145,7 +131,7 @@ def query_vault_sync(
         cutoff_date = (datetime.now() - timedelta(days=days_back)).isoformat()
 
     for sec in sections:
-        rel_paths = _VAULT_SECTIONS.get(sec)
+        rel_paths = list(query_section_paths(sec))
         if not rel_paths:
             continue
 

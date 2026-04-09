@@ -1,0 +1,17 @@
+{
+  "paper_id": "doi:10.1000/smoke-flow",
+  "title": "Replay Fixture Paper",
+  "authors": [
+    "Jane Doe",
+    "John Roe"
+  ],
+  "year": 2026,
+  "doi": "10.1000/smoke-flow",
+  "arxiv_id": "2601.12345",
+  "abstract": "A deterministic Wave 1 replay fixture for source ingest, compile, and idea-signal smoke tests.",
+  "canonical_pdf_url": "https://arxiv.org/pdf/2601.12345.pdf",
+  "canonical_html_url": "https://ar5iv.labs.arxiv.org/html/2601.12345",
+  "canonical_item_url": "https://ar5iv.labs.arxiv.org/html/2601.12345",
+  "venue": "ICRA 2026",
+  "venue_source": "arxiv"
+}

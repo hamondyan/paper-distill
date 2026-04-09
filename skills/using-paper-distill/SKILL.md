@@ -9,7 +9,7 @@ You are equipped with **Paper Distill**: discover papers, stage for human approv
 
 ## Vault Structure
 
-`{vault}/Paper Distill/` with sections: `inbox/` (candidates), `raw/source/` (cleaned arXiv captures), `raw/notes/` (CRGP-DNL reading notes), `zotero/imports/` (local import packs), `wiki/` (papers/concepts/methods/topics), `daily-log/`, `queries/`, plus `index.md` and `log.md` as human-readable navigation layers.
+`{vault}/Paper Distill/` with sections: `inbox/` (candidates), `sources/evidence/` (cleaned source captures), `sources/notes/` (CRGP-DNL reading notes), `zotero/imports/` (local import packs), `wiki/` (papers/concepts/methods/topics), `insights/` (queries, ideas, dialogues, digests, verification), `memory/`, plus `index.md` and `log.md` as human-readable navigation layers.
 
 ## Research Profile
 
@@ -19,17 +19,15 @@ Guided by `settings.json → paper_distill.research_profile`: direction, whiteli
 
 | Skill | Purpose |
 |-------|---------|
-| `paper-discover` | Search and stage candidates in inbox/ |
-| `process-inbox` | Full pipeline: approved inbox → raw/source + raw/notes → Zotero |
-| `paper-add` | Directly add a user-confirmed paper into raw/ + Zotero |
-| `paper-ingest` | Manual direct approval (bypasses inbox) |
-| `paper-collect` | Zotero management for already-ingested papers |
-| `wiki-compile` | Compile raw/ into wiki articles |
-| `daily-digest` | Daily candidate discovery digest |
-| `knowledge-query` | Query the approved knowledge base |
+| `source-discover` | Search and stage candidates in inbox/ |
+| `source-ingest` | Persist approved inbox items or direct identifiers into `sources/` + Zotero |
+| `zotero-collect` | Zotero management for already-ingested papers |
+| `knowledge-compile` | Compile source notes into wiki articles |
+| `source-digest` | Daily candidate discovery digest |
+| `wiki-query` | Query the approved knowledge base |
 | `wiki-lint` | Deterministic wiki health check |
-| `idea-generator` | Research gap analysis with graph-based detection |
-| `paper-summarize` | Quick paper summary without ingestion |
+| `idea-discover` | Research gap analysis with graph-based detection |
+| `paper-distill` | Quick single-paper distillation without ingestion |
 
 ## Commands
 
@@ -37,12 +35,12 @@ Guided by `settings.json → paper_distill.research_profile`: direction, whiteli
 
 ## Core Rules
 
-1. **Inbox is the approval boundary.** Discovery writes to inbox/, not raw/.
-2. **Only approved papers enter raw.** `raw/source` = evidence; `raw/notes` = CRGP-DNL structured understanding.
-3. **Frontmatter is king.** AI reads the vault through structured metadata. Use `query_vault` for reads — **never parse `_index.md`** (Dataview syntax, not data).
+1. **Inbox is the approval boundary.** Discovery writes to inbox/, not sources/.
+2. **Only approved papers enter sources.** `sources/evidence` = evidence; `sources/notes` = CRGP-DNL structured understanding.
+3. **Frontmatter is king.** AI reads the vault through structured metadata. Use `query-library` for reads — **never parse `_index.md`** (Dataview syntax, not data).
 4. **CRGP-DNL structure is mandatory** for all reading notes: Context, Related Work, Gap, Proposal, Key Results, Discussion, Next Steps. Keep prose concise and structured — no rambling paragraphs.
 5. **Use backlinks.** Every compiled paper → ≥2 concept pages. Concept stubs created only when referenced by ≥2 papers.
-6. **User-supplied confirmed papers go straight to `paper-add`.** Do not stage them in inbox unless the user explicitly asks.
-7. **Queries also grow the knowledge base.** Save substantive query and idea results into `queries/` with backlinks and promotion targets.
+6. **User-supplied confirmed papers go straight to `source-ingest` direct mode.** Do not stage them in inbox unless the user explicitly asks.
+7. **Queries also grow the knowledge base.** Save substantive query and idea results into `insights/queries/` with backlinks and promotion targets.
 8. **Show the impact of every maintenance action.** Prefer reporting created pages, updated pages, linked pages, refreshes, and conflicts.
 9. **When in doubt, invoke the relevant Paper Distill skill.**

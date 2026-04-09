@@ -65,12 +65,12 @@ class NavigationAndLogTest(unittest.TestCase):
                 title="Compared VLA architectures",
                 summary="Saved a comparison note and linked it back to the wiki.",
                 impact={
-                    "created_pages": ["Paper Distill/queries/vla-comparison.md"],
+                    "created_pages": ["Paper Distill/insights/queries/vla-comparison.md"],
                     "updated_pages": [],
                     "linked_pages": ["Paper Distill/wiki/topics/manipulation.md"],
                     "concepts_canonicalized": [],
                     "topics_refreshed": [],
-                    "queries_saved": ["Paper Distill/queries/vla-comparison.md"],
+                    "queries_saved": ["Paper Distill/insights/queries/vla-comparison.md"],
                     "maintenance_tasks_created": [],
                     "conflicts_or_skips": [],
                 },
@@ -84,7 +84,7 @@ class NavigationAndLogTest(unittest.TestCase):
     def test_refresh_global_navigation_highlights_recent_query_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            queries_dir = root / "queries"
+            queries_dir = root / "insights" / "queries"
             write_markdown(
                 queries_dir / "vla-comparison.md",
                 build_query_asset_frontmatter(

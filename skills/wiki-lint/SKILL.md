@@ -5,28 +5,28 @@ description: Use when the user says "/lint", "check wiki health", "wiki维护", 
 
 # Wiki Lint
 
-Health check and maintenance for the wiki. Deterministic checks run via `lint_vault` MCP tool; only semantic checks need LLM judgment. Present results like a maintainer's inspection of a living knowledge graph.
+Health check and maintenance for the wiki. Deterministic checks run via `wiki-lint`; only semantic checks need LLM judgment. Present results like a maintainer's inspection of a living knowledge graph.
 
 ## Workflow
 
 ### Step 1: Run Deterministic Checks
 
-Call `lint_vault` MCP tool. It returns a structured report covering:
+Call `wiki-lint`. It returns a structured report covering:
 
 1. **Orphaned articles** — wiki files with 0 incoming backlinks
 2. **Broken backlinks** — `[[links]]` pointing to nonexistent files
 3. **Missing frontmatter** — required YAML fields absent per section schema
 4. **Stale indexes** — `_index.md` files missing or outdated
-5. **Uncompiled papers** — `raw/notes/` with `compiled: false`
+5. **Uncompiled papers** — `sources/notes/` with `compiled: false`
 6. **Missing concept stubs** — concepts referenced from papers but no article exists
 
 ### Step 2: Semantic Checks (LLM)
 
 These require judgment and cannot be automated:
 
-- **Concept gaps:** Topics with ingested papers but no concept article. Use `query_vault(section="concepts")` and compare against paper topics.
+- **Concept gaps:** Topics with ingested papers but no concept article. Use `query-library(section="concepts")` and compare against paper topics.
 - **Outdated summaries:** Topic landscape articles not updated after recent compilations. Compare `wiki/topics/` updated dates against latest compiled paper dates.
-- **Advanced trigger candidates:** inspect `query_trigger_candidates()` for:
+- **Advanced trigger candidates:** inspect `idea-trigger-candidates()` for:
   - contradiction candidates
   - recurring limitation spikes
   - cross-cluster bridges
@@ -39,7 +39,7 @@ Wiki Health Report — {date}
 
 {For each check with count > 0, list items}
 
-Overall health: {from lint_vault result}
+Overall health: {from wiki-lint result}
 ```
 
 Also summarize the likely knowledge impact of fixing the current issues:
@@ -56,8 +56,8 @@ Also summarize the likely knowledge impact of fixing the current issues:
 
 Suggested loop:
 
-1. `lint_vault`
-2. `vault_stats`
+1. `wiki-lint`
+2. `library-stats`
 3. `reconcile_maintenance(auto_confirm=true|false)`
 4. Review `get_maintenance_queue(...)`
 5. Execute selected confirmed tasks with `execute_maintenance_task(task_id)`

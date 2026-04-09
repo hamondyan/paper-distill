@@ -1,17 +1,17 @@
 ---
-name: wiki-compile
-description: Use when the user says "compile", "update wiki", "编译wiki", "create wiki article", "turn notes into wiki", "把笔记写入wiki", "/compile", or wants to create or update structured wiki articles from approved raw papers. Also trigger after `paper-add` or `process-inbox` completes if the user asks to compile immediately.
+name: knowledge-compile
+description: Use when the user says "compile", "update wiki", "编译wiki", "create wiki article", "turn notes into wiki", "把笔记写入wiki", "/compile", or wants to create or update structured wiki articles from approved source notes. Also trigger after `source-ingest` completes if the user asks to compile immediately.
 ---
 
-# Wiki Compile
+# Knowledge Compile
 
-Compile approved raw papers into structured wiki knowledge. You are the sole writer of wiki/, and your job is to keep it useful as a thinking interface rather than a static archive.
+Compile approved source notes into structured wiki knowledge. You are the sole writer of wiki/, and your job is to keep it useful as a thinking interface rather than a static archive.
 
 ## Two Modes
 
 ### Lightweight Mode (auto after ingest)
 
-1. Update `_index.md` files to reflect new raw papers
+1. Update `_index.md` files to reflect new source notes
 2. Scan abstracts for key concepts
 3. Add `[[backlinks]]` from new papers to existing concepts
 4. Create concept stubs **only if referenced by ≥2 papers** — leave single-reference concepts as unresolved `[[dead links]]` (Obsidian handles this gracefully)
@@ -29,25 +29,25 @@ All lightweight tasks, plus:
 
 ### Step 1: Find Uncompiled Papers
 
-Call `query_vault(section="raw_notes", uncompiled_only=true)`.
+Call `query-library(section="source_notes", uncompiled_only=true)`.
 
 ### Step 2: Compile Each Paper
 
-Read `raw/notes/{date}/{citekey}.md` and consult `raw/source/{date}/{citekey}.md` as needed. Create `wiki/papers/{citekey}.md` following the structure in `templates/wiki-paper.md.j2`.
+Read `sources/notes/{date}/{citekey}.md` and consult `sources/evidence/{date}/{citekey}.md` as needed. Create `wiki/papers/{citekey}.md` following the structure in `templates/wiki-paper.md.j2`.
 
-When reading `raw/source`, assume it is inline evidence markdown:
+When reading `sources/evidence`, assume it is inline evidence markdown:
 - figures, tables, and equations are usually rendered near the surrounding section text rather than in trailing snapshot sections
 - use the `.assets.json` sidecar when you need the authoritative structured figure/table/equation payload
 
 Required frontmatter: citekey, paper_id, title, authors, year, doi, arxiv_id, venue, topics, concepts, methods, claims, limitations, open_questions, source_raw_path, source_note_path, zotero_uri, compiled, quality_score, relevance_score, confidence, updated_at.
 
 Key requirements:
-- Every paper must link to both raw layers: `[[raw/notes/...]]` and `[[raw/source/...]]`
+- Every paper must link to both source layers: `[[sources/notes/...]]` and `[[sources/evidence/...]]`
 - Every paper must link to ≥2 concept articles
 - "Why read this" must be 1 sentence
 - "Insights for My Research" must reference `settings.json → research_profile.direction`
 
-After creating the wiki note, set `compiled: true` in the raw paper's frontmatter.
+After creating the wiki note, set `compiled: true` in the source note's frontmatter.
 
 ### Step 3: Update Concept Articles
 
@@ -72,11 +72,11 @@ Use `templates/wiki-topic.md.j2` for the target shape.
 
 ### Step 6: Ensure Index Integrity
 
-Index files use **Obsidian Dataview** queries from YAML frontmatter. Your main job is ensuring frontmatter quality — if frontmatter is correct, Dataview handles the rest. Use `query_vault` for AI reads, NOT `_index.md` parsing.
+Index files use **Obsidian Dataview** queries from YAML frontmatter. Your main job is ensuring frontmatter quality — if frontmatter is correct, Dataview handles the rest. Use `query-library` for AI reads, NOT `_index.md` parsing.
 
 ## Backlink Rules
 
-- wiki/papers/ → both raw layers (`[[raw/notes/...]]` and `[[raw/source/...]]`)
+- wiki/papers/ → both source layers (`[[sources/notes/...]]` and `[[sources/evidence/...]]`)
 - wiki/papers/ → relevant concepts (`[[concepts/{concept}]]`)
 - concepts → papers that discuss them
 - methods → papers and concepts compared
@@ -94,11 +94,11 @@ For each uncompiled paper:
    - `citekey`, `title`, `authors`, `candidate_concepts`, `tension_fields`
    - `tension_fields` must include: `limitations`, `assumptions`, `open_questions`, `negative_results`
    - Prefer also populating: `failure_modes`, `transfer_constraints`, `benchmark_scope`, `claimed_novelty`
-3. Submit to `write_compile_ir(citekey, ir_json)` — validates schema and persists to `compiled_ir/{citekey}.json`
+3. Submit to `paper-distill-extract(citekey, ir_json)` — validates schema and persists to `compiled_ir/{citekey}.json`
 
 ### Stage 2: Resolve (Pure Python)
 
-Call `resolve_compile_ir(citekeys)` — no LLM needed.
+Call `knowledge-compile-resolve(citekeys)` — no LLM needed.
 - Maps each `candidate_concept` to its canonical registry entry
 - Registers new concepts automatically (or auto-merges slug/abbreviation/spelling variants)
 - Writes `compiled_ir/{citekey}_resolved.json`
@@ -112,7 +112,7 @@ Before writing, check `get_maintenance_queue(status="confirmed")`.
 
 For each paper:
 1. Render wiki markdown from resolved IR
-2. Call `commit_compile_result(page_id, page_type, content, frontmatter, ir_path, deps)`
+2. Call `knowledge-compile-publish(page_id, page_type, content, frontmatter, ir_path, deps)`
    - This is the sole write exit — records compile_state and deps in SQLite
    - Wraps managed sections with `<!-- managed:start section=... -->` / `<!-- managed:end section=... -->` markers
    - `## My Notes` sections are **never** inside managed markers — always preserved

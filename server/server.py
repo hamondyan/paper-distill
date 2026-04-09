@@ -88,6 +88,24 @@ LOG = logging.getLogger("paper-distill")
 
 mcp = FastMCP("paper-distill")
 
+# Wave 1 user-facing MCP surface. Keep names centralized so tool registration
+# stays explicit and downstream tests can assert the exact contract.
+_MCP_TOOL_SURFACE = {
+    "query_library": "query-library",
+    "bootstrap_library": "bootstrap-library",
+    "source_discover": "source-discover",
+    "source_ingest": "source-ingest",
+    "wiki_lint": "wiki-lint",
+    "library_stats": "library-stats",
+    "idea_discover": "idea-discover",
+    "idea_tension_signals": "idea-tension-signals",
+    "idea_trigger_candidates": "idea-trigger-candidates",
+    "paper_distill_extract": "paper-distill-extract",
+    "knowledge_compile_resolve": "knowledge-compile-resolve",
+    "knowledge_compile_publish": "knowledge-compile-publish",
+    "knowledge_compile_status": "knowledge-compile-status",
+}
+
 # Source registry
 _SEARCH_SOURCES = {
     "arxiv": search_arxiv,
@@ -117,6 +135,12 @@ _DISCOVERY_UPDATE_FIELDS = (
     "canonical_item_url",
 )
 _DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
+_SOURCE_INGEST_RESULT_KEYS = {
+    "raw_source_path": "source_evidence_abs_path",
+    "raw_note_path": "source_note_abs_path",
+    "source_raw_path": "source_evidence_path",
+    "source_structured_path": "source_assets_path",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +442,19 @@ def _processed_success(
         "raw_source_path": str(source_path),
         "raw_note_path": str(note_path),
     }
+
+
+def _canonicalize_source_ingest_result(payload: object) -> object:
+    if isinstance(payload, list):
+        return [_canonicalize_source_ingest_result(item) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized: dict[str, object] = {}
+    for key, value in payload.items():
+        normalized_key = _SOURCE_INGEST_RESULT_KEYS.get(key, key)
+        normalized[normalized_key] = _canonicalize_source_ingest_result(value)
+    return normalized
 
 
 def _selected_topics(query: str | None, topic_keys: list[str] | None) -> dict[str, dict]:
@@ -1632,10 +1669,10 @@ async def score_papers(
 
 
 # ---------------------------------------------------------------------------
-# Tool 7: query_vault (AI's interface to vault state)
+# Tool 7: query-library (AI's interface to library state)
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["query_library"])
 async def query_vault(
     section: str = "all",
     topic: str | None = None,
@@ -1646,9 +1683,9 @@ async def query_vault(
     sort_by: str = "updated_at",
     days_back: int | None = None,
 ) -> dict:
-    """Query the Paper Distill vault metadata by parsing YAML frontmatter.
+    """Query the Paper Distill library metadata by parsing YAML frontmatter.
 
-    This is the AI's interface to vault state. Use this instead of reading
+    This is the AI's interface to library state. Use this instead of reading
     _index.md files (which contain Dataview queries for Obsidian rendering,
     not actual data).
 
@@ -1691,7 +1728,7 @@ async def query_vault(
 # Tool 8: bootstrap_vault
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["bootstrap_library"])
 async def bootstrap_vault(vault_path: str | None = None) -> dict:
     """Initialize the Paper Distill directory structure inside an Obsidian vault."""
     target = vault_path or get_vault_path()
@@ -1846,7 +1883,7 @@ def _candidate_already_processed(candidate: dict, existing_raw_ids: set[str]) ->
 
 
 # ---------------------------------------------------------------------------
-# Tool 9: discover_papers
+# Tool 9: source-discover
 # ---------------------------------------------------------------------------
 
 
@@ -1911,7 +1948,7 @@ def _diagnose_discovery_drift(
         "exclude_terms": exclude_terms[:3],
     }
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["source_discover"])
 async def discover_papers(
     query: str | None = None,
     topic_keys: list[str] | None = None,
@@ -2027,10 +2064,61 @@ async def discover_papers(
 
 
 # ---------------------------------------------------------------------------
-# Tool 10: process_inbox
+# Tool 10: source-ingest
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["source_ingest"])
+async def source_ingest(
+    mode: str = "approved_inbox",
+    identifier: str = "",
+    status: str = "approved",
+    limit: int = 20,
+    collection_name: str = "",
+    topic_keys: list[str] | None = None,
+) -> dict:
+    """Persist approved evidence into the `sources/` truth layer.
+
+    Args:
+        mode: `"approved_inbox"` ingests approved inbox notes;
+            `"direct_identifier"` resolves one DOI/arXiv/URL directly.
+        identifier: Required when `mode="direct_identifier"`.
+        status: Inbox status filter used by `approved_inbox` mode.
+        limit: Maximum number of inbox candidates to ingest.
+        collection_name: Optional Zotero collection override.
+        topic_keys: Optional topic tags for `direct_identifier` mode.
+    """
+    if mode == "approved_inbox":
+        if identifier.strip():
+            return {
+                "error": "identifier is only valid when mode='direct_identifier'."
+            }
+        return _canonicalize_source_ingest_result(await process_inbox(
+            status=status,
+            limit=limit,
+            collection_name=collection_name,
+        ))
+
+    if mode == "direct_identifier":
+        if not identifier.strip():
+            return {
+                "error": "identifier is required when mode='direct_identifier'."
+            }
+        return _canonicalize_source_ingest_result(await add_paper(
+            identifier,
+            topic_keys=topic_keys,
+            collection_name=collection_name,
+        ))
+
+    return {
+        "error": (
+            "Invalid mode. Must be 'approved_inbox' or 'direct_identifier'."
+        )
+    }
+
+
+# Internal source-ingest helpers
+# ---------------------------------------------------------------------------
+
 async def process_inbox(
     status: str = "approved",
     limit: int = 20,
@@ -2171,7 +2259,7 @@ async def process_inbox(
     if processed:
         append_knowledge_log(
             vault_path,
-            event_type="process-inbox",
+            event_type="source-ingest",
             title=", ".join(title for title in processed_titles if title) or f"{len(processed)} inbox papers",
             summary=f"Processed {len(processed)} approved inbox item(s) into the maintained knowledge base.",
             impact=impact,
@@ -2182,10 +2270,9 @@ async def process_inbox(
 
 
 # ---------------------------------------------------------------------------
-# Tool 11: add_paper
+# Internal direct-ingest helper
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def add_paper(
     identifier: str,
     topic_keys: list[str] | None = None,
@@ -2312,9 +2399,9 @@ async def add_paper(
     )
     append_knowledge_log(
         vault_path,
-        event_type="add-paper",
+        event_type="source-ingest",
         title=paper.get("title", "") or paper.get("paper_id", "paper"),
-        summary="Added a user-approved paper directly into raw/source and raw/notes.",
+        summary="Added a user-approved paper directly into sources/evidence and sources/notes.",
         impact=impact,
     )
     refresh_global_navigation(vault_path)
@@ -2342,10 +2429,10 @@ async def add_paper(
 
 
 # ---------------------------------------------------------------------------
-# Tool 12: lint_vault
+# Tool 11: wiki-lint
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["wiki_lint"])
 async def lint_vault() -> dict:
     """Run deterministic structural health checks on the vault.
 
@@ -2360,10 +2447,10 @@ async def lint_vault() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 13: vault_stats
+# Tool 12: library-stats
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["library_stats"])
 async def vault_stats() -> dict:
     """Compute vault statistics: paper counts per stage, compilation rate,
     wiki article counts, per-topic breakdowns, and last activity timestamp.
@@ -2375,10 +2462,10 @@ async def vault_stats() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 14: analyze_knowledge_graph
+# Tool 13: idea-discover
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["idea_discover"])
 async def analyze_knowledge_graph(user_topics: list[str] | None = None) -> dict:
     """Analyze the vault's concept-paper graph to find structural research gaps.
 
@@ -2688,7 +2775,7 @@ async def list_concepts_tool(
 async def reconcile_maintenance(auto_confirm: bool = True) -> dict:
     """Run lint + stats, then generate deduplicated maintenance tasks.
 
-    This is the bridge between pure-read analysis (lint_vault, vault_stats)
+    This is the bridge between pure-read analysis (wiki-lint, library-stats)
     and the actionable maintenance queue.  Lint results are compared against
     existing pending tasks to avoid duplicates.
 
@@ -2818,10 +2905,10 @@ async def backfill_registry() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 26: write_compile_ir
+# Tool 25: paper-distill-extract
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["paper_distill_extract"])
 async def write_compile_ir(citekey: str, ir_json: dict) -> dict:
     """Validate and persist an Extract-stage IR produced by the agent.
 
@@ -2846,10 +2933,10 @@ async def write_compile_ir(citekey: str, ir_json: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 27: resolve_compile_ir
+# Tool 26: knowledge-compile-resolve
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_resolve"])
 async def resolve_compile_ir(citekeys: list[str]) -> list[dict]:
     """Entity-link candidate_concepts in raw IRs against the concept registry.
 
@@ -2876,10 +2963,10 @@ async def resolve_compile_ir(citekeys: list[str]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Tool 28: commit_compile_result
+# Tool 27: knowledge-compile-publish
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_publish"])
 async def commit_compile_result(
     page_id: str,
     page_type: str,
@@ -2913,10 +3000,10 @@ async def commit_compile_result(
 
 
 # ---------------------------------------------------------------------------
-# Tool 29: query_tension_signals
+# Tool 28: idea-tension-signals
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["idea_tension_signals"])
 async def query_tension_signals(
     min_occurrence: int = 2,
     topic: str | None = None,
@@ -2929,7 +3016,7 @@ async def query_tension_signals(
     - open_question_clusters: open questions grouped by keywords
     - negative_results: flat list of negative/null results
 
-    Use this in the idea-generator skill to ground research gap analysis
+    Use this in the idea-discover skill to ground research gap analysis
     in structured, IR-sourced evidence rather than heuristic keyword scanning.
 
     Args:
@@ -2947,10 +3034,10 @@ async def query_tension_signals(
 
 
 # ---------------------------------------------------------------------------
-# Tool 30: get_compile_state
+# Tool 29: knowledge-compile-status
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_status"])
 async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
     """Get the compile state record for a wiki page.
 
@@ -3041,10 +3128,10 @@ async def enqueue_maintenance_task(
 
 
 # ---------------------------------------------------------------------------
-# Tool 33: query_trigger_candidates
+# Tool 32: idea-trigger-candidates
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(name=_MCP_TOOL_SURFACE["idea_trigger_candidates"])
 async def query_trigger_candidates(user_topics: list[str] | None = None) -> dict:
     """Return advanced Phase 3 trigger candidates for maintenance and ideation.
 

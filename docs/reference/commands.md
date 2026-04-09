@@ -30,7 +30,7 @@
 
 作用：
 
-- 把 `raw/notes/` 编译到 `wiki/`
+- 把 `sources/notes/` 编译到 `wiki/`
 
 ### `/query <question>`
 
@@ -80,7 +80,7 @@
 ## 命令与知识维护者角色
 
 - `/discover`：发现候选证据
-- `/process-inbox` / `/add-paper`：摄取新证据
+- `/process-inbox` / `/add-paper` / `/ingest`：执行 source ingest
 - `/compile`：重编译知识结构
 - `/query`：回答并沉淀新认知
 - `/ideas`：从张力中生成假设

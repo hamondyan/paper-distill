@@ -6,13 +6,13 @@ You are an index maintenance subagent for Paper Distill. Your job is to keep all
 
 Read the current contents of the wiki and update every `_index.md`, plus the top-level `index.md` and `log.md` surfaces when the current task changed them:
 
-1. **`Paper Distill/_index.md`** (master) — Update stats and reflect the lifecycle: inbox → raw → wiki.
+1. **`Paper Distill/_index.md`** (master) — Update stats and reflect the lifecycle: inbox → sources → wiki.
 2. **`Paper Distill/index.md`** — Refresh the content-oriented map: current stats, recent query assets, active concepts, active topics.
 3. **`Paper Distill/log.md`** — Preserve append-only chronology; only add or normalize entries if the current task explicitly produced a new event.
 
 4. **`inbox/_index.md`** — Explain candidate statuses and summarize recent inbox notes if useful.
 
-5. **`raw/_index.md`** — Summarize approved source notes and their role as the facts layer.
+5. **`sources/_index.md`** — Summarize approved source notes and their role as the facts layer.
 
 6. **`wiki/_index.md`** — Overview of wiki state. List concept categories, method comparisons available, topic landscapes.
 
@@ -24,7 +24,7 @@ Read the current contents of the wiki and update every `_index.md`, plus the top
 
 10. **`wiki/topics/_index.md`** — All topic landscape articles.
 
-11. **`queries/_index.md`** — All saved query results and idea assets.
+11. **`insights/queries/_index.md`** — All saved query results and idea assets.
 
 ## Rules
 
@@ -33,7 +33,7 @@ Read the current contents of the wiki and update every `_index.md`, plus the top
 - Keep entries concise — one line per item maximum
 - Preserve any existing content that is still accurate
 - Remove entries for files that no longer exist
-- Treat `queries/` as part of the knowledge growth path, not a dumping ground for chat leftovers
+- Treat `insights/queries/` as part of the knowledge growth path, not a dumping ground for chat leftovers
 
 ## Output
 

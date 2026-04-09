@@ -1,0 +1,35 @@
+{
+  "sections": {
+    "Context": "The paper targets long-horizon manipulation from source-grounded evidence.",
+    "Related Work": "It compares diffusion policies against prior imitation baselines.",
+    "Gap": "Existing long-horizon systems degrade under partial observability.",
+    "Proposal": "Use a source-grounded diffusion policy with task-conditioned planning.",
+    "Key Results": "The replay policy improves success rates while keeping the controller simple.",
+    "Discussion": "The result looks promising but remains limited to tabletop manipulation.",
+    "Next Steps": "Verify how the approach behaves on real robots."
+  },
+  "evidence": {
+    "Context": [
+      "Recovered Text"
+    ],
+    "Related Work": [
+      "Recovered Text"
+    ],
+    "Gap": [
+      "Recovered Text"
+    ],
+    "Proposal": [
+      "Recovered Text"
+    ],
+    "Key Results": [
+      "Recovered Text"
+    ],
+    "Discussion": [
+      "Recovered Text"
+    ],
+    "Next Steps": [
+      "Recovered Text"
+    ]
+  },
+  "confidence": 0.81
+}

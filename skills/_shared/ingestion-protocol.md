@@ -13,7 +13,7 @@ The canonical resolve → capture → zotero → write flow for adding papers to
 
 ### 2. Deduplicate
 
-1. Call `query_vault(section="raw", detail="full")` and `query_vault(section="papers", detail="full")`
+1. Call `query-library(section="sources", detail="full")` and `query-library(section="papers", detail="full")`
 2. Match by paper_id, DOI, or arXiv ID
 3. If exists: report existing paths, do NOT create duplicates
 
@@ -21,8 +21,8 @@ The canonical resolve → capture → zotero → write flow for adding papers to
 
 1. If `arxiv_id` exists: use `capture_arxiv_source` (ar5iv HTML cleaning)
 2. If ar5iv fails: automatic PDF fallback via `fetch_pdf_text`
-3. Generate `raw/source/{date}/{citekey}.md` and `raw/source/{date}/{citekey}.assets.json`
-4. Treat `raw/source/*.md` as the agent-facing inline evidence layer:
+3. Generate `sources/evidence/{date}/{citekey}.md` and `sources/evidence/{date}/{citekey}.assets.json`
+4. Treat `sources/evidence/*.md` as the agent-facing inline evidence layer:
    - figures, tables, and display equations should appear near their正文位置
    - `Appendix Snapshot` may remain for summary-only appendix capture
    - `Captured Assets Index` points readers back to the `.assets.json` sidecar
@@ -30,13 +30,13 @@ The canonical resolve → capture → zotero → write flow for adding papers to
 
 ### 4. Generate CRGP-DNL Note
 
-Use `build_crgp_dnl` to create `raw/notes/{date}/{citekey}.md` from cleaned source.
+Use `build_crgp_dnl` to create `sources/notes/{date}/{citekey}.md` from cleaned source.
 
 ### 5. Zotero Handoff
 
 1. Call `zotero_add`
-2. If Zotero fails: keep raw layers, report warning clearly — do NOT roll back
+2. If Zotero fails: keep source layers, report warning clearly — do NOT roll back
 
 ### 6. Report
 
-Show: title, raw/source path, raw/notes path, Zotero status, capture fidelity, optional next step (/compile).
+Show: title, source evidence path, source note path, Zotero status, capture fidelity, optional next step (`knowledge-compile`).

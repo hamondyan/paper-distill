@@ -1,24 +1,24 @@
 ---
-name: paper-collect
-description: Use when the user says "add to Zotero", "save to Zotero", "收藏这篇论文", "同步到Zotero", "collect papers", or wants papers that are already in raw/ or wiki/ saved to their Zotero library.
+name: zotero-collect
+description: Use when the user says "add to Zotero", "save to Zotero", "收藏这篇论文", "同步到Zotero", "collect papers", or wants papers that are already in `sources/` or `wiki/` saved to their Zotero library.
 ---
 
-# Paper Collect
+# Zotero Collect
 
-Save already-ingested papers to Zotero. This is for Zotero management, not the ingestion pipeline (use `process-inbox` for that).
+Save already-ingested papers to Zotero. This is for Zotero management, not the ingestion pipeline (use `source-ingest` for that).
 
 ## Workflow
 
 ### Step 1: Identify Papers
 
-- **By number:** "collect 1, 3" → resolve from today's daily-log
+- **By number:** "collect 1, 3" → resolve from today's digest
 - **By citekey:** "collect black2024-pi0"
 - **By title:** fuzzy match against approved raw notes
 - **All today:** "collect all"
 
 ### Step 2: Resolve Metadata
 
-Read the raw/ note for DOI. If incomplete, call `resolve_metadata` MCP tool.
+Read the `sources/notes/` note for DOI. If incomplete, call `resolve_metadata` MCP tool.
 
 ### Step 3: Add to Zotero
 
@@ -28,7 +28,7 @@ Call `zotero_add` MCP tool. It handles CrossRef enrichment, collection mapping, 
 
 If the paper has a wiki note, add Zotero link to its header:
 ```markdown
-[[raw/{date}/{citekey}|Raw Note]] | [Zotero](zotero://select/library/items/{zotero_key})
+[[sources/notes/{date}/{citekey}|Source Note]] | [Zotero](zotero://select/library/items/{zotero_key})
 ```
 
 ### Step 5: Report

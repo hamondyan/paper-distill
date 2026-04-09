@@ -82,6 +82,55 @@ CREATE TABLE IF NOT EXISTS maintenance_queue (
     resolved_at TEXT
 );
 
+-- Durable Mutation Queue
+CREATE TABLE IF NOT EXISTS mutation_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    mutation_type TEXT NOT NULL,          -- compile_publish | future runtime mutations
+    target_key    TEXT NOT NULL,          -- e.g. "paper:smith2024"
+    payload_json  TEXT NOT NULL,          -- JSON operation payload
+    payload_hash  TEXT NOT NULL,          -- stable dedupe hash for active rows
+    status        TEXT NOT NULL DEFAULT 'pending',
+                                         -- pending | processing | done | failed
+    claimed_by    TEXT,
+    claimed_at    TEXT,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    result_json   TEXT,
+    error         TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mutation_queue_status_created
+    ON mutation_queue(status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_mutation_queue_target_status
+    ON mutation_queue(target_key, status);
+
+-- Publish Journal / Run State
+CREATE TABLE IF NOT EXISTS publish_journal (
+    run_id               TEXT PRIMARY KEY,
+    mutation_id          INTEGER NOT NULL,
+    target_key           TEXT NOT NULL,
+    operation            TEXT NOT NULL,   -- compile_publish | future publish ops
+    state                TEXT NOT NULL,   -- started | staged | published | failed
+    bundle_json          TEXT NOT NULL,   -- full durable publish plan
+    staged_root          TEXT,
+    staged_manifest_json TEXT,
+    error                TEXT,
+    started_at           TEXT NOT NULL,
+    staged_at            TEXT,
+    published_at         TEXT,
+    failed_at            TEXT,
+    updated_at           TEXT NOT NULL,
+    FOREIGN KEY (mutation_id) REFERENCES mutation_queue(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_publish_journal_mutation_state
+    ON publish_journal(mutation_id, state, updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_publish_journal_state_updated
+    ON publish_journal(state, updated_at);
+
 -- ===================== Rebuildable Index Layer =====================
 
 -- Compile State (generic page_id + page_type)
@@ -200,6 +249,8 @@ _AUTHORITY_TABLES = (
     "concept_aliases",
     "concept_merge_history",
     "maintenance_queue",
+    "mutation_queue",
+    "publish_journal",
 )
 
 

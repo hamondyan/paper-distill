@@ -14,13 +14,12 @@ from datetime import datetime
 from itertools import combinations
 from typing import Any
 
+from server.vault_contract import PAPER_DISTILL_ROOT, root_rel_path
 from server.vault_query import _parse_frontmatter, query_vault_sync
 
 LOG = logging.getLogger(__name__)
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
-
-_PD_ROOT = "Paper Distill"
 
 # Required frontmatter fields per vault section.
 _REQUIRED_FIELDS: dict[str, list[str]] = {
@@ -89,7 +88,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
 
     Returns a JSON-serialisable dict with check results.
     """
-    pd_root = os.path.join(vault_path, _PD_ROOT)
+    pd_root = os.path.join(vault_path, PAPER_DISTILL_ROOT)
     if not os.path.isdir(pd_root):
         return {"error": f"Paper Distill root not found at {pd_root}"}
 
@@ -100,8 +99,6 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     #   file_key  → set of outgoing link targets
     #   link_target → set of files that link to it
     wiki_dir = os.path.join(pd_root, "wiki")
-    raw_notes_dir = os.path.join(pd_root, "raw", "notes")
-
     all_wiki_files = _iter_md_files(pd_root, "wiki")
     # Build a set of "known" files keyed by their relative path fragment
     known_keys: set[str] = set()
@@ -114,8 +111,8 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     incoming_links: dict[str, int] = defaultdict(int)
     broken_backlinks: list[dict[str, str]] = []
 
-    # Scan wiki/ AND raw/ for outgoing wikilinks
-    scan_dirs = ["wiki", "raw/notes", "raw/source"]
+    # Scan wiki/ and source-layer notes/evidence for outgoing wikilinks
+    scan_dirs = ["wiki", root_rel_path("sources_notes"), root_rel_path("sources_evidence")]
     for scan_dir in scan_dirs:
         for fpath in _iter_md_files(pd_root, scan_dir):
             text = _read_full_text(fpath)
@@ -147,8 +144,8 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     missing_fm: list[dict[str, Any]] = []
     section_dir_map = {
         "inbox": "inbox",
-        "raw_source": "raw/source",
-        "raw_notes": "raw/notes",
+        "raw_source": root_rel_path("sources_evidence"),
+        "raw_notes": root_rel_path("sources_notes"),
         "papers": "wiki/papers",
         "concepts": "wiki/concepts",
         "methods": "wiki/methods",
@@ -170,9 +167,10 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
 
     # --- Stale indexes ------------------------------------------------------
     index_dirs = [
-        "", "inbox", "raw", "raw/source", "raw/notes",
+        "", "inbox", "sources", "sources/evidence", "sources/notes",
         "wiki", "wiki/papers", "wiki/concepts", "wiki/methods", "wiki/topics",
-        "queries", "daily-log",
+        "insights", "insights/queries", "insights/ideas", "insights/dialogues",
+        "insights/verification", "insights/digests", "memory",
     ]
     stale_indexes: list[dict[str, Any]] = []
     for rel_dir in index_dirs:
@@ -298,7 +296,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
 
 def vault_stats_sync(vault_path: str) -> dict[str, Any]:
     """Compute vault statistics from frontmatter metadata."""
-    pd_root = os.path.join(vault_path, _PD_ROOT)
+    pd_root = os.path.join(vault_path, PAPER_DISTILL_ROOT)
     if not os.path.isdir(pd_root):
         return {"error": f"Paper Distill root not found at {pd_root}"}
 
@@ -335,12 +333,12 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
             topic_counts[t] += 1
 
     # Daily log and query counts
-    daily_logs = len(_iter_md_files(pd_root, "daily-log"))
-    queries = len(_iter_md_files(pd_root, "queries"))
+    daily_logs = len(_iter_md_files(pd_root, root_rel_path("digests")))
+    queries = len(_iter_md_files(pd_root, root_rel_path("queries")))
 
     # Most recent file modification across vault
     latest_mtime = 0.0
-    for scan_dir in ["inbox", "raw", "wiki", "daily-log", "queries"]:
+    for scan_dir in ["inbox", "sources", "wiki", "insights", "memory"]:
         for fpath in _iter_md_files(pd_root, scan_dir):
             try:
                 mt = os.path.getmtime(fpath)
@@ -442,7 +440,6 @@ def _compute_stale_topics(
     new_paper_threshold: int = 3,
 ) -> list[dict[str, Any]]:
     """Find topics that may need their overview refreshed."""
-    pd_root = os.path.join(vault_path, _PD_ROOT)
     now = datetime.now()
     stale = []
 
@@ -510,7 +507,7 @@ def analyze_knowledge_graph_sync(
     Uses dict/set operations instead of NetworkX.  Returns condensed gap lists
     that an LLM can turn into qualitative research ideas.
     """
-    pd_root = os.path.join(vault_path, _PD_ROOT)
+    pd_root = os.path.join(vault_path, PAPER_DISTILL_ROOT)
     if not os.path.isdir(pd_root):
         return {"error": f"Paper Distill root not found at {pd_root}"}
 

@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from server.concept_registry import register_concept
 from server.database import close_db, get_db
@@ -16,6 +17,12 @@ from server.compile_ir import (
     resolve_ir,
     validate_ir,
     write_ir,
+)
+from server.runtime import (
+    drain_mutation_queue,
+    enqueue_mutation,
+    get_mutation_record,
+    register_mutation_handler,
 )
 
 
@@ -263,6 +270,307 @@ class CommitCompileResultTest(_VaultBase):
             self.tmp, "x", "invalid_type", "content", {},
         )
         assert "error" in result
+
+    def test_commit_records_publish_journal_run(self):
+        content = "<!-- managed:start -->\n## Context\nSome content.\n<!-- managed:end -->"
+        fm = {"citekey": "smith2024", "title": "A Paper", "compile_version": 1}
+
+        result = commit_compile_result(self.tmp, "smith2024", "paper", content, fm)
+        assert result["written"] is True
+
+        conn = get_db(self.tmp)
+        row = conn.execute(
+            """
+            SELECT *
+            FROM publish_journal
+            WHERE target_key = 'paper:smith2024'
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert row is not None
+        assert row["state"] == "published"
+        assert row["staged_at"] is not None
+        assert row["published_at"] is not None
+
+    def test_runtime_dedupes_identical_active_compile_mutations(self):
+        payload = {
+            "page_id": "smith2024",
+            "page_type": "paper",
+            "content": "Body",
+            "frontmatter": {"citekey": "smith2024", "title": "A Paper", "compile_version": 1},
+            "deps": [],
+            "ir_path": None,
+        }
+        first = enqueue_mutation(
+            self.tmp,
+            mutation_type="compile_publish",
+            target_key="paper:smith2024",
+            payload=payload,
+        )
+        second = enqueue_mutation(
+            self.tmp,
+            mutation_type="compile_publish",
+            target_key="paper:smith2024",
+            payload=payload,
+        )
+
+        assert first["mutation_id"] == second["mutation_id"]
+        assert second["duplicate"] is True
+
+        drain_mutation_queue(self.tmp)
+        record = get_db(self.tmp).execute(
+            "SELECT status FROM mutation_queue WHERE id = ?",
+            (first["mutation_id"],),
+        ).fetchone()
+        assert record["status"] == "done"
+
+    def test_runtime_serializes_distinct_compile_mutations_for_same_target(self):
+        first_content = """<!-- managed:start section=context -->
+## Context
+First generated summary.
+<!-- managed:end section=context -->
+"""
+        second_content = """<!-- managed:start section=context -->
+## Context
+Second generated summary.
+<!-- managed:end section=context -->
+"""
+        payload_one = {
+            "page_id": "serial2024",
+            "page_type": "paper",
+            "content": first_content,
+            "frontmatter": {"citekey": "serial2024", "title": "Serial Paper", "compile_version": 1},
+            "deps": [],
+            "ir_path": None,
+        }
+        payload_two = {
+            "page_id": "serial2024",
+            "page_type": "paper",
+            "content": second_content,
+            "frontmatter": {"citekey": "serial2024", "title": "Serial Paper", "compile_version": 1},
+            "deps": [],
+            "ir_path": None,
+        }
+
+        first = enqueue_mutation(
+            self.tmp,
+            mutation_type="compile_publish",
+            target_key="paper:serial2024",
+            payload=payload_one,
+        )
+        second = enqueue_mutation(
+            self.tmp,
+            mutation_type="compile_publish",
+            target_key="paper:serial2024",
+            payload=payload_two,
+        )
+
+        assert first["mutation_id"] != second["mutation_id"]
+        drain_mutation_queue(self.tmp, max_items=1)
+
+        conn = get_db(self.tmp)
+        first_record = get_mutation_record(self.tmp, first["mutation_id"])
+        second_record = get_mutation_record(self.tmp, second["mutation_id"])
+        assert first_record["status"] == "done"
+        assert second_record["status"] == "pending"
+
+        page_path = os.path.join(self.tmp, "Paper Distill", "wiki", "papers", "serial2024.md")
+        first_page = open(page_path, encoding="utf-8").read()
+        assert "First generated summary." in first_page
+        assert "Second generated summary." not in first_page
+
+        drain_mutation_queue(self.tmp)
+
+        final_page = open(page_path, encoding="utf-8").read()
+        assert "Second generated summary." in final_page
+        assert "First generated summary." not in final_page
+
+        runs = conn.execute(
+            """
+            SELECT state
+            FROM publish_journal
+            WHERE target_key = 'paper:serial2024'
+            ORDER BY started_at ASC, run_id ASC
+            """
+        ).fetchall()
+        assert len(runs) == 2
+        assert [row["state"] for row in runs] == ["published", "published"]
+
+    def test_conflict_detected_before_publish_journal_start_keeps_existing_page_visible(self):
+        initial = """<!-- managed:start section=context -->
+## Context
+Old generated summary.
+<!-- managed:end section=context -->
+"""
+        incoming = """<!-- managed:start section=context -->
+## Context
+Fresh generated summary.
+<!-- managed:end section=context -->
+"""
+        fm = {"citekey": "conflict2024", "title": "Conflict Paper", "compile_version": 1}
+
+        first = commit_compile_result(self.tmp, "conflict2024", "paper", initial, fm)
+        assert first["written"] is True
+
+        page_path = os.path.join(self.tmp, "Paper Distill", "wiki", "papers", "conflict2024.md")
+        manual_edit = open(page_path, encoding="utf-8").read().replace(
+            "Old generated summary.",
+            "Locally edited summary.",
+        )
+        with open(page_path, "w", encoding="utf-8") as handle:
+            handle.write(manual_edit)
+
+        conflict = commit_compile_result(self.tmp, "conflict2024", "paper", incoming, fm)
+        assert conflict["written"] is False
+        assert conflict["conflict_detected"] is True
+        assert conflict["path"] == page_path
+
+        visible_page = open(page_path, encoding="utf-8").read()
+        assert "Locally edited summary." in visible_page
+        assert "Fresh generated summary." not in visible_page
+
+        conn = get_db(self.tmp)
+        journal_count = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM publish_journal
+            WHERE target_key = 'paper:conflict2024'
+            """
+        ).fetchone()
+        assert journal_count["count"] == 1
+
+        latest_mutation = get_mutation_record(
+            self.tmp,
+            conn.execute("SELECT MAX(id) AS id FROM mutation_queue").fetchone()["id"],
+        )
+        assert latest_mutation["status"] == "done"
+        assert latest_mutation["result"]["conflict_detected"] is True
+
+    def test_runtime_recovers_staged_publish_without_exposing_half_state(self):
+        class SimulatedCrash(BaseException):
+            pass
+
+        original = """<!-- managed:start section=context -->
+## Context
+Old generated summary.
+<!-- managed:end section=context -->
+"""
+        updated = """<!-- managed:start section=context -->
+## Context
+Recovered generated summary.
+<!-- managed:end section=context -->
+"""
+        fm = {"citekey": "recover2024", "title": "Recoverable Paper", "compile_version": 1}
+        first = commit_compile_result(self.tmp, "recover2024", "paper", original, fm)
+        assert first["written"] is True
+
+        mutation = enqueue_mutation(
+            self.tmp,
+            mutation_type="compile_publish",
+            target_key="paper:recover2024",
+            payload={
+                "page_id": "recover2024",
+                "page_type": "paper",
+                "content": updated,
+                "frontmatter": fm,
+                "deps": [],
+                "ir_path": None,
+            },
+        )
+
+        with patch("server.compile_ir.apply_staged_bundle", side_effect=SimulatedCrash("crash")):
+            with self.assertRaises(SimulatedCrash):
+                drain_mutation_queue(self.tmp)
+
+        page_path = os.path.join(self.tmp, "Paper Distill", "wiki", "papers", "recover2024.md")
+        crashed_page = open(page_path, encoding="utf-8").read()
+        assert "Old generated summary." in crashed_page
+        assert "Recovered generated summary." not in crashed_page
+
+        conn = get_db(self.tmp)
+        run = conn.execute(
+            """
+            SELECT *
+            FROM publish_journal
+            WHERE mutation_id = ?
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT 1
+            """,
+            (mutation["mutation_id"],),
+        ).fetchone()
+        assert run is not None
+        assert run["state"] == "staged"
+        assert run["staged_root"] is not None
+        assert os.path.isdir(run["staged_root"])
+
+        conn.execute(
+            """
+            UPDATE mutation_queue
+            SET status = 'processing',
+                claimed_at = '2000-01-01T00:00:00'
+            WHERE id = ?
+            """,
+            (mutation["mutation_id"],),
+        )
+        conn.commit()
+
+        drain_mutation_queue(self.tmp)
+
+        recovered_page = open(page_path, encoding="utf-8").read()
+        assert "Recovered generated summary." in recovered_page
+        assert "Old generated summary." not in recovered_page
+
+        recovered_run = conn.execute(
+            """
+            SELECT state
+            FROM publish_journal
+            WHERE mutation_id = ?
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT 1
+            """,
+            (mutation["mutation_id"],),
+        ).fetchone()
+        assert recovered_run["state"] == "published"
+
+
+class RuntimeMutationContractTest(_VaultBase):
+    def test_runtime_reclaims_stale_processing_lease_before_dispatch(self):
+        mutation_type = "test_runtime_contract"
+        handled: list[int] = []
+
+        def _handler(_vault_path: str, row: dict) -> dict:
+            handled.append(row["id"])
+            return {"handled": True}
+
+        register_mutation_handler(mutation_type, _handler)
+        mutation = enqueue_mutation(
+            self.tmp,
+            mutation_type=mutation_type,
+            target_key="memory:overlay",
+            payload={"event_id": "evt-1"},
+        )
+
+        conn = get_db(self.tmp)
+        conn.execute(
+            """
+            UPDATE mutation_queue
+            SET status = 'processing',
+                claimed_by = 'dead-executor',
+                claimed_at = '2000-01-01T00:00:00'
+            WHERE id = ?
+            """,
+            (mutation["mutation_id"],),
+        )
+        conn.commit()
+
+        drain_mutation_queue(self.tmp)
+
+        record = get_mutation_record(self.tmp, mutation["mutation_id"])
+        assert handled == [mutation["mutation_id"]]
+        assert record["status"] == "done"
+        assert record["attempts"] == 1
+        assert record["result"]["handled"] is True
 
 
 if __name__ == "__main__":

@@ -23,6 +23,15 @@ from pathlib import Path
 from typing import Any
 
 from server.database import get_db
+from server.publish import (
+    apply_staged_bundle,
+    begin_publish_run,
+    cleanup_staged_publish_run,
+    get_latest_publish_run,
+    mark_publish_run_failed,
+    mark_publish_run_published,
+    stage_publish_run,
+)
 from server.vault_ops import (
     append_knowledge_log,
     compiled_ir_path,
@@ -434,36 +443,82 @@ def commit_compile_result(
     ir_path: str | None = None,
     deps: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Atomic Write step: persist markdown + update compile_state/compile_deps.
-
-    This is the sole exit point for the EDC Write stage.  Unlike
-    ``upsert_wiki_article`` (generic safe write), this function:
-    - Writes the managed-section content to the vault
-    - Computes content_hash for the managed sections
-    - Upserts compile_state and compile_deps in SQLite
-
-    Parameters
-    ----------
-    page_id : str
-        Logical identifier (citekey for papers, slug for concepts/topics).
-    page_type : str
-        "paper" | "concept" | "method" | "topic"
-    content : str
-        Full markdown body (frontmatter is added separately).
-    frontmatter : dict
-        Frontmatter fields to render.
-    ir_path : str | None
-        Path to the compiled IR JSON (resolved version preferred).
-    deps : list[dict] | None
-        Dependencies: each dict has ``dep_type``, ``dep_id``, ``dep_version``.
-    """
-    pd_root = paper_distill_root(vault_path)
-    rel_dir = _TYPE_DIR.get(page_type)
-    if not rel_dir:
+    """Route compile writes through the single-writer runtime."""
+    if page_type not in _TYPE_DIR:
         return {"error": f"Unknown page_type: '{page_type}'"}
 
-    dest = pd_root / rel_dir / f"{page_id}.md"
+    from server.runtime import submit_mutation
 
+    return submit_mutation(
+        vault_path,
+        mutation_type="compile_publish",
+        target_key=f"{page_type}:{page_id}",
+        payload={
+            "page_id": page_id,
+            "page_type": page_type,
+            "content": content,
+            "frontmatter": dict(frontmatter or {}),
+            "ir_path": ir_path,
+            "deps": list(deps or []),
+        },
+    )
+
+
+def get_compile_state(vault_path: str, page_id: str, page_type: str = "paper") -> dict | None:
+    """Look up compile state for a page."""
+    conn = get_db(vault_path)
+    row = conn.execute(
+        "SELECT * FROM compile_state WHERE page_id = ? AND page_type = ?",
+        (page_id, page_type),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def execute_compile_publish_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
+    """Single-writer handler for compile-aware page publish."""
+    conn = get_db(vault_path)
+    payload = _decode_mutation_payload(mutation)
+    active_run = get_latest_publish_run(conn, mutation["id"])
+
+    if active_run.get("state") == "published":
+        return _compile_result_from_bundle(active_run.get("bundle", {}))
+
+    try:
+        if active_run.get("state") not in {"started", "staged"}:
+            bundle = _build_compile_publish_bundle(vault_path, payload)
+            if bundle.get("error") or bundle.get("conflict_detected"):
+                return bundle
+            active_run = begin_publish_run(
+                conn,
+                mutation_id=mutation["id"],
+                target_key=mutation["target_key"],
+                operation="compile_publish",
+                bundle=bundle,
+            )
+
+        active_run = stage_publish_run(vault_path, conn, active_run)
+        apply_staged_bundle(vault_path, active_run)
+        _persist_compile_publish_state(vault_path, active_run.get("bundle", {}))
+        active_run = mark_publish_run_published(conn, active_run["run_id"])
+        cleanup_staged_publish_run(active_run)
+        _emit_compile_publish_side_effects(vault_path, active_run.get("bundle", {}))
+        return _compile_result_from_bundle(active_run.get("bundle", {}))
+    except Exception as exc:
+        if active_run.get("run_id"):
+            mark_publish_run_failed(conn, active_run["run_id"], str(exc))
+        raise
+
+
+def _build_compile_publish_bundle(vault_path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    page_id = payload["page_id"]
+    page_type = payload["page_type"]
+    content = payload["content"]
+    frontmatter = dict(payload.get("frontmatter") or {})
+    ir_path = payload.get("ir_path")
+    deps = list(payload.get("deps") or [])
+
+    pd_root = paper_distill_root(vault_path)
+    dest = pd_root / _TYPE_DIR[page_type] / f"{page_id}.md"
     conn = get_db(vault_path)
     existing_state = conn.execute(
         "SELECT * FROM compile_state WHERE page_id = ? AND page_type = ?",
@@ -471,10 +526,7 @@ def commit_compile_result(
     ).fetchone()
 
     existed_before = dest.exists()
-    current_body = ""
-    if existed_before:
-        current_body = _strip_frontmatter(dest.read_text(encoding="utf-8"))
-
+    current_body = _strip_frontmatter(dest.read_text(encoding="utf-8")) if existed_before else ""
     previous_managed_blocks = _decode_json_column(existing_state, "managed_blocks_json")
     previous_managed_hashes = _decode_json_column(existing_state, "managed_hashes_json")
 
@@ -497,22 +549,6 @@ def commit_compile_result(
     else:
         final_body, final_managed_blocks = _initialise_or_replace_body(current_body, content)
 
-    # Build frontmatter block
-    fm_lines = ["---"]
-    for k, v in frontmatter.items():
-        if isinstance(v, list):
-            fm_lines.append(f"{k}:")
-            for item in v:
-                fm_lines.append(f"  - {item}")
-        elif isinstance(v, dict):
-            fm_lines.append(f"{k}: {json.dumps(v)}")
-        else:
-            # Escape simple values
-            safe_v = str(v).replace('"', '\\"')
-            fm_lines.append(f'{k}: "{safe_v}"')
-    fm_lines.append("---")
-    fm_block = "\n".join(fm_lines)
-
     now = datetime.now().isoformat(timespec="seconds")
     compile_version = frontmatter.get("compile_version", 1)
     if isinstance(compile_version, str):
@@ -521,21 +557,71 @@ def commit_compile_result(
         except ValueError:
             compile_version = 1
 
-    # Compute content hash of managed sections
+    new_version = (existing_state["compile_version"] + 1) if existing_state else compile_version
+    rendered = f"{_render_frontmatter_block(frontmatter)}\n\n{final_body.strip()}\n"
     managed = _extract_managed_sections(final_body)
     content_hash = hashlib.sha256(managed.encode()).hexdigest()[:16]
     managed_hashes = {
         section: hashlib.sha256(block.encode()).hexdigest()[:16]
         for section, block in final_managed_blocks.items()
     }
+    impact = normalize_knowledge_impact(
+        {
+            "created_pages": [] if existed_before else [str(dest.relative_to(pd_root.parent))],
+            "updated_pages": [str(dest.relative_to(pd_root.parent))] if existed_before else [],
+            "linked_pages": [
+                f"{dep.get('dep_type', 'concept')}:{dep.get('dep_id', '')}"
+                for dep in deps
+                if dep.get("dep_id")
+            ],
+        }
+    )
 
-    # Write file
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(f"{fm_block}\n\n{final_body.strip()}\n", encoding="utf-8")
+    return {
+        "files": [
+            {
+                "dest_relpath": str(dest.relative_to(Path(vault_path))),
+                "content": rendered,
+            }
+        ],
+        "compile_state": {
+            "page_id": page_id,
+            "page_type": page_type,
+            "compile_version": new_version,
+            "schema_version": SCHEMA_VERSION,
+            "compiled_at": now,
+            "ir_path": ir_path,
+            "content_hash": content_hash,
+            "managed_hashes_json": json.dumps(managed_hashes, ensure_ascii=False, sort_keys=True),
+            "managed_blocks_json": json.dumps(final_managed_blocks, ensure_ascii=False, sort_keys=True),
+        },
+        "deps": deps,
+        "knowledge_log": {
+            "event_type": "compile-write",
+            "title": f"Committed {page_type} page {page_id}",
+            "summary": (
+                f"Wrote compiled {page_type} content and refreshed compile state for {page_id}."
+            ),
+            "impact": impact,
+        },
+        "result": {
+            "written": True,
+            "path": str(dest),
+            "compile_version": new_version,
+            "content_hash": content_hash,
+            "knowledge_impact": impact,
+        },
+    }
 
-    # Get current compile_version from DB if exists
-    new_version = (existing_state["compile_version"] + 1) if existing_state else compile_version
 
+def _persist_compile_publish_state(vault_path: str, bundle: dict[str, Any]) -> None:
+    state = bundle.get("compile_state") or {}
+    page_id = state.get("page_id")
+    page_type = state.get("page_type")
+    if not page_id or not page_type:
+        raise ValueError("Missing compile_state metadata for publish run")
+
+    conn = get_db(vault_path)
     conn.execute(
         """INSERT OR REPLACE INTO compile_state
            (page_id, page_type, compile_version, schema_version, compiled_at,
@@ -544,70 +630,83 @@ def commit_compile_result(
         (
             page_id,
             page_type,
-            new_version,
-            SCHEMA_VERSION,
-            now,
-            ir_path,
-            content_hash,
-            json.dumps(managed_hashes, ensure_ascii=False, sort_keys=True),
-            json.dumps(final_managed_blocks, ensure_ascii=False, sort_keys=True),
+            state.get("compile_version", 1),
+            state.get("schema_version", SCHEMA_VERSION),
+            state.get("compiled_at", datetime.now().isoformat(timespec="seconds")),
+            state.get("ir_path"),
+            state.get("content_hash"),
+            state.get("managed_hashes_json"),
+            state.get("managed_blocks_json"),
         ),
     )
 
-    # Clear and re-insert deps
-    if deps:
+    conn.execute(
+        "DELETE FROM compile_deps WHERE page_id = ? AND page_type = ?",
+        (page_id, page_type),
+    )
+    for dep in bundle.get("deps", []):
+        if not dep.get("dep_id"):
+            continue
         conn.execute(
-            "DELETE FROM compile_deps WHERE page_id = ? AND page_type = ?",
-            (page_id, page_type),
+            """INSERT OR IGNORE INTO compile_deps
+               (page_id, page_type, dep_type, dep_id, dep_version)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                page_id,
+                page_type,
+                dep.get("dep_type", "concept"),
+                dep["dep_id"],
+                dep.get("dep_version", 1),
+            ),
         )
-        for dep in deps:
-            conn.execute(
-                """INSERT OR IGNORE INTO compile_deps
-                   (page_id, page_type, dep_type, dep_id, dep_version)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (page_id, page_type, dep.get("dep_type", "concept"),
-                 dep["dep_id"], dep.get("dep_version", 1)),
-            )
-
     conn.commit()
 
-    impact = normalize_knowledge_impact(
-        {
-            "created_pages": [] if existed_before else [str(dest.relative_to(pd_root.parent))],
-            "updated_pages": [str(dest.relative_to(pd_root.parent))] if existed_before else [],
-            "linked_pages": [
-                f"{dep.get('dep_type', 'concept')}:{dep.get('dep_id', '')}"
-                for dep in (deps or [])
-                if dep.get("dep_id")
-            ],
-        }
-    )
+
+def _emit_compile_publish_side_effects(vault_path: str, bundle: dict[str, Any]) -> None:
+    knowledge_log = bundle.get("knowledge_log") or {}
     append_knowledge_log(
         vault_path,
-        event_type="compile-write",
-        title=f"Committed {page_type} page {page_id}",
-        summary=f"Wrote compiled {page_type} content and refreshed compile state for {page_id}.",
-        impact=impact,
+        event_type=knowledge_log.get("event_type", "compile-write"),
+        title=knowledge_log.get("title", "Committed compile result"),
+        summary=knowledge_log.get("summary", "Committed compile result."),
+        impact=knowledge_log.get("impact") or {},
     )
     refresh_global_navigation(vault_path)
 
-    return {
-        "written": True,
-        "path": str(dest),
-        "compile_version": new_version,
-        "content_hash": content_hash,
-        "knowledge_impact": impact,
-    }
+
+def _compile_result_from_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    result = bundle.get("result")
+    return dict(result) if isinstance(result, dict) else {"written": True}
 
 
-def get_compile_state(vault_path: str, page_id: str, page_type: str = "paper") -> dict | None:
-    """Look up compile state for a page."""
-    conn = get_db(vault_path)
-    row = conn.execute(
-        "SELECT * FROM compile_state WHERE page_id = ? AND page_type = ?",
-        (page_id, page_type),
-    ).fetchone()
-    return dict(row) if row else None
+def _decode_mutation_payload(mutation: dict[str, Any]) -> dict[str, Any]:
+    payload = mutation.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    raw = mutation.get("payload_json")
+    if not raw:
+        return {}
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _render_frontmatter_block(frontmatter: dict[str, Any]) -> str:
+    fm_lines = ["---"]
+    for key, value in frontmatter.items():
+        if isinstance(value, list):
+            fm_lines.append(f"{key}:")
+            for item in value:
+                fm_lines.append(f"  - {item}")
+        elif isinstance(value, dict):
+            fm_lines.append(f"{key}: {json.dumps(value)}")
+        else:
+            safe_value = str(value).replace('"', '\\"')
+            fm_lines.append(f'{key}: "{safe_value}"')
+    fm_lines.append("---")
+    return "\n".join(fm_lines)
 
 
 def _extract_managed_sections(content: str) -> str:

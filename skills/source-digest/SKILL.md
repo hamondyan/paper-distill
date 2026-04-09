@@ -1,18 +1,18 @@
 ---
-name: daily-digest
-description: Use when the user says "每日简报", "daily digest", "拉取今日论文", "今天的推荐", "今天有什么新论文", "/digest", or wants to run the scheduled daily paper discovery and generate a digest for review. This is the batch daily workflow — for ad-hoc searches on a specific topic, use `paper-discover`.
+name: source-digest
+description: Use when the user says "每日简报", "daily digest", "拉取今日论文", "今天的推荐", "今天有什么新论文", "/digest", or wants to run the scheduled daily paper discovery and generate a digest for review. This is the batch daily workflow — for ad-hoc searches on a specific topic, use `source-discover`.
 ---
 
-# Daily Digest
+# Source Digest
 
 Daily candidate discovery: search all configured topics, stage inbox candidates, generate a digest.
 
 ## Workflow
 
 1. Read `settings.json → paper_distill.topics`
-2. Call `query_vault(section="inbox")` and `query_vault(section="raw")` to get known paper IDs for deduplication
-3. Invoke `paper-distill:paper-discover` for each configured topic
-4. Create `daily-log/{YYYY-MM-DD}.md` following `templates/daily-log.md.j2` structure, including:
+2. Call `query-library(section="inbox")` and `query-library(section="source_notes")` to get known paper IDs for deduplication
+3. Invoke `paper-distill:source-discover` for each configured topic
+4. Create `insights/digests/{YYYY-MM-DD}.md` following `templates/daily-log.md.j2` structure, including:
    - candidate count
    - top candidates by topic
    - venue and author signals

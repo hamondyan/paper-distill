@@ -1,9 +1,9 @@
 ---
-name: paper-summarize
-description: Use when the user says "summarize this paper", "总结这篇论文", "/summarize", or wants a quick structured summary without full wiki compilation.
+name: paper-distill
+description: Use when the user says "summarize this paper", "总结这篇论文", "/summarize", or wants a quick single-paper distillation without full wiki compilation.
 ---
 
-# Paper Summarize
+# Paper Distill
 
 Quick structured summary of a paper for assessment before deciding whether to ingest.
 
@@ -46,9 +46,9 @@ Read `settings.json → research_profile.direction` for context. Output:
 
 ### Step 3: Offer Next Actions
 
-- "Add to knowledge vault now?" → triggers `paper-add`
-- "Compile into wiki?" → triggers `wiki-compile`
-- "Search for related papers?" → triggers `paper-discover`
+- "Add to sources now?" → triggers `source-ingest`
+- "Compile into wiki?" → triggers `knowledge-compile`
+- "Search for related papers?" → triggers `source-discover`
 
 ## Rules
 

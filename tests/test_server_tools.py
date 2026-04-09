@@ -8,16 +8,66 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import yaml
+
 from server.arxiv_capture import CleanedArxivDocument
 from server.config import load_settings
+from server.idea_verification import verify_idea
+from server.memory_runtime import append_memory_event, read_memory_views
 from server.server import (
     analyze_knowledge_graph,
+    commit_compile_result as knowledge_compile_publish,
+    get_compile_state as knowledge_compile_status,
+    mcp,
     process_inbox,
+    query_tension_signals,
+    query_vault,
+    resolve_compile_ir,
+    source_ingest,
     update_learned_preferences,
     upsert_wiki_article,
+    write_compile_ir,
 )
+from server.vault_contract import root_path
 from server.vault_ops import ensure_vault_structure, write_markdown
 from server.vault_query import query_vault_sync
+
+_FIXTURE_ROOT = Path(__file__).with_name("fixtures") / "wave1_replay"
+
+
+def _load_replay_json(name: str) -> dict:
+    return json.loads((_FIXTURE_ROOT / name).read_text(encoding="utf-8"))
+
+
+def _load_replay_text(name: str) -> str:
+    return (_FIXTURE_ROOT / name).read_text(encoding="utf-8")
+
+
+def _replay_paper() -> dict:
+    return dict(_load_replay_json("paper.json"))
+
+
+def _replay_source_doc() -> CleanedArxivDocument:
+    return CleanedArxivDocument(**_load_replay_json("source_doc.json"))
+
+
+def _replay_memory_event() -> dict:
+    return dict(_load_replay_json("memory_event.json"))
+
+
+def _replay_idea() -> dict:
+    return dict(_load_replay_json("idea.json"))
+
+
+def _replay_verification() -> dict:
+    return dict(_load_replay_json("verification_verified.json"))
+
+
+def _read_frontmatter(path: Path) -> dict:
+    content = path.read_text(encoding="utf-8")
+    _, remainder = content.split("---\n", 1)
+    fm_text, _ = remainder.split("\n---\n", 1)
+    return yaml.safe_load(fm_text) or {}
 
 
 def _fake_source_doc(title: str, abstract: str, capture_fidelity: str = "low") -> CleanedArxivDocument:
@@ -242,5 +292,322 @@ class ProcessInboxRegressionTest(unittest.TestCase):
             self.assertEqual(len(result["knowledge_impact"]["created_pages"]), 2)
             self.assertEqual(len(result["knowledge_impact"]["updated_pages"]), 1)
             log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
-            self.assertIn("process-inbox", log_text)
+            self.assertIn("source-ingest", log_text)
             self.assertIn("Fallback Paper", log_text)
+
+    def test_source_ingest_approved_inbox_uses_sources_contract_and_avoids_legacy_raw_root(self) -> None:
+        paper = _replay_paper()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = ensure_vault_structure(tmpdir)
+            write_markdown(
+                root / "inbox" / "2026-04-06" / "candidate.md",
+                {
+                    "paper_id": paper["paper_id"],
+                    "status": "approved",
+                    "title": paper["title"],
+                    "matched_topics": ["manipulation"],
+                },
+                "# Candidate",
+            )
+
+            with patch("server.server.get_vault_path", return_value=tmpdir):
+                with patch("server.server._zotero_runtime", return_value=_runtime(tmpdir)):
+                    with patch("server.server._capture_settings", return_value=("summary_only", 100)):
+                        with patch(
+                            "server.server._prepare_ingestion_candidate",
+                            new=AsyncMock(
+                                return_value=(
+                                    dict(paper),
+                                    _replay_source_doc(),
+                                    "",
+                                )
+                            ),
+                        ):
+                            with patch(
+                                "server.server.build_crgp_dnl",
+                                return_value=_load_replay_json("dnl.json"),
+                            ):
+                                with patch(
+                                    "server.server._zotero_add",
+                                    new=AsyncMock(
+                                        return_value=[
+                                            {
+                                                "key": "",
+                                                "zotero_uri": "",
+                                                "zotero_mode": "local_first",
+                                                "zotero_status": "local_exported",
+                                                "zotero_import_path": "",
+                                            }
+                                        ]
+                                    ),
+                                ):
+                                    result = asyncio.run(
+                                        source_ingest(mode="approved_inbox", limit=1)
+                                    )
+
+            self.assertEqual(len(result["processed"]), 1)
+            processed = result["processed"][0]
+            self.assertIn("/Paper Distill/sources/evidence/", processed["source_evidence_abs_path"])
+            self.assertIn("/Paper Distill/sources/notes/", processed["source_note_abs_path"])
+            self.assertNotIn("raw_source_path", processed)
+            self.assertNotIn("raw_note_path", processed)
+            self.assertFalse((Path(tmpdir) / "Paper Distill" / "raw").exists())
+
+
+class ToolSurfaceContractTest(unittest.TestCase):
+    def test_wave1_mcp_surface_uses_new_truth_model_names(self) -> None:
+        tools = asyncio.run(mcp.list_tools())
+        names = {tool.name for tool in tools}
+
+        self.assertIn("query-library", names)
+        self.assertIn("source-discover", names)
+        self.assertIn("source-ingest", names)
+        self.assertIn("knowledge-compile-publish", names)
+        self.assertIn("paper-distill-extract", names)
+        self.assertIn("idea-discover", names)
+        self.assertNotIn("discover_papers", names)
+        self.assertNotIn("process_inbox", names)
+        self.assertNotIn("add_paper", names)
+        self.assertNotIn("commit_compile_result", names)
+
+    def test_knowledge_compile_publish_surface_reports_status_after_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ensure_vault_structure(tmpdir)
+
+            with patch("server.server.get_vault_path", return_value=tmpdir):
+                result = asyncio.run(
+                    knowledge_compile_publish(
+                        page_id="adapter2026",
+                        page_type="paper",
+                        content=_load_replay_text("compiled_paper.md"),
+                        frontmatter={
+                            "citekey": "adapter2026",
+                            "title": "Adapter Contract Paper",
+                            "compile_version": 1,
+                        },
+                    )
+                )
+                status = asyncio.run(
+                    knowledge_compile_status(page_id="adapter2026", page_type="paper")
+                )
+
+        self.assertTrue(result["written"])
+        self.assertEqual(status["page_id"], "adapter2026")
+        self.assertEqual(status["page_type"], "paper")
+        self.assertEqual(status["compile_version"], 1)
+        self.assertEqual(status["schema_version"], "2024-06")
+
+    def test_source_ingest_direct_mode_rewrites_legacy_result_keys(self) -> None:
+        with patch(
+            "server.server.add_paper",
+            new=AsyncMock(
+                return_value={
+                    "added": True,
+                    "raw_source_path": "/tmp/Paper Distill/sources/evidence/2026-04-09/example.md",
+                    "raw_note_path": "/tmp/Paper Distill/sources/notes/2026-04-09/example.md",
+                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-09/example.md",
+                    "source_structured_path": "Paper Distill/sources/evidence/2026-04-09/example.assets.json",
+                    "source_note_path": "Paper Distill/sources/notes/2026-04-09/example.md",
+                }
+            ),
+        ):
+            result = asyncio.run(
+                source_ingest(
+                    mode="direct_identifier",
+                    identifier="10.1000/example",
+                )
+            )
+
+        self.assertTrue(result["added"])
+        self.assertEqual(
+            result["source_evidence_abs_path"],
+            "/tmp/Paper Distill/sources/evidence/2026-04-09/example.md",
+        )
+        self.assertEqual(
+            result["source_note_abs_path"],
+            "/tmp/Paper Distill/sources/notes/2026-04-09/example.md",
+        )
+        self.assertEqual(
+            result["source_evidence_path"],
+            "Paper Distill/sources/evidence/2026-04-09/example.md",
+        )
+        self.assertEqual(
+            result["source_assets_path"],
+            "Paper Distill/sources/evidence/2026-04-09/example.assets.json",
+        )
+        self.assertNotIn("raw_source_path", result)
+        self.assertNotIn("raw_note_path", result)
+        self.assertNotIn("source_raw_path", result)
+        self.assertNotIn("source_structured_path", result)
+
+    def test_source_ingest_requires_identifier_in_direct_mode(self) -> None:
+        result = asyncio.run(source_ingest(mode="direct_identifier"))
+        self.assertIn("error", result)
+        self.assertIn("identifier", result["error"])
+
+
+class Wave1ReplaySmokeTest(unittest.TestCase):
+    def test_wave1_smoke_flow_replays_full_core_path_without_network(self) -> None:
+        paper = _replay_paper()
+        source_doc = _replay_source_doc()
+        ir = _load_replay_json("compile_ir.json")
+        dnl = _load_replay_json("dnl.json")
+        compiled_body = _load_replay_text("compiled_paper.md")
+        memory_event = _replay_memory_event()
+        idea = _replay_idea()
+        verification = _replay_verification()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ensure_vault_structure(tmpdir)
+            write_markdown(
+                root_path(tmpdir, "memory") / "taste.md",
+                {"view_key": "taste", "compiled_at": "2026-04-08T22:00:00"},
+                "# Taste\n\nCompiled memory says grounded robotics evidence matters more than benchmark-only gains.",
+            )
+
+            with patch("server.server.get_vault_path", return_value=tmpdir):
+                with patch("server.server._zotero_runtime", return_value=_runtime(tmpdir)):
+                    with patch("server.server._capture_settings", return_value=("summary_only", 100)):
+                        with patch(
+                            "server.server._resolve_explicit_paper",
+                            new=AsyncMock(return_value=dict(paper)),
+                        ):
+                            with patch(
+                                "server.server._prepare_direct_add_candidate",
+                                new=AsyncMock(
+                                    return_value=(
+                                        dict(paper),
+                                        source_doc,
+                                        source_doc.capture_method,
+                                        "",
+                                    )
+                                ),
+                            ):
+                                with patch("server.server.build_crgp_dnl", return_value=dnl):
+                                    with patch(
+                                        "server.server._zotero_add",
+                                        new=AsyncMock(
+                                            return_value=[
+                                                {
+                                                    "key": "",
+                                                    "zotero_uri": "",
+                                                    "zotero_mode": "local_first",
+                                                    "zotero_status": "local_exported",
+                                                    "zotero_import_path": "",
+                                                }
+                                            ]
+                                        ),
+                                    ):
+                                        ingest = asyncio.run(
+                                            source_ingest(
+                                                mode="direct_identifier",
+                                                identifier=paper["doi"],
+                                                topic_keys=["manipulation"],
+                                            )
+                                        )
+                                        extract = asyncio.run(
+                                            write_compile_ir(ir["citekey"], ir)
+                                        )
+                                        resolve = asyncio.run(
+                                            resolve_compile_ir([ir["citekey"]])
+                                        )
+
+                                        deps = [
+                                            {
+                                                "dep_type": ir["candidate_concepts"][index].get("type", "concept"),
+                                                "dep_id": resolution["canonical_id"],
+                                                "dep_version": 1,
+                                            }
+                                            for index, resolution in enumerate(resolve[0]["resolutions"])
+                                        ]
+                                        publish = asyncio.run(
+                                            knowledge_compile_publish(
+                                                page_id=ir["citekey"],
+                                                page_type="paper",
+                                                content=compiled_body,
+                                                frontmatter={
+                                                    "citekey": ir["citekey"],
+                                                    "title": paper["title"],
+                                                    "compile_version": 1,
+                                                    "topics": ["manipulation"],
+                                                },
+                                                ir_path=f"Paper Distill/compiled_ir/{ir['citekey']}_resolved.json",
+                                                deps=deps,
+                                            )
+                                        )
+                                        status = asyncio.run(
+                                            knowledge_compile_status(
+                                                page_id=ir["citekey"],
+                                                page_type="paper",
+                                            )
+                                        )
+                                        papers = asyncio.run(
+                                            query_vault(section="papers", detail="full")
+                                        )
+                                        source_notes = asyncio.run(
+                                            query_vault(section="source_notes", detail="full")
+                                        )
+                                        signals = asyncio.run(
+                                            query_tension_signals(min_occurrence=1)
+                                        )
+
+            idea["local_evidence"]["wiki"][0]["ref"] = f"Paper Distill/wiki/papers/{ir['citekey']}.md"
+            idea["local_evidence"]["sources"][0]["ref"] = ingest["source_note_path"]
+            memory_result = append_memory_event(tmpdir, event=memory_event)
+            memory_state = read_memory_views(tmpdir, view_keys=["taste"])
+            idea["local_evidence"]["memory"][0]["summary"] = memory_state["views"]["taste"]["overlay_events"][0]["summary"]
+            idea_result = verify_idea(
+                tmpdir,
+                idea=idea,
+                verification=verification,
+            )
+
+            self.assertTrue(ingest["added"])
+            self.assertTrue(Path(ingest["source_evidence_abs_path"]).exists())
+            self.assertTrue(Path(ingest["source_note_abs_path"]).exists())
+            self.assertTrue(Path(root_path(tmpdir, "papers") / f"{ir['citekey']}.md").exists())
+            self.assertFalse((Path(tmpdir) / "Paper Distill" / "raw").exists())
+
+            self.assertTrue(extract["valid"])
+            self.assertEqual(resolve[0]["resolved_count"], 1)
+            self.assertTrue(publish["written"])
+            self.assertEqual(status["page_id"], ir["citekey"])
+            self.assertEqual(status["compile_version"], 1)
+
+            self.assertEqual(papers["stats"]["papers"], 1)
+            self.assertEqual(papers["sections"]["papers"][0]["citekey"], ir["citekey"])
+            self.assertEqual(source_notes["stats"]["source_notes"], 1)
+            self.assertEqual(source_notes["sections"]["source_notes"][0]["paper_id"], paper["paper_id"])
+
+            self.assertEqual(signals["papers_scanned"], 1)
+            self.assertEqual(signals["claimed_novelties"][0]["paper"], ir["citekey"])
+
+            self.assertTrue(memory_result["ok"])
+            self.assertTrue(memory_result["appended"])
+            self.assertTrue(memory_state["overlay_applied"])
+            self.assertEqual(memory_state["uncompiled_event_count"], 1)
+            self.assertEqual(
+                memory_state["views"]["taste"]["overlay_events"][0]["event_id"],
+                memory_result["event_id"],
+            )
+            self.assertEqual(
+                memory_state["views"]["taste"]["overlay_events"][0]["summary"],
+                memory_event["summary"],
+            )
+
+            self.assertTrue(idea_result["ok"])
+            self.assertTrue(idea_result["snapshot_persisted"])
+            self.assertTrue(idea_result["promoted"])
+            self.assertEqual(idea_result["idea_state"], "durable")
+            self.assertEqual(idea_result["verification_state"], "verified")
+            self.assertTrue(Path(idea_result["snapshot_path"]).exists())
+            self.assertTrue(Path(idea_result["idea_path"]).exists())
+
+            snapshot = json.loads(Path(idea_result["snapshot_path"]).read_text(encoding="utf-8"))
+            memo_frontmatter = _read_frontmatter(Path(idea_result["idea_path"]))
+            self.assertEqual(snapshot["verification_state"], "verified")
+            self.assertTrue(snapshot["promotion_eligible"])
+            self.assertEqual(snapshot["trust_context"]["order"], ["wiki", "sources", "memory", "external"])
+            self.assertEqual(memo_frontmatter["idea_state"], "durable")
+            self.assertTrue(memo_frontmatter["verified"])
