@@ -11,6 +11,7 @@ import yaml
 
 from server.database import close_db
 from server.idea_verification import verify_idea
+from server.memory_runtime import read_memory_views
 from server.runtime import get_mutation_record
 from server.vault_contract import root_path
 from server.vault_ops import ensure_vault_structure, write_markdown as vault_write_markdown
@@ -107,6 +108,8 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertTrue(result["promoted"])
         self.assertEqual(result["idea_state"], "durable")
         self.assertEqual(result["verification_state"], "verified")
+        self.assertEqual(result["killed_ideas_memory_state"], "skipped")
+        self.assertIsNone(result["killed_ideas_memory_mutation_id"])
 
         snapshot_path = Path(result["snapshot_path"])
         self.assertTrue(snapshot_path.exists())
@@ -125,6 +128,11 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertTrue(frontmatter["verified"])
         self.assertEqual(frontmatter["verification_state"], "verified")
         self.assertIn("Paper Distill/insights/verification/", frontmatter["verification_snapshot"])
+        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
+        self.assertFalse(killed_ideas_state["overlay_applied"])
+        self.assertFalse(killed_ideas_state["views"]["killed-ideas"]["compiled"])
+        self.assertEqual(killed_ideas_state["views"]["killed-ideas"]["overlay_count"], 0)
+        self.assertEqual(killed_ideas_state["views"]["killed-ideas"]["body"], "")
 
         mutation = get_mutation_record(self.tmp, result["mutation_id"])
         self.assertEqual(mutation["status"], "done")
@@ -166,11 +174,20 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertEqual(result["idea_state"], "draft")
         self.assertEqual(result["verification_state"], "provider_failed")
         self.assertEqual(result["promotion_block_reason"], "provider_failed")
+        self.assertEqual(result["killed_ideas_memory_state"], "appended")
+        self.assertIsNotNone(result["killed_ideas_memory_mutation_id"])
+        self.assertIsNotNone(result["killed_ideas_event_id"])
 
         memo_path = Path(result["idea_path"])
         frontmatter = _read_frontmatter(memo_path)
         self.assertEqual(frontmatter["idea_state"], "draft")
         self.assertEqual(frontmatter["providers_failed"], ["web-search"])
+        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
+        self.assertTrue(killed_ideas_state["overlay_applied"])
+        event = killed_ideas_state["views"]["killed-ideas"]["overlay_events"][0]
+        self.assertEqual(event["event_type"], "idea_outcome")
+        self.assertEqual(event["status"], "provisional")
+        self.assertEqual(event["metadata"]["promotion_block_reason"], "provider_failed")
 
     def test_partial_verification_missing_provider_keeps_draft(self) -> None:
         result = verify_idea(
@@ -202,9 +219,14 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertEqual(result["verification_state"], "partial")
         self.assertEqual(result["missing_providers"], ["semantic-scholar"])
         self.assertEqual(result["promotion_block_reason"], "partial_evidence")
+        self.assertEqual(result["killed_ideas_memory_state"], "appended")
 
         snapshot = json.loads(Path(result["snapshot_path"]).read_text(encoding="utf-8"))
         self.assertEqual(snapshot["external_verification"]["missing_providers"], ["semantic-scholar"])
+        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
+        event = killed_ideas_state["views"]["killed-ideas"]["overlay_events"][0]
+        self.assertEqual(event["status"], "provisional")
+        self.assertEqual(event["metadata"]["missing_providers"], ["semantic-scholar"])
 
     def test_snapshot_is_persisted_before_draft_memo_write(self) -> None:
         observed: dict[str, object] = {}
@@ -294,10 +316,29 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertEqual(result["idea_state"], "draft")
         self.assertEqual(result["verification_state"], "contradicted")
         self.assertEqual(result["promotion_block_reason"], "contradiction_detected")
+        self.assertEqual(result["killed_ideas_memory_state"], "appended")
+        self.assertIsNotNone(result["killed_ideas_event_id"])
 
         snapshot = json.loads(Path(result["snapshot_path"]).read_text(encoding="utf-8"))
         self.assertEqual(snapshot["verification_state"], "contradicted")
         self.assertEqual(len(snapshot["external_verification"]["contradictions"]), 1)
+        first_read = read_memory_views(self.tmp, view_keys=["killed-ideas"])
+        self.assertTrue(first_read["overlay_applied"])
+        killed_event = first_read["views"]["killed-ideas"]["overlay_events"][0]
+        self.assertEqual(killed_event["event_type"], "contradiction_note")
+        self.assertEqual(killed_event["status"], "rejected")
+        self.assertEqual(
+            killed_event["metadata"]["promotion_block_reason"],
+            "contradiction_detected",
+        )
+
+        second_read = read_memory_views(self.tmp, view_keys=["killed-ideas"])
+        self.assertFalse(second_read["overlay_applied"])
+        self.assertTrue((root_path(self.tmp, "memory") / "killed-ideas.md").exists())
+        self.assertIn(
+            "should not be treated as an active direction",
+            second_read["views"]["killed-ideas"]["body"],
+        )
 
     def test_snapshot_write_failure_fails_loudly_and_does_not_write_memo(self) -> None:
         with patch("server.idea_verification._atomic_write_json", side_effect=OSError("disk full")):
@@ -329,6 +370,7 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         self.assertFalse(result["promoted"])
         self.assertEqual(result["idea_write_state"], "failed")
         self.assertEqual(result["snapshot_write_state"], "failed")
+        self.assertEqual(result["killed_ideas_memory_state"], "skipped")
         self.assertIn("disk full", result["error"])
 
         memo_path = root_path(self.tmp, "ideas") / "embodied-active-labeling.md"

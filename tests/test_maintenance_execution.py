@@ -9,6 +9,7 @@ import unittest
 from server.concept_registry import get_concept, register_concept, promote_concept
 from server.database import close_db, get_db
 from server.maintenance import confirm_task, execute_merge, execute_promote, execute_refresh
+from server.vault_ops import save_query_asset
 
 
 class MaintenanceExecutionTest(unittest.TestCase):
@@ -112,3 +113,91 @@ class MaintenanceExecutionTest(unittest.TestCase):
         self.assertIn("[[papers/paper-a]]", page)
         self.assertIn("## My Notes", page)
         self.assertIn("Keep me.", page)
+
+    def test_execute_refresh_marks_dependent_query_assets_stale(self) -> None:
+        register_concept(self.tmp, "robotics", concept_type="topic")
+        topic_path = os.path.join(self.tmp, "Paper Distill", "wiki", "topics", "robotics.md")
+        with open(topic_path, "w", encoding="utf-8") as f:
+            f.write("---\ntopic: robotics\n---\n\n## My Notes\n\nKeep me.\n")
+
+        conn = get_db(self.tmp)
+        conn.execute(
+            """INSERT OR REPLACE INTO compile_state
+               (page_id, page_type, compile_version, schema_version, compiled_at)
+               VALUES ('paper-a', 'paper', 1, 'legacy', '2026-04-06T00:00:00')"""
+        )
+        conn.execute(
+            """INSERT OR REPLACE INTO compile_deps
+               (page_id, page_type, dep_type, dep_id, dep_version)
+               VALUES ('paper-a', 'paper', 'topic', 'robotics', 1)"""
+        )
+        conn.commit()
+
+        save_query_asset(
+            self.tmp,
+            asset_id="robotics-synthesis",
+            note_type="topic-synthesis",
+            title="Robotics Synthesis",
+            question="What changed in robotics?",
+            summary="Saved synthesis.",
+            answer="Answer body.",
+            source_pages=["[[topics/robotics]]"],
+            topics_referenced=["robotics"],
+        )
+
+        task_id = self._insert_task(
+            "stale_topic_refresh",
+            {"topic": "robotics", "new_paper_count": 3, "reasons": ["3 new papers"]},
+        )
+        result = execute_refresh(self.tmp, task_id)
+        self.assertTrue(result.get("completed"))
+
+        query_path = os.path.join(
+            self.tmp,
+            "Paper Distill",
+            "insights",
+            "queries",
+            "robotics-synthesis.md",
+        )
+        query_text = open(query_path, "r", encoding="utf-8").read()
+        self.assertIn("refresh_state: stale", query_text)
+        self.assertIn("- robotics", query_text)
+        self.assertEqual(
+            result["dependent_refreshes"]["stale_marked_pages"][0]["page_id"],
+            "robotics-synthesis",
+        )
+
+    def test_execute_merge_rewrites_query_asset_refs_and_marks_stale(self) -> None:
+        register_concept(self.tmp, "Concept A")
+        register_concept(self.tmp, "Concept B")
+        save_query_asset(
+            self.tmp,
+            asset_id="merge-note",
+            note_type="comparison-note",
+            title="Merge Note",
+            question="How do these concepts compare?",
+            summary="Saved synthesis.",
+            answer="Answer body.",
+            source_pages=["[[concepts/concept-a]]"],
+            concepts_referenced=["concept-a"],
+            promotion_targets=[{"page_type": "concept", "page_id": "concept-a"}],
+        )
+
+        task_id = self._insert_task(
+            "merge_candidate",
+            {"from_id": "concept-a", "to_id": "concept-b", "reason": "test"},
+        )
+        result = execute_merge(self.tmp, task_id)
+        self.assertTrue(result.get("completed"))
+
+        note_path = os.path.join(
+            self.tmp,
+            "Paper Distill",
+            "insights",
+            "queries",
+            "merge-note.md",
+        )
+        note = open(note_path, "r", encoding="utf-8").read()
+        self.assertIn("[[concepts/concept-b]]", note)
+        self.assertIn('- concept-b', note)
+        self.assertIn("refresh_state: stale", note)

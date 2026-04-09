@@ -4,12 +4,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from server.compile_ir import commit_compile_result
+from server.concept_registry import register_concept
+from server.database import close_db, get_db
 from server.vault_ops import (
     append_knowledge_log,
     build_query_asset_body,
     build_query_asset_frontmatter,
     ensure_vault_structure,
     refresh_global_navigation,
+    save_query_asset,
     write_markdown,
 )
 
@@ -35,6 +39,8 @@ class QueryAssetProtocolTest(unittest.TestCase):
         self.assertEqual(frontmatter["concepts_referenced"], ["vision-language-action"])
         self.assertEqual(frontmatter["topics_referenced"], ["manipulation"])
         self.assertEqual(frontmatter["promotion_targets"][0]["page_type"], "topic")
+        self.assertEqual(frontmatter["refresh_state"], "fresh")
+        self.assertEqual(frontmatter["stale_dependencies"], [])
 
     def test_build_query_asset_body_renders_backlinks_and_follow_ups(self) -> None:
         body = build_query_asset_body(
@@ -52,6 +58,53 @@ class QueryAssetProtocolTest(unittest.TestCase):
         self.assertIn("How VLA Architectures Compare", body)
         self.assertIn("[[papers/brohan2023rt2]]", body)
         self.assertIn("Promote into the manipulation topic page.", body)
+
+    def test_save_query_asset_tracks_compile_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                ensure_vault_structure(tmpdir)
+                register_concept(tmpdir, "Manipulation", concept_type="topic")
+                commit_compile_result(
+                    tmpdir,
+                    "brohan2023rt2",
+                    "paper",
+                    "Paper body.",
+                    {"citekey": "brohan2023rt2", "title": "RT-2", "compile_version": 1},
+                )
+
+                result = save_query_asset(
+                    tmpdir,
+                    asset_id="vla-comparison",
+                    note_type="comparison-note",
+                    title="How VLA Architectures Compare",
+                    question="How do VLA architectures compare?",
+                    summary="Saved comparison note.",
+                    answer="Answer body.",
+                    source_pages=["[[papers/brohan2023rt2]]"],
+                    papers_referenced=["brohan2023rt2"],
+                    topics_referenced=["manipulation"],
+                )
+
+                self.assertTrue(result["written"])
+                self.assertIn(
+                    "Paper Distill/insights/queries/vla-comparison.md",
+                    result["knowledge_impact"]["queries_saved"],
+                )
+
+                rows = get_db(tmpdir).execute(
+                    """
+                    SELECT dep_type, dep_id
+                    FROM compile_deps
+                    WHERE page_id = 'vla-comparison' AND page_type = 'query'
+                    ORDER BY dep_type, dep_id
+                    """
+                ).fetchall()
+                self.assertEqual(
+                    [(row["dep_type"], row["dep_id"]) for row in rows],
+                    [("paper", "brohan2023rt2"), ("topic", "manipulation")],
+                )
+            finally:
+                close_db(tmpdir)
 
 
 class NavigationAndLogTest(unittest.TestCase):

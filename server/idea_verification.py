@@ -63,7 +63,7 @@ def verify_idea(
             snapshot_persisted=False,
         )
 
-    from server.runtime import submit_mutation
+    from server.runtime import get_mutation_record, submit_mutation
 
     result = submit_mutation(
         vault_path,
@@ -74,7 +74,25 @@ def verify_idea(
             "verification": normalized_verification,
         },
     )
-    return _normalize_verify_result(result, idea_id=normalized_idea["idea_id"])
+    normalized_result = _normalize_verify_result(result, idea_id=normalized_idea["idea_id"])
+    memory_mutation_id = normalized_result.get("killed_ideas_memory_mutation_id")
+    if not memory_mutation_id:
+        return normalized_result
+
+    memory_record = get_mutation_record(vault_path, int(memory_mutation_id))
+    memory_result = dict(memory_record.get("result") or {})
+    if memory_result.get("appended"):
+        normalized_result["killed_ideas_memory_state"] = "appended"
+        normalized_result["killed_ideas_event_id"] = memory_result.get("event_id")
+        normalized_result["killed_ideas_event_path"] = memory_result.get("event_path")
+    elif memory_record.get("status") == "failed":
+        normalized_result["killed_ideas_memory_state"] = "failed"
+        normalized_result["killed_ideas_memory_error"] = (
+            memory_result.get("error") or memory_record.get("error")
+        )
+    else:
+        normalized_result["killed_ideas_memory_state"] = "queued"
+    return normalized_result
 
 
 def execute_idea_verify_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +160,15 @@ def execute_idea_verify_mutation(vault_path: str, mutation: dict[str, Any]) -> d
             idea_path=str(memo_path),
         )
 
+    memory_capture = _enqueue_killed_ideas_memory_followup(
+        vault_path,
+        idea=idea,
+        snapshot=persisted_snapshot,
+        snapshot_path=snapshot_path,
+        idea_path=memo_path,
+        promoted=promoted,
+    )
+
     return _success_result(
         mutation_id=mutation["id"],
         idea_id=idea["idea_id"],
@@ -157,6 +184,9 @@ def execute_idea_verify_mutation(vault_path: str, mutation: dict[str, Any]) -> d
             persisted_snapshot.get("external_verification", {}).get("missing_providers") or []
         ),
         promotion_block_reason=persisted_snapshot.get("promotion_block_reason"),
+        killed_ideas_memory_state=str(memory_capture.get("state") or "skipped"),
+        killed_ideas_memory_mutation_id=memory_capture.get("mutation_id"),
+        killed_ideas_memory_error=memory_capture.get("error"),
     )
 
 
@@ -186,6 +216,9 @@ def _normalize_verify_result(result: dict[str, Any], *, idea_id: str) -> dict[st
     normalized.setdefault("provider_summary", {})
     normalized.setdefault("missing_providers", [])
     normalized.setdefault("promotion_block_reason", None if normalized["promoted"] else "verification_not_satisfied")
+    normalized.setdefault("killed_ideas_memory_state", "skipped")
+    normalized.setdefault("killed_ideas_memory_mutation_id", None)
+    normalized.setdefault("killed_ideas_memory_error", None)
     return normalized
 
 
@@ -201,6 +234,9 @@ def _success_result(
     provider_summary: dict[str, Any],
     missing_providers: list[str],
     promotion_block_reason: str | None,
+    killed_ideas_memory_state: str,
+    killed_ideas_memory_mutation_id: int | None,
+    killed_ideas_memory_error: str | None,
 ) -> dict[str, Any]:
     return {
         "ok": True,
@@ -219,6 +255,9 @@ def _success_result(
         "promotion_block_reason": None if promoted else promotion_block_reason,
         "provider_summary": provider_summary,
         "missing_providers": missing_providers,
+        "killed_ideas_memory_state": killed_ideas_memory_state,
+        "killed_ideas_memory_mutation_id": killed_ideas_memory_mutation_id,
+        "killed_ideas_memory_error": killed_ideas_memory_error,
     }
 
 
@@ -250,6 +289,9 @@ def _failure_result(
         "promotion_block_reason": "snapshot_write_failed" if not snapshot_persisted else "memo_write_failed",
         "provider_summary": {},
         "missing_providers": [],
+        "killed_ideas_memory_state": "skipped",
+        "killed_ideas_memory_mutation_id": None,
+        "killed_ideas_memory_error": None,
         "error": error,
     }
 
@@ -611,6 +653,148 @@ def _promotion_block_reason(verification_state: str) -> str | None:
     if verification_state == "contradicted":
         return "contradiction_detected"
     return "verification_not_satisfied"
+
+
+def _enqueue_killed_ideas_memory_followup(
+    vault_path: str,
+    *,
+    idea: dict[str, Any],
+    snapshot: dict[str, Any],
+    snapshot_path: Path,
+    idea_path: Path,
+    promoted: bool,
+) -> dict[str, Any]:
+    event = _build_killed_ideas_memory_event(
+        vault_path,
+        idea=idea,
+        snapshot=snapshot,
+        snapshot_path=snapshot_path,
+        idea_path=idea_path,
+        promoted=promoted,
+    )
+    if event is None:
+        return {"state": "skipped"}
+
+    try:
+        from server.runtime import enqueue_mutation
+
+        enqueued = enqueue_mutation(
+            vault_path,
+            mutation_type="memory_append",
+            target_key="memory:events",
+            payload={"event": event},
+        )
+    except Exception as exc:
+        return {
+            "state": "failed",
+            "error": f"Failed to enqueue killed-ideas memory: {exc}",
+        }
+
+    return {
+        "state": "enqueued",
+        "mutation_id": enqueued.get("mutation_id"),
+    }
+
+
+def _build_killed_ideas_memory_event(
+    vault_path: str,
+    *,
+    idea: dict[str, Any],
+    snapshot: dict[str, Any],
+    snapshot_path: Path,
+    idea_path: Path,
+    promoted: bool,
+) -> dict[str, Any] | None:
+    if promoted:
+        return None
+
+    verification_state = str(snapshot.get("verification_state") or "").strip()
+    promotion_block_reason = str(snapshot.get("promotion_block_reason") or "").strip()
+    if verification_state not in {"contradicted", "provider_failed", "partial"}:
+        return None
+
+    snapshot_ref = _paper_distill_ref(vault_path, snapshot_path)
+    idea_ref = _paper_distill_ref(vault_path, idea_path)
+    external = dict(snapshot.get("external_verification") or {})
+    provider_summary = dict(external.get("provider_summary") or {})
+    missing_providers = list(external.get("missing_providers") or [])
+    contradictions = list(external.get("contradictions") or [])
+
+    if verification_state == "contradicted":
+        event_type = "contradiction_note"
+        status = "rejected"
+        trust_label = "externally-verified"
+        summary = (
+            f"Idea '{idea['title']}' was contradicted during verification and should not "
+            "be treated as an active direction."
+        )
+    else:
+        event_type = "idea_outcome"
+        status = "provisional"
+        trust_label = "assistant-inferred"
+        summary = (
+            f"Idea '{idea['title']}' remains blocked in verification and should be revisited "
+            "only after the evidence gap is cleared."
+        )
+
+    content_lines = [
+        f"Idea ID: {idea['idea_id']}",
+        f"Verification state: {verification_state}",
+        f"Promotion block reason: {promotion_block_reason or 'verification_not_satisfied'}",
+        f"Draft memo: {idea_ref}",
+        f"Verification snapshot: {snapshot_ref}",
+    ]
+    if missing_providers:
+        content_lines.append(
+            f"Missing providers: {', '.join(missing_providers)}"
+        )
+    if provider_summary.get("failed"):
+        content_lines.append(
+            f"Providers failed: {', '.join(provider_summary.get('failed') or [])}"
+        )
+    if provider_summary.get("partial"):
+        content_lines.append(
+            f"Providers partial: {', '.join(provider_summary.get('partial') or [])}"
+        )
+    if provider_summary.get("contradicted"):
+        content_lines.append(
+            f"Providers contradicted: {', '.join(provider_summary.get('contradicted') or [])}"
+        )
+    if contradictions:
+        content_lines.append("Contradictions:")
+        for item in contradictions:
+            content_lines.append(f"- {_format_evidence_item(item)}")
+
+    notes = str(external.get("notes") or "").strip()
+    if notes:
+        content_lines.extend(["Verification notes:", notes])
+
+    return {
+        "event_type": event_type,
+        "title": f"Killed idea: {idea['title']}",
+        "view_keys": ["killed-ideas"],
+        "trust_label": trust_label,
+        "status": status,
+        "summary": summary,
+        "content": "\n".join(content_lines),
+        "source": {
+            "kind": "idea_verification",
+            "idea_id": idea["idea_id"],
+            "snapshot_ref": snapshot_ref,
+            "idea_ref": idea_ref,
+        },
+        "metadata": {
+            "idea_id": idea["idea_id"],
+            "verification_state": verification_state,
+            "promotion_block_reason": promotion_block_reason,
+            "snapshot_id": snapshot.get("snapshot_id"),
+            "snapshot_ref": snapshot_ref,
+            "idea_ref": idea_ref,
+            "missing_providers": missing_providers,
+            "contradiction_count": len(contradictions),
+            "provider_summary": provider_summary,
+        },
+    }
 
 
 def _format_evidence_item(item: dict[str, str]) -> str:

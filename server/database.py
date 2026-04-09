@@ -136,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_publish_journal_state_updated
 -- Compile State (generic page_id + page_type)
 CREATE TABLE IF NOT EXISTS compile_state (
     page_id           TEXT NOT NULL,
-    page_type         TEXT NOT NULL,      -- paper | concept | method | topic
+    page_type         TEXT NOT NULL,      -- paper | concept | method | topic | query
     compile_version   INTEGER NOT NULL,
     schema_version    TEXT NOT NULL,      -- e.g. "2024-06"
     compiled_at       TEXT NOT NULL,
@@ -151,16 +151,18 @@ CREATE TABLE IF NOT EXISTS compile_state (
 CREATE TABLE IF NOT EXISTS compile_deps (
     page_id       TEXT NOT NULL,
     page_type     TEXT NOT NULL,
-    dep_type      TEXT NOT NULL,         -- concept | method | topic
+    dep_type      TEXT NOT NULL,         -- paper | concept | method | topic
     dep_id        TEXT NOT NULL,
-    dep_version   INTEGER NOT NULL,      -- matches concept_registry.version at compile time
-    FOREIGN KEY (page_id, page_type) REFERENCES compile_state(page_id, page_type),
-    FOREIGN KEY (dep_id) REFERENCES concept_registry(id)
+    dep_version   INTEGER NOT NULL,      -- matches upstream compile/version at compile time
+    FOREIGN KEY (page_id, page_type) REFERENCES compile_state(page_id, page_type)
 );
 
 -- Index on deps for reverse lookups  ("who depends on concept X?")
 CREATE INDEX IF NOT EXISTS idx_compile_deps_dep
     ON compile_deps(dep_id, dep_type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_deps_unique
+    ON compile_deps(page_id, page_type, dep_type, dep_id);
 """
 
 
@@ -229,6 +231,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply additive schema migrations for older local databases."""
     _ensure_column(conn, "compile_state", "managed_hashes_json", "TEXT")
     _ensure_column(conn, "compile_state", "managed_blocks_json", "TEXT")
+    _ensure_compile_deps_schema(conn)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
@@ -238,6 +241,82 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: s
     }
     if column not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+
+def _ensure_compile_deps_schema(conn: sqlite3.Connection) -> None:
+    """Rebuild ``compile_deps`` when older schemas cannot express paper deps safely."""
+    table_row = conn.execute(
+        """
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'compile_deps'
+        """
+    ).fetchone()
+    if not table_row:
+        return
+
+    table_sql = str(table_row["sql"] if isinstance(table_row, sqlite3.Row) else table_row[0] or "")
+    unique_index = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'index' AND name = 'idx_compile_deps_unique'
+        """
+    ).fetchone()
+    needs_rebuild = (
+        "FOREIGN KEY (dep_id)" in table_sql
+        or "REFERENCES concept_registry" in table_sql
+        or unique_index is None
+    )
+    if not needs_rebuild:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_compile_deps_dep ON compile_deps(dep_id, dep_type)"
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_deps_unique
+            ON compile_deps(page_id, page_type, dep_type, dep_id)
+            """
+        )
+        return
+
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS compile_deps_new (
+                page_id     TEXT NOT NULL,
+                page_type   TEXT NOT NULL,
+                dep_type    TEXT NOT NULL,
+                dep_id      TEXT NOT NULL,
+                dep_version INTEGER NOT NULL,
+                FOREIGN KEY (page_id, page_type) REFERENCES compile_state(page_id, page_type)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO compile_deps_new
+                (page_id, page_type, dep_type, dep_id, dep_version)
+            SELECT DISTINCT page_id, page_type, dep_type, dep_id, dep_version
+            FROM compile_deps
+            """
+        )
+        conn.execute("DROP TABLE compile_deps")
+        conn.execute("ALTER TABLE compile_deps_new RENAME TO compile_deps")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_compile_deps_dep ON compile_deps(dep_id, dep_type)"
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_deps_unique
+            ON compile_deps(page_id, page_type, dep_type, dep_id)
+            """
+        )
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 # ---------------------------------------------------------------------------

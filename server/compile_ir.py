@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from server.database import get_db
 from server.publish import (
     apply_staged_bundle,
@@ -50,6 +52,7 @@ _TYPE_DIR = {
     "concept": "wiki/concepts",
     "method": "wiki/methods",
     "topic": "wiki/topics",
+    "query": "insights/queries",
 }
 
 # ---------------------------------------------------------------------------
@@ -694,19 +697,13 @@ def _decode_mutation_payload(mutation: dict[str, Any]) -> dict[str, Any]:
 
 
 def _render_frontmatter_block(frontmatter: dict[str, Any]) -> str:
-    fm_lines = ["---"]
-    for key, value in frontmatter.items():
-        if isinstance(value, list):
-            fm_lines.append(f"{key}:")
-            for item in value:
-                fm_lines.append(f"  - {item}")
-        elif isinstance(value, dict):
-            fm_lines.append(f"{key}: {json.dumps(value)}")
-        else:
-            safe_value = str(value).replace('"', '\\"')
-            fm_lines.append(f'{key}: "{safe_value}"')
-    fm_lines.append("---")
-    return "\n".join(fm_lines)
+    payload = yaml.safe_dump(
+        frontmatter,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    ).strip()
+    return f"---\n{payload}\n---"
 
 
 def _extract_managed_sections(content: str) -> str:

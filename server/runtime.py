@@ -242,10 +242,25 @@ def _dispatch_mutation(vault_path: str, row: dict[str, Any]) -> dict[str, Any]:
 
         handler = execute_memory_append_mutation
         register_mutation_handler(mutation_type, handler)
+    if handler is None and mutation_type == "memory_compile":
+        from server.memory_compile import execute_memory_compile_mutation
+
+        handler = execute_memory_compile_mutation
+        register_mutation_handler(mutation_type, handler)
+    if handler is None and mutation_type == "memory_promote":
+        from server.memory_promotion import execute_memory_promote_mutation
+
+        handler = execute_memory_promote_mutation
+        register_mutation_handler(mutation_type, handler)
     if handler is None and mutation_type == "idea_verify":
         from server.idea_verification import execute_idea_verify_mutation
 
         handler = execute_idea_verify_mutation
+        register_mutation_handler(mutation_type, handler)
+    if handler is None and mutation_type == "dialogue_capture":
+        from server.dialogue_capture import execute_dialogue_capture_mutation
+
+        handler = execute_dialogue_capture_mutation
         register_mutation_handler(mutation_type, handler)
     if handler is None:
         raise ValueError(f"Unknown mutation_type: {mutation_type}")

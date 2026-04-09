@@ -45,6 +45,7 @@ Research knowledge system with human approval, evidence-first source capture, in
 - `sources/notes/` CRGP-DNL structured source notes
 - `wiki/` compiled knowledge pages
 - `insights/` saved digests, query assets, ideas, and dialogue artifacts
+  plus memory promotion audit notes
 - `memory/` current-view advisory memory surfaces
 """,
     "inbox": """---
@@ -190,6 +191,14 @@ updated: ""
 ---
 
 # Dialogues
+""",
+    "memory_promotions": """---
+type: index
+section: insights/memory-promotions
+updated: ""
+---
+
+# Memory Promotions
 """,
     "verification": """---
 type: index
@@ -419,12 +428,16 @@ def build_query_asset_frontmatter(
         "title": title,
         "question": question,
         "date": _now_date(),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
         "source_pages": list(source_pages or []),
         "papers_referenced": list(papers_referenced or []),
         "concepts_referenced": list(concepts_referenced or []),
         "topics_referenced": list(topics_referenced or []),
         "derived_actions": list(derived_actions or []),
         "promotion_targets": list(promotion_targets or []),
+        "refresh_state": "fresh",
+        "stale_dependencies": [],
+        "refresh_reason": "",
         "status": status,
     }
 
@@ -443,6 +456,183 @@ def build_query_asset_body(payload: dict[str, Any]) -> str:
             **template_contract_context(),
         },
     )
+
+
+def save_query_asset(
+    vault_path: str,
+    *,
+    asset_id: str | None = None,
+    note_type: str,
+    title: str,
+    question: str,
+    summary: str,
+    answer: str,
+    source_pages: list[str] | None = None,
+    papers_referenced: list[str] | None = None,
+    concepts_referenced: list[str] | None = None,
+    topics_referenced: list[str] | None = None,
+    derived_actions: list[str] | None = None,
+    promotion_targets: list[dict[str, Any]] | None = None,
+    status: str = "saved",
+) -> dict[str, Any]:
+    """Persist a query asset through compile-aware publish and register deps."""
+    from server.compile_ir import commit_compile_result as commit_compiled_page
+    from server.concept_registry import slugify
+
+    effective_id = slugify(asset_id or title or question or "query-asset") or "query-asset"
+    frontmatter = build_query_asset_frontmatter(
+        note_type=note_type,
+        title=title,
+        question=question,
+        source_pages=source_pages,
+        papers_referenced=papers_referenced,
+        concepts_referenced=concepts_referenced,
+        topics_referenced=topics_referenced,
+        derived_actions=derived_actions,
+        promotion_targets=promotion_targets,
+        status=status,
+    )
+    body = build_query_asset_body(
+        {
+            "title": title,
+            "question": question,
+            "summary": summary,
+            "answer": answer,
+            "source_pages": list(source_pages or []),
+            "promotion_targets": list(promotion_targets or []),
+            "derived_actions": list(derived_actions or []),
+        }
+    )
+    deps = _query_asset_dependency_entries(
+        vault_path,
+        papers_referenced=papers_referenced,
+        concepts_referenced=concepts_referenced,
+        topics_referenced=topics_referenced,
+    )
+    result = commit_compiled_page(
+        vault_path,
+        effective_id,
+        "query",
+        body,
+        frontmatter,
+        deps=deps,
+    )
+    result.setdefault("asset_id", effective_id)
+    if result.get("written"):
+        impact = normalize_knowledge_impact(result.get("knowledge_impact"))
+        query_rel_path = f"{PAPER_DISTILL_ROOT}/{ROOT_DIRS['queries']}/{effective_id}.md"
+        if query_rel_path not in impact["queries_saved"]:
+            impact["queries_saved"].append(query_rel_path)
+        result["knowledge_impact"] = impact
+    return result
+
+
+def mark_query_asset_stale(
+    vault_path: str,
+    asset_id: str,
+    *,
+    changed_dependencies: list[str] | None = None,
+    reason: str,
+) -> dict[str, Any]:
+    """Flag a saved query asset as stale after an upstream dependency changes."""
+    path = root_path(vault_path, "queries") / f"{asset_id}.md"
+    if not path.exists():
+        return {"updated": False, "path": str(path), "reason": "missing"}
+
+    frontmatter = _read_frontmatter(path)
+    stale_dependencies = list(frontmatter.get("stale_dependencies") or [])
+    for dep_id in changed_dependencies or []:
+        if dep_id and dep_id not in stale_dependencies:
+            stale_dependencies.append(dep_id)
+
+    update_frontmatter(
+        path,
+        {
+            "refresh_state": "stale",
+            "stale_dependencies": stale_dependencies,
+            "refresh_reason": reason,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+    return {
+        "updated": True,
+        "path": str(path),
+        "refresh_state": "stale",
+        "stale_dependencies": stale_dependencies,
+    }
+
+
+def _query_asset_dependency_entries(
+    vault_path: str,
+    *,
+    papers_referenced: list[str] | None = None,
+    concepts_referenced: list[str] | None = None,
+    topics_referenced: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    deps: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for dep_type, values in (
+        ("paper", papers_referenced or []),
+        ("concept", concepts_referenced or []),
+        ("topic", topics_referenced or []),
+    ):
+        for raw_dep_id in values:
+            dep_id = str(raw_dep_id or "").strip()
+            if not dep_id:
+                continue
+            dep_key = (dep_type, dep_id)
+            if dep_key in seen:
+                continue
+            seen.add(dep_key)
+            deps.append(
+                {
+                    "dep_type": dep_type,
+                    "dep_id": dep_id,
+                    "dep_version": _dependency_version(vault_path, dep_type, dep_id),
+                }
+            )
+    return deps
+
+
+def _dependency_version(vault_path: str, dep_type: str, dep_id: str) -> int:
+    from server.database import get_db
+
+    conn = get_db(vault_path)
+    if dep_type == "paper":
+        row = conn.execute(
+            """
+            SELECT compile_version
+            FROM compile_state
+            WHERE page_id = ? AND page_type = 'paper'
+            """,
+            (dep_id,),
+        ).fetchone()
+        return int(row["compile_version"]) if row else 1
+
+    if dep_type in {"concept", "method", "topic"}:
+        row = conn.execute(
+            """
+            SELECT compile_version
+            FROM compile_state
+            WHERE page_id = ? AND page_type = ?
+            """,
+            (dep_id, dep_type),
+        ).fetchone()
+        if row:
+            return int(row["compile_version"])
+
+        row = conn.execute(
+            """
+            SELECT version
+            FROM concept_registry
+            WHERE id = ?
+            """,
+            (dep_id,),
+        ).fetchone()
+        if row:
+            return int(row["version"])
+
+    return 1
 
 
 def _read_frontmatter(path: Path) -> dict[str, Any]:

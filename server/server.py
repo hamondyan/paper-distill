@@ -34,6 +34,7 @@ from server.config import (
     get_zotero_mode,
     get_zotero_settings,
 )
+from server.context_assembler import assemble_runtime_context
 from server.paper_utils import (
     canonical_html_url,
     canonical_item_url,
@@ -1285,6 +1286,42 @@ def _score_metadata_quality_v2(paper: dict) -> float:
     return sum(1 for passed in checks if passed) / len(checks)
 
 
+def _score_keyword_alignment(
+    paper: dict,
+    keywords: list[str] | None,
+) -> float:
+    """Return a bounded relevance boost from user/profile keywords."""
+    if not keywords:
+        return 0.0
+
+    normalized_keywords: list[str] = []
+    seen_keywords: set[str] = set()
+    for keyword in keywords:
+        normalized = str(keyword or "").strip().lower()
+        if len(normalized) < 3 or normalized in seen_keywords:
+            continue
+        seen_keywords.add(normalized)
+        normalized_keywords.append(normalized)
+    if not normalized_keywords:
+        return 0.0
+
+    title = (paper.get("title") or "").lower()
+    abstract = (paper.get("abstract") or "").lower()
+    venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
+
+    matched_score = 0.0
+    for normalized in normalized_keywords:
+        if normalized in title:
+            matched_score += 0.45
+        elif normalized in abstract:
+            matched_score += 0.20
+        elif normalized in venue:
+            matched_score += 0.10
+
+    max_score = max(len(normalized_keywords) * 0.45, 0.45)
+    return min(matched_score / max_score, 1.0)
+
+
 def _score_rejected_keywords(
     paper: dict,
     rejected_keywords: list[str] | None,
@@ -1587,6 +1624,7 @@ async def score_papers(
     preferred_venues: list[str] | None = None,
     venue_aliases: dict | None = None,
     venue_tiers: dict | None = None,
+    runtime_context: dict | None = None,
 ) -> list[dict]:
     """Score papers using the v2 topic-aware deterministic formula."""
     settings = get_paper_distill_settings()
@@ -1599,15 +1637,19 @@ async def score_papers(
 
     aliases = venue_aliases or scoring_settings.get("venue_aliases", {})
     tiers = venue_tiers or scoring_settings.get("venue_tiers", {})
-    preferred_venues = preferred_venues or settings.get("research_profile", {}).get(
-        "learned_preferences", {}
-    ).get("preferred_venues", [])
-    whitelist_authors = whitelist_authors or settings.get("research_profile", {}).get(
-        "whitelist_authors", []
+    effective_preferences = dict(runtime_context.get("effective_preferences") or {}) if isinstance(runtime_context, dict) else {}
+    settings_preferences = settings.get("research_profile", {}).get("learned_preferences", {})
+    preferred_venues = preferred_venues or effective_preferences.get("preferred_venues") or settings_preferences.get(
+        "preferred_venues", []
     )
-    rejected_keywords = settings.get("research_profile", {}).get(
-        "learned_preferences", {}
-    ).get("rejected_keywords", [])
+    whitelist_authors = whitelist_authors or effective_preferences.get("whitelist_authors") or settings.get(
+        "research_profile", {}
+    ).get("whitelist_authors", [])
+    rejected_keywords = effective_preferences.get("rejected_keywords") or settings_preferences.get(
+        "rejected_keywords", []
+    )
+    profile_terms = effective_preferences.get("profile_terms") or []
+    taste_terms = effective_preferences.get("taste_terms") or []
 
     known_id_set = {item.strip().lower() for item in (known_ids or []) if item}
     known_id_set.update(
@@ -1629,6 +1671,8 @@ async def score_papers(
         )
         metadata_quality = _score_metadata_quality_v2(annotated)
         rejected_penalty = _score_rejected_keywords(annotated, rejected_keywords)
+        profile_alignment = _score_keyword_alignment(annotated, profile_terms)
+        taste_alignment = _score_keyword_alignment(annotated, taste_terms)
 
         total = (
             weights.get("topic_fit", 0.40) * topic_fit
@@ -1638,6 +1682,8 @@ async def score_papers(
             + weights.get("venue_tier", 0.07) * venue_score
             + weights.get("author_preference", 0.05) * author_pref
             + weights.get("metadata_quality", 0.03) * metadata_quality
+            + weights.get("profile_alignment", 0.05) * profile_alignment
+            + weights.get("taste_alignment", 0.03) * taste_alignment
             + rejected_penalty
         )
 
@@ -1652,6 +1698,8 @@ async def score_papers(
             "venue_tier": round(venue_score, 4),
             "author_preference": round(author_pref, 4),
             "metadata_quality": round(metadata_quality, 4),
+            "profile_alignment": round(profile_alignment, 4),
+            "taste_alignment": round(taste_alignment, 4),
             "rejected_penalty": round(rejected_penalty, 4),
         }
         scored.append(scored_paper)
@@ -1718,10 +1766,18 @@ async def query_vault(
     if not vault_path:
         return {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
 
-    return await asyncio.to_thread(
+    result = await asyncio.to_thread(
         query_vault_sync, vault_path, section, topic, uncompiled_only, status,
         detail, limit, sort_by, days_back,
     )
+    result["runtime_context"] = await asyncio.to_thread(
+        assemble_runtime_context,
+        vault_path,
+        task="query",
+        query_text=" ".join(part for part in [section, topic or ""] if part).strip(),
+        topic_keys=[topic] if topic else None,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1976,6 +2032,12 @@ async def discover_papers(
     require_arxiv_binding = settings.get("workflow", {}).get("require_arxiv_binding", True)
     known_ids = _existing_paper_ids(vault_path) if vault_path else set()
     existing_in_vault_ids = set(known_ids)
+    runtime_context = assemble_runtime_context(
+        vault_path,
+        task="discovery",
+        query_text=query,
+        topic_keys=list(selected_topics.keys()),
+    )
 
     discovered: list[dict] = []
     discovered_by_id: dict[str, dict] = {}
@@ -1995,6 +2057,7 @@ async def discover_papers(
                 papers=results,
                 topics={topic_key: topic},
                 known_ids=sorted(known_ids),
+                runtime_context=runtime_context,
             )
 
             # After pass 1, diagnose drift and decide whether to refine
@@ -2060,6 +2123,7 @@ async def discover_papers(
         "topics": list(selected_topics.keys()),
         "papers": discovered,
         "written": written,
+        "runtime_context": runtime_context,
     }
 
 
@@ -2490,7 +2554,18 @@ async def analyze_knowledge_graph(user_topics: list[str] | None = None) -> dict:
                 for t in topics_config
                 if isinstance(t, dict) and str(t.get("key", t.get("name", ""))).strip()
             ]
-    return await asyncio.to_thread(analyze_knowledge_graph_sync, vault_path, user_topics)
+    result = await asyncio.to_thread(analyze_knowledge_graph_sync, vault_path, user_topics)
+    result["runtime_context"] = await asyncio.to_thread(
+        assemble_runtime_context,
+        vault_path,
+        task="idea_generation",
+        topic_keys=user_topics,
+        user_topics=user_topics,
+    )
+    result["local_memory_evidence"] = list(
+        result["runtime_context"].get("memory", {}).get("local_evidence", [])
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -2983,7 +3058,7 @@ async def commit_compile_result(
 
     Args:
         page_id: Logical ID — citekey for papers, slug for concepts/topics.
-        page_type: "paper" | "concept" | "method" | "topic".
+        page_type: "paper" | "concept" | "method" | "topic" | "query".
         content: Full markdown body (without frontmatter block).
         frontmatter: Dict of frontmatter fields to render.
         ir_path: Optional path to resolved IR JSON for traceability.
@@ -3046,7 +3121,7 @@ async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
 
     Args:
         page_id: Page identifier (citekey or slug).
-        page_type: "paper" | "concept" | "method" | "topic" (default "paper").
+        page_type: "paper" | "concept" | "method" | "topic" | "query" (default "paper").
     """
     vault_path = get_vault_path()
     if not vault_path:

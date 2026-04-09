@@ -33,7 +33,12 @@ import yaml
 from server.concept_registry import auto_merge_eligible, get_concept, merge_concepts, promote_concept, slugify
 from server.compile_ir import commit_compile_result
 from server.database import get_db, _now_iso
-from server.vault_ops import append_knowledge_log, normalize_knowledge_impact, refresh_global_navigation
+from server.vault_ops import (
+    append_knowledge_log,
+    mark_query_asset_stale,
+    normalize_knowledge_impact,
+    refresh_global_navigation,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -409,13 +414,16 @@ def execute_merge(vault_path: str, task_id: int) -> dict[str, Any]:
     impacted_pages = _dependent_pages_for_ids(conn, [from_id, to_id])
     for page in impacted_pages:
         _rewrite_page_links(vault_path, page["page_id"], page["page_type"], from_id, to_id)
+    propagation = _propagate_dependency_refresh(
+        vault_path,
+        impacted_pages,
+        changed_dep_ids=[from_id, to_id],
+        reason=f"Concept merge updated dependency targets from {from_id} to {to_id}.",
+    )
     complete_task(vault_path, task_id)
     impact = normalize_knowledge_impact(
         {
-            "updated_pages": [
-                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
-                for page in impacted_pages
-            ],
+            "updated_pages": _impact_paths_for_pages(impacted_pages),
         }
     )
     append_knowledge_log(
@@ -431,6 +439,7 @@ def execute_merge(vault_path: str, task_id: int) -> dict[str, Any]:
         "completed": True,
         "task_id": task_id,
         "impacted_pages": impacted_pages,
+        "dependent_refreshes": propagation,
         "knowledge_impact": impact,
     }
 
@@ -484,13 +493,17 @@ def execute_promote(vault_path: str, task_id: int) -> dict[str, Any]:
     for page in impacted_pages:
         _rewrite_page_links(vault_path, page["page_id"], page["page_type"], concept_id, concept_id, to_section="topics")
     refresh_summary = _refresh_topic_page(vault_path, concept_id)
+    propagation = _propagate_dependency_refresh(
+        vault_path,
+        impacted_pages,
+        changed_dep_ids=[concept_id],
+        reason=f"Promotion changed {concept_id} from concept semantics into topic semantics.",
+        skip_pages={(concept_id, "topic")},
+    )
     complete_task(vault_path, task_id)
     impact = normalize_knowledge_impact(
         {
-            "updated_pages": [
-                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
-                for page in impacted_pages
-            ],
+            "updated_pages": _impact_paths_for_pages(impacted_pages),
             "topics_refreshed": [concept_id],
         }
     )
@@ -508,6 +521,7 @@ def execute_promote(vault_path: str, task_id: int) -> dict[str, Any]:
         "task_id": task_id,
         "impacted_pages": impacted_pages,
         "refresh": refresh_summary,
+        "dependent_refreshes": propagation,
         "knowledge_impact": impact,
     }
 
@@ -539,13 +553,17 @@ def execute_refresh(vault_path: str, task_id: int) -> dict[str, Any]:
     conn = get_db(vault_path)
     impacted_pages = _dependent_pages_for_ids(conn, [topic])
     refresh_summary = _refresh_topic_page(vault_path, topic)
+    propagation = _propagate_dependency_refresh(
+        vault_path,
+        impacted_pages,
+        changed_dep_ids=[topic],
+        reason=f"Topic {topic} was refreshed from upstream dependencies.",
+        skip_pages={(topic, "topic")},
+    )
     complete_task(vault_path, task_id)
     impact = normalize_knowledge_impact(
         {
-            "updated_pages": [
-                f"Paper Distill/wiki/{page['page_type']}s/{page['page_id']}.md"
-                for page in impacted_pages
-            ],
+            "updated_pages": _impact_paths_for_pages(impacted_pages),
             "topics_refreshed": [topic],
         }
     )
@@ -563,6 +581,7 @@ def execute_refresh(vault_path: str, task_id: int) -> dict[str, Any]:
         "topic": topic,
         "impacted_pages": impacted_pages,
         "refresh": refresh_summary,
+        "dependent_refreshes": propagation,
         "knowledge_impact": impact,
     }
 
@@ -671,12 +690,31 @@ _PAGE_PATHS = {
     "concept": ("wiki", "concepts"),
     "method": ("wiki", "methods"),
     "topic": ("wiki", "topics"),
+    "query": ("insights", "queries"),
 }
 
 
 def _page_path(vault_path: str, page_id: str, page_type: str) -> str:
     parts = _PAGE_PATHS[page_type]
     return os.path.join(vault_path, "Paper Distill", *parts, f"{page_id}.md")
+
+
+def _page_ref_for_impact(page_id: str, page_type: str) -> str | None:
+    parts = _PAGE_PATHS.get(page_type)
+    if not parts:
+        return None
+    return "/".join(("Paper Distill", *parts, f"{page_id}.md"))
+
+
+def _impact_paths_for_pages(pages: list[dict[str, Any]]) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    for page in pages:
+        ref = _page_ref_for_impact(page["page_id"], page["page_type"])
+        if ref and ref not in seen:
+            refs.append(ref)
+            seen.add(ref)
+    return refs
 
 
 def _rewrite_page_links(
@@ -712,12 +750,94 @@ def _rewrite_page_links(
         topics = [to_id if slugify(str(item)) == from_id and to_section == "topics" else item for item in topics]
         if topics:
             frontmatter["topics"] = topics
+    elif page_type == "query":
+        concepts_referenced = frontmatter.get("concepts_referenced") or []
+        if isinstance(concepts_referenced, str):
+            concepts_referenced = [concepts_referenced]
+        topics_referenced = frontmatter.get("topics_referenced") or []
+        if isinstance(topics_referenced, str):
+            topics_referenced = [topics_referenced]
+
+        if to_section == "topics":
+            concepts_referenced = [
+                item for item in concepts_referenced if slugify(str(item)) != from_id
+            ]
+            if to_id not in topics_referenced:
+                topics_referenced.append(to_id)
+        else:
+            concepts_referenced = [
+                to_id if slugify(str(item)) == from_id else item for item in concepts_referenced
+            ]
+            topics_referenced = [
+                to_id if slugify(str(item)) == from_id else item for item in topics_referenced
+            ]
+
+        frontmatter["concepts_referenced"] = concepts_referenced
+        frontmatter["topics_referenced"] = topics_referenced
+
+        promotion_targets = list(frontmatter.get("promotion_targets", []) or [])
+        for target in promotion_targets:
+            if not isinstance(target, dict):
+                continue
+            if slugify(str(target.get("page_id", ""))) != from_id:
+                continue
+            target["page_id"] = to_id
+            if to_section == "topics":
+                target["page_type"] = "topic"
+        if promotion_targets:
+            frontmatter["promotion_targets"] = promotion_targets
 
     rebuilt = main_body.strip()
     if user_suffix:
         rebuilt = f"{rebuilt}\n\n{user_suffix}".strip()
     with open(path, "w", encoding="utf-8") as f:
         f.write(_render_markdown(frontmatter, rebuilt))
+
+
+def _propagate_dependency_refresh(
+    vault_path: str,
+    impacted_pages: list[dict[str, Any]],
+    *,
+    changed_dep_ids: list[str],
+    reason: str,
+    skip_pages: set[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    skip = skip_pages or set()
+    refreshed_pages: list[dict[str, Any]] = []
+    stale_marked_pages: list[dict[str, Any]] = []
+    for page in impacted_pages:
+        page_key = (page["page_id"], page["page_type"])
+        if page_key in skip:
+            continue
+        if page["page_type"] == "topic":
+            refresh = _refresh_topic_page(vault_path, page["page_id"])
+            refreshed_pages.append(
+                {
+                    "page_id": page["page_id"],
+                    "page_type": page["page_type"],
+                    "result": refresh,
+                }
+            )
+        elif page["page_type"] == "query":
+            stale_result = mark_query_asset_stale(
+                vault_path,
+                page["page_id"],
+                changed_dependencies=changed_dep_ids,
+                reason=reason,
+            )
+            if stale_result.get("updated"):
+                stale_marked_pages.append(
+                    {
+                        "page_id": page["page_id"],
+                        "page_type": page["page_type"],
+                        "path": stale_result["path"],
+                        "stale_dependencies": stale_result.get("stale_dependencies", []),
+                    }
+                )
+    return {
+        "refreshed_pages": refreshed_pages,
+        "stale_marked_pages": stale_marked_pages,
+    }
 
 
 def _promote_concept_page_to_topic(vault_path: str, concept_id: str) -> None:

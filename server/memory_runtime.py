@@ -16,6 +16,15 @@ from typing import Any
 import yaml
 
 from server.database import _now_iso
+from server.memory_contract import (
+    order_memory_view_keys,
+    public_memory_view_contract,
+    validate_typed_memory_event,
+)
+from server.memory_promotion import (
+    collapse_promoted_memory_events,
+    validate_memory_promotion_boundary,
+)
 from server.vault_contract import root_path
 from server.vault_ops import ensure_vault_structure
 
@@ -111,9 +120,9 @@ def list_memory_events(
         event = _read_event_file(path)
         event["event_path"] = str(path)
 
-        if only_uncompiled and event.get("compile_status") == "compiled":
-            continue
         if requested and not set(event.get("view_keys", [])).intersection(requested):
+            continue
+        if only_uncompiled and not _event_has_uncompiled_requested_views(event, requested):
             continue
         events.append(event)
 
@@ -139,10 +148,12 @@ def read_memory_views(
     ensure_vault_structure(vault_path)
     requested = _normalize_requested_view_keys(view_keys)
     compiled_views = _load_compiled_views(vault_path, requested)
-    overlay_events = list_uncompiled_memory_events(
+    overlay_events = collapse_promoted_memory_events(
+        list_uncompiled_memory_events(
         vault_path,
         view_keys=requested,
         limit=overlay_limit,
+        )
     )
 
     ordered_view_keys = _ordered_view_keys(
@@ -156,7 +167,7 @@ def read_memory_views(
         matching_events = [
             _public_event_shape(event)
             for event in overlay_events
-            if view_key in event.get("view_keys", [])
+            if _event_has_uncompiled_view_key(event, view_key)
         ]
         views[view_key] = {
             "view_key": view_key,
@@ -164,15 +175,18 @@ def read_memory_views(
             "path": compiled.get("path"),
             "frontmatter": compiled.get("frontmatter", {}),
             "body": compiled.get("body", ""),
+            "contract": public_memory_view_contract(view_key),
             "overlay_events": matching_events,
             "overlay_count": len(matching_events),
         }
 
-    return {
+    result = {
         "overlay_applied": bool(overlay_events),
         "uncompiled_event_count": len(overlay_events),
         "views": views,
     }
+    _maybe_opportunistic_compile(vault_path, requested)
+    return result
 
 
 def _normalize_append_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +298,11 @@ def _normalize_event_request(event: dict[str, Any]) -> dict[str, Any]:
         "source": dict(event.get("source") or {}),
         "metadata": dict(event.get("metadata") or {}),
     }
+    try:
+        validate_typed_memory_event(normalized)
+        validate_memory_promotion_boundary(normalized)
+    except ValueError as exc:
+        raise MemoryEventValidationError(str(exc)) from exc
     return normalized
 
 
@@ -399,8 +418,38 @@ def _ordered_view_keys(
         _push(key)
     for event in overlay_events:
         for key in event.get("view_keys", []):
-            _push(str(key))
-    return ordered
+            if _event_has_uncompiled_view_key(event, str(key)):
+                _push(str(key))
+    return order_memory_view_keys(ordered)
+
+
+def _event_has_uncompiled_requested_views(event: dict[str, Any], requested: list[str]) -> bool:
+    event_keys = set(event.get("view_keys") or [])
+    compiled_keys = set(event.get("compiled_view_keys") or [])
+    relevant = event_keys if not requested else event_keys.intersection(requested)
+    return bool(relevant - compiled_keys)
+
+
+def _event_has_uncompiled_view_key(event: dict[str, Any], view_key: str) -> bool:
+    event_keys = set(event.get("view_keys") or [])
+    compiled_keys = set(event.get("compiled_view_keys") or [])
+    return view_key in event_keys and view_key not in compiled_keys
+
+
+def _maybe_opportunistic_compile(vault_path: str, requested: list[str]) -> None:
+    if not requested:
+        return
+
+    pending = list_uncompiled_memory_events(vault_path, view_keys=requested, limit=1)
+    if not pending:
+        return
+
+    try:
+        from server.memory_compile import compile_memory_views
+
+        compile_memory_views(vault_path, view_keys=requested)
+    except Exception:
+        return
 
 
 def _decode_json(raw: Any) -> dict[str, Any]:
