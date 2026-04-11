@@ -2,7 +2,7 @@
 
 The EDC pipeline has three stages:
 
-    Extract  — agent reads raw notes, produces a structured IR JSON
+    Extract  — agent reads source evidence, produces a structured IR JSON
     Resolve  — pure-Python entity-linking: candidate_concepts → registry IDs
     Write    — render IR to wiki markdown, update compile_state/compile_deps
 
@@ -25,22 +25,12 @@ from typing import Any
 import yaml
 
 from server.database import get_db
-from server.publish import (
-    apply_staged_bundle,
-    begin_publish_run,
-    cleanup_staged_publish_run,
-    get_latest_publish_run,
-    mark_publish_run_failed,
-    mark_publish_run_published,
-    stage_publish_run,
-)
 from server.vault_ops import (
     append_knowledge_log,
     compiled_ir_path,
     compiled_ir_resolved_path,
     normalize_knowledge_impact,
     paper_distill_root,
-    refresh_global_navigation,
 )
 
 LOG = logging.getLogger(__name__)
@@ -130,7 +120,7 @@ def validate_ir(ir_data: dict) -> list[str]:
 def write_ir(vault_path: str, citekey: str, ir_data: dict) -> dict[str, Any]:
     """Validate and persist the raw Extract IR.
 
-    The IR is written to ``compiled_ir/{citekey}.json`` inside the vault.
+    The IR is written to ``.state/ir/{citekey}.json`` inside the vault.
     A ``schema_version`` field is injected if absent.
 
     Returns a result dict with ``path``, ``valid`` (bool), and ``errors``.
@@ -158,7 +148,6 @@ def write_ir(vault_path: str, citekey: str, ir_data: dict) -> dict[str, Any]:
         summary=f"Stored the Extract-stage IR for {citekey}.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
     return {"valid": True, "errors": [], "path": str(dest), "knowledge_impact": impact}
 
 
@@ -181,9 +170,9 @@ def read_ir(vault_path: str, citekey: str, resolved: bool = False) -> dict | Non
 def resolve_ir(vault_path: str, citekey: str) -> dict[str, Any]:
     """Resolve candidate_concepts in the raw IR against the concept registry.
 
-    Reads ``compiled_ir/{citekey}.json``, maps each candidate concept to its
+    Reads ``.state/ir/{citekey}.json``, maps each candidate concept to its
     canonical registry entry (registering new ones as needed), and writes the
-    result to ``compiled_ir/{citekey}_resolved.json``.
+    result to ``.state/ir/{citekey}_resolved.json``.
 
     Returns a summary dict with ``resolved_count``, ``registered_new``,
     ``path``, and per-concept ``resolutions``.
@@ -248,7 +237,6 @@ def resolve_ir(vault_path: str, citekey: str) -> dict[str, Any]:
         summary=f"Linked candidate concepts for {citekey} into the canonical registry.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
 
     return {
         "resolved_count": len(resolutions),
@@ -280,8 +268,7 @@ def aggregate_tension_signals(
     - ``benchmark_scopes``:       flat list of benchmark scope entries
     - ``claimed_novelties``:      flat list of claimed novelty entries
     """
-    pd_root = paper_distill_root(vault_path)
-    ir_dir = pd_root / "compiled_ir"
+    ir_dir = compiled_ir_resolved_path(vault_path, "placeholder").parent
     if not ir_dir.exists():
         return {
             "recurring_limitations": [],
@@ -446,17 +433,12 @@ def commit_compile_result(
     ir_path: str | None = None,
     deps: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Route compile writes through the single-writer runtime."""
+    """Commit compile-aware page writes directly without a durable queue."""
     if page_type not in _TYPE_DIR:
         return {"error": f"Unknown page_type: '{page_type}'"}
-
-    from server.runtime import submit_mutation
-
-    return submit_mutation(
+    return _commit_compile_publish(
         vault_path,
-        mutation_type="compile_publish",
-        target_key=f"{page_type}:{page_id}",
-        payload={
+        {
             "page_id": page_id,
             "page_type": page_type,
             "content": content,
@@ -477,39 +459,15 @@ def get_compile_state(vault_path: str, page_id: str, page_type: str = "paper") -
     return dict(row) if row else None
 
 
-def execute_compile_publish_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
-    """Single-writer handler for compile-aware page publish."""
-    conn = get_db(vault_path)
-    payload = _decode_mutation_payload(mutation)
-    active_run = get_latest_publish_run(conn, mutation["id"])
+def _commit_compile_publish(vault_path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    bundle = _build_compile_publish_bundle(vault_path, payload)
+    if bundle.get("error") or bundle.get("conflict_detected"):
+        return bundle
 
-    if active_run.get("state") == "published":
-        return _compile_result_from_bundle(active_run.get("bundle", {}))
-
-    try:
-        if active_run.get("state") not in {"started", "staged"}:
-            bundle = _build_compile_publish_bundle(vault_path, payload)
-            if bundle.get("error") or bundle.get("conflict_detected"):
-                return bundle
-            active_run = begin_publish_run(
-                conn,
-                mutation_id=mutation["id"],
-                target_key=mutation["target_key"],
-                operation="compile_publish",
-                bundle=bundle,
-            )
-
-        active_run = stage_publish_run(vault_path, conn, active_run)
-        apply_staged_bundle(vault_path, active_run)
-        _persist_compile_publish_state(vault_path, active_run.get("bundle", {}))
-        active_run = mark_publish_run_published(conn, active_run["run_id"])
-        cleanup_staged_publish_run(active_run)
-        _emit_compile_publish_side_effects(vault_path, active_run.get("bundle", {}))
-        return _compile_result_from_bundle(active_run.get("bundle", {}))
-    except Exception as exc:
-        if active_run.get("run_id"):
-            mark_publish_run_failed(conn, active_run["run_id"], str(exc))
-        raise
+    _apply_compile_publish_bundle(vault_path, bundle)
+    _persist_compile_publish_state(vault_path, bundle)
+    _emit_compile_publish_side_effects(vault_path, bundle)
+    return _compile_result_from_bundle(bundle)
 
 
 def _build_compile_publish_bundle(vault_path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -665,6 +623,14 @@ def _persist_compile_publish_state(vault_path: str, bundle: dict[str, Any]) -> N
     conn.commit()
 
 
+def _apply_compile_publish_bundle(vault_path: str, bundle: dict[str, Any]) -> None:
+    for file_spec in bundle.get("files", []):
+        dest_relpath = str(file_spec["dest_relpath"])
+        final_path = Path(vault_path).expanduser() / dest_relpath
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(final_path, str(file_spec["content"]))
+
+
 def _emit_compile_publish_side_effects(vault_path: str, bundle: dict[str, Any]) -> None:
     knowledge_log = bundle.get("knowledge_log") or {}
     append_knowledge_log(
@@ -674,7 +640,6 @@ def _emit_compile_publish_side_effects(vault_path: str, bundle: dict[str, Any]) 
         summary=knowledge_log.get("summary", "Committed compile result."),
         impact=knowledge_log.get("impact") or {},
     )
-    refresh_global_navigation(vault_path)
 
 
 def _compile_result_from_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -682,18 +647,10 @@ def _compile_result_from_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     return dict(result) if isinstance(result, dict) else {"written": True}
 
 
-def _decode_mutation_payload(mutation: dict[str, Any]) -> dict[str, Any]:
-    payload = mutation.get("payload")
-    if isinstance(payload, dict):
-        return payload
-    raw = mutation.get("payload_json")
-    if not raw:
-        return {}
-    try:
-        decoded = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return decoded if isinstance(decoded, dict) else {}
+def _atomic_write_text(path: Path, content: str) -> None:
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def _render_frontmatter_block(frontmatter: dict[str, Any]) -> str:
@@ -753,7 +710,7 @@ def _parse_managed_blocks(body: str) -> tuple[list[str], dict[str, str]]:
 
 
 def _initialise_or_replace_body(current_body: str, new_body: str) -> tuple[str, dict[str, str]]:
-    _legacy_main, user_suffix = _split_user_suffix(current_body)
+    _existing_main, user_suffix = _split_user_suffix(current_body)
     new_main, new_user_suffix = _split_user_suffix(new_body)
     preserved_user = user_suffix or new_user_suffix
     order, blocks = _parse_managed_blocks(new_main)

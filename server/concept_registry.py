@@ -5,7 +5,7 @@ used across the Paper Distill knowledge base.  Ensures that the same idea
 is always referred to by a single canonical name, with aliases tracked and
 merges recorded for traceability.
 
-Auto-merge is limited to three hard-coded cases (slug match, abbreviation
+Auto-merge is limited to three safe cases (slug match, configured abbreviation
 whitelist, spelling variants).  All other merge candidates go through
 human confirmation via the maintenance queue.
 """
@@ -17,6 +17,8 @@ import re
 import sqlite3
 from typing import Any
 
+from server.compile_ir import SCHEMA_VERSION
+from server.config import get_paper_distill_settings
 from server.database import get_db, _now_iso
 
 LOG = logging.getLogger(__name__)
@@ -38,36 +40,28 @@ def slugify(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Abbreviation whitelist (hard-coded, expanding requires code change)
+# Abbreviation whitelist
 # ---------------------------------------------------------------------------
 
-_ABBREVIATION_WHITELIST: dict[str, str] = {
-    "vla": "vision-language-action",
-    "vlm": "vision-language-model",
-    "llm": "large-language-model",
-    "llms": "large-language-models",
-    "rl": "reinforcement-learning",
-    "il": "imitation-learning",
-    "bc": "behavioral-cloning",
-    "vit": "vision-transformer",
-    "cnn": "convolutional-neural-network",
-    "gan": "generative-adversarial-network",
-    "nerf": "neural-radiance-field",
-    "slam": "simultaneous-localization-and-mapping",
-    "mpc": "model-predictive-control",
-    "ppo": "proximal-policy-optimization",
-    "dpo": "direct-preference-optimization",
-    "sac": "soft-actor-critic",
-    "ddpm": "denoising-diffusion-probabilistic-model",
-    "dit": "diffusion-transformer",
-    "moe": "mixture-of-experts",
-    "lora": "low-rank-adaptation",
-    "rag": "retrieval-augmented-generation",
-    "rt": "robotics-transformer",
-}
+def _abbreviation_whitelist() -> dict[str, str]:
+    registry_settings = get_paper_distill_settings().get("concept_registry", {})
+    raw_whitelist = {}
+    if isinstance(registry_settings, dict):
+        configured = registry_settings.get("abbreviation_whitelist", {})
+        if isinstance(configured, dict):
+            raw_whitelist = configured
 
-# Build reverse map: full-slug → abbreviation-slug
-_ABBREVIATION_REVERSE: dict[str, str] = {v: k for k, v in _ABBREVIATION_WHITELIST.items()}
+    whitelist: dict[str, str] = {}
+    for abbreviation, expanded in raw_whitelist.items():
+        abbreviation_slug = slugify(str(abbreviation))
+        expanded_slug = slugify(str(expanded))
+        if abbreviation_slug and expanded_slug:
+            whitelist[abbreviation_slug] = expanded_slug
+    return whitelist
+
+
+def _abbreviation_reverse(whitelist: dict[str, str]) -> dict[str, str]:
+    return {expanded: abbreviation for abbreviation, expanded in whitelist.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -114,15 +108,15 @@ def _spelling_equivalent(slug_a: str, slug_b: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Auto-merge eligibility (3 hard-coded cases)
+# Auto-merge eligibility (3 safe cases)
 # ---------------------------------------------------------------------------
 
 def auto_merge_eligible(surface_a: str, surface_b: str) -> str | None:
     """Determine if two surface forms are auto-mergeable.
 
     Returns the merge reason string if eligible, or ``None``.
-    Only three cases qualify — expanding this list requires a code change,
-    not a parameter tweak.
+    Only three cases qualify. The abbreviation case is controlled by
+    ``paper_distill.concept_registry.abbreviation_whitelist``.
     """
     slug_a = slugify(surface_a)
     slug_b = slugify(surface_b)
@@ -132,15 +126,17 @@ def auto_merge_eligible(surface_a: str, surface_b: str) -> str | None:
         return "slug_match"
 
     # Case 2: abbreviation ↔ full name in whitelist
-    expanded_a = _ABBREVIATION_WHITELIST.get(slug_a)
-    expanded_b = _ABBREVIATION_WHITELIST.get(slug_b)
+    abbreviation_whitelist = _abbreviation_whitelist()
+    abbreviation_reverse = _abbreviation_reverse(abbreviation_whitelist)
+    expanded_a = abbreviation_whitelist.get(slug_a)
+    expanded_b = abbreviation_whitelist.get(slug_b)
     if expanded_a and expanded_a == slug_b:
         return f"abbreviation_whitelist:{slug_a}={slug_b}"
     if expanded_b and expanded_b == slug_a:
         return f"abbreviation_whitelist:{slug_b}={slug_a}"
     # Also check reverse (full → abbreviation)
-    abbrev_a = _ABBREVIATION_REVERSE.get(slug_a)
-    abbrev_b = _ABBREVIATION_REVERSE.get(slug_b)
+    abbrev_a = abbreviation_reverse.get(slug_a)
+    abbrev_b = abbreviation_reverse.get(slug_b)
     if abbrev_a and abbrev_a == slug_b:
         return f"abbreviation_whitelist:{slug_a}={slug_b}"
     if abbrev_b and abbrev_b == slug_a:
@@ -166,10 +162,12 @@ def _expand_slug_candidates(slug: str) -> list[str]:
     - spelling variant          (e.g. "behavioral-cloning" → "behavioural-cloning")
     """
     candidates: list[str] = []
-    expanded = _ABBREVIATION_WHITELIST.get(slug)
+    abbreviation_whitelist = _abbreviation_whitelist()
+    abbreviation_reverse = _abbreviation_reverse(abbreviation_whitelist)
+    expanded = abbreviation_whitelist.get(slug)
     if expanded:
         candidates.append(expanded)
-    abbrev = _ABBREVIATION_REVERSE.get(slug)
+    abbrev = abbreviation_reverse.get(slug)
     if abbrev:
         candidates.append(abbrev)
     for us, uk in _SPELLING_VARIANTS:
@@ -355,7 +353,7 @@ def resolve_concept(vault_path: str, surface_form: str) -> dict[str, Any] | None
         }
 
     # 3. Try abbreviation expansion
-    expanded = _ABBREVIATION_WHITELIST.get(slug)
+    expanded = _abbreviation_whitelist().get(slug)
     if expanded:
         row = conn.execute(
             "SELECT * FROM concept_registry WHERE id = ?", (expanded,)
@@ -532,7 +530,7 @@ def backfill_registry_from_wiki(vault_path: str) -> dict[str, Any]:
     - concepts from wiki/concepts/ frontmatter → concept_registry
     - methods from wiki/methods/ frontmatter  → concept_registry (type=method)
     - paper → concept references → compile_deps
-    - compile_state entries marked schema_version="legacy"
+    - compile_state entries marked with the current compile schema version
     """
     from server.vault_query import _parse_frontmatter
     from server.vault_lint import _iter_md_files, _extract_wikilinks, _normalise_link_target
@@ -577,12 +575,12 @@ def backfill_registry_from_wiki(vault_path: str) -> dict[str, Any]:
             continue
         citekey = fm.get("citekey", os.path.basename(fpath).replace(".md", ""))
 
-        # Register compile_state as legacy
+        # Register compile_state for dependency tracking on existing paper pages.
         conn.execute(
             """INSERT OR IGNORE INTO compile_state
                (page_id, page_type, compile_version, schema_version, compiled_at)
-               VALUES (?, 'paper', 1, 'legacy', ?)""",
-            (citekey, now),
+               VALUES (?, 'paper', 1, ?, ?)""",
+            (citekey, SCHEMA_VERSION, now),
         )
         stats["papers_indexed"] += 1
 
@@ -622,5 +620,3 @@ def backfill_registry_from_wiki(vault_path: str) -> dict[str, Any]:
 
     conn.commit()
     return stats
-
-

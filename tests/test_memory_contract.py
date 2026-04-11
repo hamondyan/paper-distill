@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
 import unittest
@@ -40,7 +39,6 @@ class MemoryContractTest(unittest.TestCase):
                 "taste",
                 "profile",
                 "active-threads",
-                "killed-ideas",
             ),
         )
 
@@ -64,24 +62,6 @@ class MemoryContractTest(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertIn("not allowed for view 'taste'", result["error"])
-
-    def test_append_accepts_rejected_status_for_killed_ideas(self) -> None:
-        result = append_memory_event(
-            self.tmp,
-            event={
-                "event_type": "idea_outcome",
-                "view_keys": ["killed-ideas"],
-                "trust_label": "jointly-derived",
-                "status": "rejected",
-                "summary": "Failure-aware relabeling idea was contradicted by local evidence.",
-                "content": "Keep this as negative memory, not as an active thread.",
-            },
-        )
-
-        self.assertTrue(result["ok"])
-        event = json.loads(Path(result["event_path"]).read_text(encoding="utf-8"))
-        self.assertEqual(event["status"], "rejected")
-        self.assertEqual(event["event_type"], "idea_outcome")
 
     def test_append_rejects_active_thread_without_thread_metadata(self) -> None:
         result = append_memory_event(

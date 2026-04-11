@@ -282,10 +282,10 @@ class ProcessInboxRegressionTest(unittest.TestCase):
                                     result = asyncio.run(process_inbox())
 
             self.assertEqual(len(result["processed"]), 1)
-            raw_source = query_vault_sync(tmpdir, section="raw_source", detail="full")
-            self.assertEqual(raw_source["stats"]["raw_source"], 1)
+            source_evidence = query_vault_sync(tmpdir, section="source_evidence", detail="full")
+            self.assertEqual(source_evidence["stats"]["source_evidence"], 1)
             self.assertEqual(
-                raw_source["sections"]["raw_source"][0]["capture_method"],
+                source_evidence["sections"]["source_evidence"][0]["capture_method"],
                 "pdf_text_recovered",
             )
             self.assertIn("knowledge_impact", result)
@@ -295,7 +295,7 @@ class ProcessInboxRegressionTest(unittest.TestCase):
             self.assertIn("source-ingest", log_text)
             self.assertIn("Fallback Paper", log_text)
 
-    def test_source_ingest_approved_inbox_uses_sources_contract_and_avoids_legacy_raw_root(self) -> None:
+    def test_source_ingest_approved_inbox_uses_sources_contract(self) -> None:
         paper = _replay_paper()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -349,10 +349,7 @@ class ProcessInboxRegressionTest(unittest.TestCase):
             self.assertEqual(len(result["processed"]), 1)
             processed = result["processed"][0]
             self.assertIn("/Paper Distill/sources/evidence/", processed["source_evidence_abs_path"])
-            self.assertIn("/Paper Distill/sources/notes/", processed["source_note_abs_path"])
-            self.assertNotIn("raw_source_path", processed)
-            self.assertNotIn("raw_note_path", processed)
-            self.assertFalse((Path(tmpdir) / "Paper Distill" / "raw").exists())
+            self.assertIn("/Paper Distill/wiki/papers/", processed["wiki_paper_abs_path"])
 
 
 class ToolSurfaceContractTest(unittest.TestCase):
@@ -398,17 +395,17 @@ class ToolSurfaceContractTest(unittest.TestCase):
         self.assertEqual(status["compile_version"], 1)
         self.assertEqual(status["schema_version"], "2024-06")
 
-    def test_source_ingest_direct_mode_rewrites_legacy_result_keys(self) -> None:
+    def test_source_ingest_direct_mode_exposes_only_final_result_keys(self) -> None:
         with patch(
             "server.server.add_paper",
             new=AsyncMock(
                 return_value={
                     "added": True,
-                    "raw_source_path": "/tmp/Paper Distill/sources/evidence/2026-04-09/example.md",
-                    "raw_note_path": "/tmp/Paper Distill/sources/notes/2026-04-09/example.md",
-                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-09/example.md",
-                    "source_structured_path": "Paper Distill/sources/evidence/2026-04-09/example.assets.json",
-                    "source_note_path": "Paper Distill/sources/notes/2026-04-09/example.md",
+                    "source_evidence_abs_path": "/tmp/Paper Distill/sources/evidence/2026-04-09/example.md",
+                    "wiki_paper_abs_path": "/tmp/Paper Distill/wiki/papers/example.md",
+                    "source_evidence_path": "Paper Distill/sources/evidence/2026-04-09/example.md",
+                    "source_assets_path": "Paper Distill/sources/evidence/2026-04-09/example.assets.json",
+                    "wiki_paper_path": "Paper Distill/wiki/papers/example.md",
                 }
             ),
         ):
@@ -425,8 +422,8 @@ class ToolSurfaceContractTest(unittest.TestCase):
             "/tmp/Paper Distill/sources/evidence/2026-04-09/example.md",
         )
         self.assertEqual(
-            result["source_note_abs_path"],
-            "/tmp/Paper Distill/sources/notes/2026-04-09/example.md",
+            result["wiki_paper_abs_path"],
+            "/tmp/Paper Distill/wiki/papers/example.md",
         )
         self.assertEqual(
             result["source_evidence_path"],
@@ -436,10 +433,10 @@ class ToolSurfaceContractTest(unittest.TestCase):
             result["source_assets_path"],
             "Paper Distill/sources/evidence/2026-04-09/example.assets.json",
         )
-        self.assertNotIn("raw_source_path", result)
-        self.assertNotIn("raw_note_path", result)
-        self.assertNotIn("source_raw_path", result)
-        self.assertNotIn("source_structured_path", result)
+        self.assertEqual(
+            result["wiki_paper_path"],
+            "Paper Distill/wiki/papers/example.md",
+        )
 
     def test_source_ingest_requires_identifier_in_direct_mode(self) -> None:
         result = asyncio.run(source_ingest(mode="direct_identifier"))
@@ -532,7 +529,7 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
                                                     "compile_version": 1,
                                                     "topics": ["manipulation"],
                                                 },
-                                                ir_path=f"Paper Distill/compiled_ir/{ir['citekey']}_resolved.json",
+                                                ir_path=f"Paper Distill/.state/ir/{ir['citekey']}_resolved.json",
                                                 deps=deps,
                                             )
                                         )
@@ -545,15 +542,15 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
                                         papers = asyncio.run(
                                             query_vault(section="papers", detail="full")
                                         )
-                                        source_notes = asyncio.run(
-                                            query_vault(section="source_notes", detail="full")
+                                        source_evidence = asyncio.run(
+                                            query_vault(section="source_evidence", detail="full")
                                         )
                                         signals = asyncio.run(
                                             query_tension_signals(min_occurrence=1)
                                         )
 
             idea["local_evidence"]["wiki"][0]["ref"] = f"Paper Distill/wiki/papers/{ir['citekey']}.md"
-            idea["local_evidence"]["sources"][0]["ref"] = ingest["source_note_path"]
+            idea["local_evidence"]["sources"][0]["ref"] = ingest["source_evidence_path"]
             memory_result = append_memory_event(tmpdir, event=memory_event)
             memory_state = read_memory_views(tmpdir, view_keys=["taste"])
             idea["local_evidence"]["memory"][0]["summary"] = memory_state["views"]["taste"]["overlay_events"][0]["summary"]
@@ -565,21 +562,18 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
 
             self.assertTrue(ingest["added"])
             self.assertTrue(Path(ingest["source_evidence_abs_path"]).exists())
-            self.assertTrue(Path(ingest["source_note_abs_path"]).exists())
+            self.assertTrue(Path(ingest["wiki_paper_abs_path"]).exists())
             self.assertTrue(Path(root_path(tmpdir, "papers") / f"{ir['citekey']}.md").exists())
-            self.assertFalse((Path(tmpdir) / "Paper Distill" / "raw").exists())
 
             self.assertTrue(extract["valid"])
             self.assertEqual(resolve[0]["resolved_count"], 1)
             self.assertTrue(publish["written"])
             self.assertEqual(status["page_id"], ir["citekey"])
-            self.assertEqual(status["compile_version"], 1)
+            self.assertEqual(status["compile_version"], 2)
 
             self.assertEqual(papers["stats"]["papers"], 1)
             self.assertEqual(papers["sections"]["papers"][0]["citekey"], ir["citekey"])
-            self.assertEqual(source_notes["stats"]["source_notes"], 1)
-            self.assertEqual(source_notes["sections"]["source_notes"][0]["paper_id"], paper["paper_id"])
-
+            self.assertEqual(source_evidence["stats"]["source_evidence"], 1)
             self.assertEqual(signals["papers_scanned"], 1)
             self.assertEqual(signals["claimed_novelties"][0]["paper"], ir["citekey"])
 
@@ -597,17 +591,16 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
             )
 
             self.assertTrue(idea_result["ok"])
-            self.assertTrue(idea_result["snapshot_persisted"])
-            self.assertTrue(idea_result["promoted"])
-            self.assertEqual(idea_result["idea_state"], "durable")
+            self.assertEqual(idea_result["idea_state"], "active")
             self.assertEqual(idea_result["verification_state"], "verified")
-            self.assertTrue(Path(idea_result["snapshot_path"]).exists())
+            self.assertEqual(idea_result["decision_reason"], "")
             self.assertTrue(Path(idea_result["idea_path"]).exists())
+            self.assertEqual(
+                list((Path(tmpdir) / "Paper Distill" / "insights" / "verification").rglob("*.json")),
+                [],
+            )
 
-            snapshot = json.loads(Path(idea_result["snapshot_path"]).read_text(encoding="utf-8"))
             memo_frontmatter = _read_frontmatter(Path(idea_result["idea_path"]))
-            self.assertEqual(snapshot["verification_state"], "verified")
-            self.assertTrue(snapshot["promotion_eligible"])
-            self.assertEqual(snapshot["trust_context"]["order"], ["wiki", "sources", "memory", "external"])
-            self.assertEqual(memo_frontmatter["idea_state"], "durable")
-            self.assertTrue(memo_frontmatter["verified"])
+            self.assertEqual(memo_frontmatter["idea_state"], "active")
+            self.assertEqual(memo_frontmatter["verification_state"], "verified")
+            self.assertEqual(memo_frontmatter["decision_reason"], "")

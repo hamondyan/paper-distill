@@ -13,7 +13,7 @@ class CompilePatchEngineTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         pd_root = os.path.join(self.tmp, "Paper Distill")
-        for d in [".state", "wiki/papers", "wiki/topics", "compiled_ir"]:
+        for d in [".state", ".state/ir", "wiki/papers", "wiki/topics"]:
             os.makedirs(os.path.join(pd_root, d), exist_ok=True)
         get_db(self.tmp)
 

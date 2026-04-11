@@ -14,7 +14,6 @@ from server.memory_runtime import (
     list_uncompiled_memory_events,
     read_memory_views,
 )
-from server.runtime import get_mutation_record
 from server.vault_contract import root_path
 from server.vault_ops import ensure_vault_structure, write_markdown
 
@@ -55,10 +54,6 @@ class MemoryRuntimeTest(unittest.TestCase):
 
         memory_view = root_path(self.tmp, "memory") / "taste.md"
         self.assertFalse(memory_view.exists())
-
-        mutation = get_mutation_record(self.tmp, result["mutation_id"])
-        self.assertEqual(mutation["status"], "done")
-        self.assertTrue(mutation["result"]["appended"])
 
     def test_read_memory_views_overlays_recent_uncompiled_events(self) -> None:
         write_markdown(
@@ -153,10 +148,6 @@ class MemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(result["memory_write_state"], "failed")
         self.assertIn("disk full", result["error"])
 
-        mutation = get_mutation_record(self.tmp, result["mutation_id"])
-        self.assertEqual(mutation["status"], "failed")
-        self.assertIn("disk full", mutation["error"])
-
         events = list(root_path(self.tmp, "state_memory").rglob("*.json"))
         self.assertEqual(events, [])
 
@@ -244,7 +235,7 @@ class MemoryRuntimeTest(unittest.TestCase):
             },
         )
 
-        with patch("server.memory_compile.apply_staged_bundle", side_effect=RuntimeError("publish broke")):
+        with patch("server.memory_compile._apply_memory_compile_bundle", side_effect=RuntimeError("publish broke")):
             state = read_memory_views(self.tmp, view_keys=["taste"])
 
         self.assertTrue(state["overlay_applied"])

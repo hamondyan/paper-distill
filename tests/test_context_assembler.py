@@ -102,7 +102,7 @@ def _append_taste_memory_at(
     content: str,
     metadata: dict,
 ) -> None:
-    with patch("server.runtime._now_iso", return_value=now_iso):
+    with patch("server.memory_runtime._now_iso", return_value=now_iso):
         result = append_memory_event(
             vault_path,
             event={
@@ -116,7 +116,7 @@ def _append_taste_memory_at(
             },
         )
     assert result["ok"]
-    with patch("server.runtime._now_iso", return_value=now_iso):
+    with patch("server.memory_promotion._now_iso", return_value=now_iso):
         promoted = promote_memory_event(
             vault_path,
             source_event_id=result["event_id"],

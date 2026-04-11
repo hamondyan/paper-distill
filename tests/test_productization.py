@@ -12,9 +12,7 @@ from server.vault_ops import (
     build_query_asset_body,
     build_query_asset_frontmatter,
     ensure_vault_structure,
-    refresh_global_navigation,
     save_query_asset,
-    write_markdown,
 )
 
 
@@ -134,37 +132,21 @@ class NavigationAndLogTest(unittest.TestCase):
             self.assertIn("query | Compared VLA architectures", log_text)
             self.assertIn("Saved a comparison note", log_text)
 
-    def test_refresh_global_navigation_highlights_recent_query_assets(self) -> None:
+    def test_compile_write_leaves_root_index_minimal(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            queries_dir = root / "insights" / "queries"
-            write_markdown(
-                queries_dir / "vla-comparison.md",
-                build_query_asset_frontmatter(
-                    note_type="comparison-note",
-                    title="How VLA Architectures Compare",
-                    question="How do VLA architectures compare?",
-                    papers_referenced=["brohan2023rt2"],
-                    concepts_referenced=["vision-language-action"],
-                    topics_referenced=["manipulation"],
-                    source_pages=["Paper Distill/wiki/papers/brohan2023rt2.md"],
-                    promotion_targets=[{"page_type": "topic", "page_id": "manipulation"}],
-                ),
-                build_query_asset_body(
-                    {
-                        "title": "How VLA Architectures Compare",
-                        "question": "How do VLA architectures compare?",
-                        "summary": "A saved comparison note.",
-                        "answer": "Answer body.",
-                        "source_pages": ["[[papers/brohan2023rt2]]"],
-                        "promotion_targets": [{"page_type": "topic", "page_id": "manipulation"}],
-                        "derived_actions": [],
-                    }
-                ),
+            original_index = (root / "index.md").read_text(encoding="utf-8")
+            self.assertIn("human landing page", original_index)
+
+            commit_compile_result(
+                tmpdir,
+                "brohan2023rt2",
+                "paper",
+                "Paper body.",
+                {"citekey": "brohan2023rt2", "title": "RT-2", "compile_version": 1},
             )
 
-            refresh_global_navigation(tmpdir)
-
             index_text = (root / "index.md").read_text(encoding="utf-8")
-            self.assertIn("Recent Query Assets", index_text)
-            self.assertIn("How VLA Architectures Compare", index_text)
+            self.assertEqual(index_text, original_index)
+            self.assertNotIn("Knowledge Map", index_text)
+            self.assertNotIn("Recent Query Assets", index_text)

@@ -12,8 +12,8 @@
     ],
     "sources": [
       {
-        "ref": "Paper Distill/sources/notes/2026-04-09/doe2026-replay.md",
-        "summary": "The source note highlights planner drift under persistent occlusion and no real-robot evaluation."
+        "ref": "Paper Distill/sources/evidence/2026-04-09/doe2026-replay.md",
+        "summary": "The source evidence highlights planner drift under persistent occlusion and no real-robot evaluation."
       }
     ],
     "memory": [

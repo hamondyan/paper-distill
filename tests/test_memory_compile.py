@@ -25,14 +25,14 @@ def _read_frontmatter(path: Path) -> dict:
 
 
 def _append_event_at(vault_path: str, *, now_iso: str, event: dict) -> dict:
-    with patch("server.runtime._now_iso", return_value=now_iso):
+    with patch("server.memory_runtime._now_iso", return_value=now_iso):
         result = append_memory_event(vault_path, event=event)
     assert result["ok"], result
     return result
 
 
 def _promote_event_at(vault_path: str, *, now_iso: str, source_event_id: str) -> dict:
-    with patch("server.runtime._now_iso", return_value=now_iso):
+    with patch("server.memory_promotion._now_iso", return_value=now_iso):
         result = promote_memory_event(
             vault_path,
             source_event_id=source_event_id,
@@ -138,7 +138,7 @@ class MemoryCompileTest(unittest.TestCase):
             },
         )
 
-        with patch("server.memory_compile.apply_staged_bundle", side_effect=RuntimeError("publish broke")):
+        with patch("server.memory_compile._apply_memory_compile_bundle", side_effect=RuntimeError("publish broke")):
             result = compile_memory_views(self.tmp, view_keys=["taste"])
 
         self.assertFalse(result["ok"])

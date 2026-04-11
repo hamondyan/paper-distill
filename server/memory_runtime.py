@@ -1,14 +1,15 @@
-"""Event-first memory runtime with read-time overlay support.
+"""Event-first memory storage with read-time overlay support.
 
-Memory writes append immutable events under ``.state/memory/events``. Current
-views under ``memory/`` remain advisory compiled read models and are never
-rewritten directly by append-time flows.
+Memory writes append immutable events under ``.state/memory/events`` directly.
+Current views under ``memory/`` remain advisory compiled read models and are
+never rewritten directly by append-time flows.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ from server.vault_ops import ensure_vault_structure
 
 _VIEW_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _EVENT_SCHEMA_VERSION = "2026-04-09"
+_event_id_guard = threading.Lock()
+_event_id_counter = 0
 
 
 class MemoryEventPersistError(RuntimeError):
@@ -40,8 +43,13 @@ class MemoryEventValidationError(ValueError):
     """Raised when an incoming memory event is missing required structure."""
 
 
-def append_memory_event(vault_path: str, *, event: dict[str, Any]) -> dict[str, Any]:
-    """Append a durable memory event through the shared mutation runtime."""
+def append_memory_event(
+    vault_path: str,
+    *,
+    event: dict[str, Any],
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    """Append a durable memory event directly into the hidden event store."""
     try:
         normalized = _normalize_event_request(event)
     except MemoryEventValidationError as exc:
@@ -53,39 +61,24 @@ def append_memory_event(vault_path: str, *, event: dict[str, Any]) -> dict[str, 
             "compiled": False,
             "overlay_available": False,
             "error": str(exc),
-            "mutation_id": None,
         }
 
-    from server.runtime import submit_mutation
-
-    result = submit_mutation(
-        vault_path,
-        mutation_type="memory_append",
-        target_key="memory:events",
-        payload={"event": normalized},
-    )
-    return _normalize_append_result(result)
-
-
-def execute_memory_append_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
-    """Single-writer handler that persists one append-only memory event."""
-    ensure_vault_structure(vault_path)
-    payload = _decode_json(mutation.get("payload_json"))
-    event = _normalize_event_request(payload.get("event") or {})
-    event_path = _event_path_for_mutation(vault_path, mutation)
-
-    if event_path.exists():
-        persisted = _read_event_file(event_path)
-        return _append_result_from_event(persisted, event_path)
-
-    persisted = _materialize_event_record(mutation, event)
     try:
-        _atomic_write_json(event_path, persisted)
-    except OSError as exc:
-        raise MemoryEventPersistError(
-            f"Failed to append memory event {persisted['event_id']}: {exc}"
-        ) from exc
-
+        persisted, event_path = _persist_memory_event(
+            vault_path,
+            normalized,
+            created_at=created_at,
+        )
+    except MemoryEventPersistError as exc:
+        return {
+            "ok": False,
+            "memory_write_state": "failed",
+            "appended": False,
+            "remembered": False,
+            "compiled": False,
+            "overlay_available": False,
+            "error": str(exc),
+        }
     return _append_result_from_event(persisted, event_path)
 
 
@@ -189,21 +182,6 @@ def read_memory_views(
     return result
 
 
-def _normalize_append_result(result: dict[str, Any]) -> dict[str, Any]:
-    if result.get("appended"):
-        return result
-    return {
-        "ok": False,
-        "memory_write_state": "failed",
-        "appended": False,
-        "remembered": False,
-        "compiled": False,
-        "overlay_available": False,
-        "error": str(result.get("error") or "memory append failed"),
-        "mutation_id": result.get("mutation_id"),
-    }
-
-
 def _append_result_from_event(event: dict[str, Any], event_path: Path) -> dict[str, Any]:
     return {
         "ok": True,
@@ -212,11 +190,40 @@ def _append_result_from_event(event: dict[str, Any], event_path: Path) -> dict[s
         "remembered": True,
         "compiled": False,
         "overlay_available": True,
-        "mutation_id": event.get("mutation_id"),
         "event_id": event["event_id"],
         "event_path": str(event_path),
         "event": _public_event_shape(event),
     }
+
+
+def _persist_memory_event(
+    vault_path: str,
+    event: dict[str, Any],
+    *,
+    created_at: str | None = None,
+    event_id: str | None = None,
+) -> tuple[dict[str, Any], Path]:
+    ensure_vault_structure(vault_path)
+    created = str(created_at or _now_iso())
+    persisted_event_id = str(event_id or _event_id_for_now(created))
+    event_path = _event_path(vault_path, created, persisted_event_id)
+
+    if event_path.exists():
+        persisted = _read_event_file(event_path)
+        return persisted, event_path
+
+    persisted = _materialize_event_record(
+        event=event,
+        created_at=created,
+        event_id=persisted_event_id,
+    )
+    try:
+        _atomic_write_json(event_path, persisted)
+    except OSError as exc:
+        raise MemoryEventPersistError(
+            f"Failed to append memory event {persisted_event_id}: {exc}"
+        ) from exc
+    return persisted, event_path
 
 
 def _public_event_shape(event: dict[str, Any]) -> dict[str, Any]:
@@ -238,12 +245,15 @@ def _public_event_shape(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _materialize_event_record(mutation: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
-    created_at = str(mutation.get("created_at") or _now_iso())
+def _materialize_event_record(
+    *,
+    event: dict[str, Any],
+    created_at: str,
+    event_id: str,
+) -> dict[str, Any]:
     return {
         "schema_version": _EVENT_SCHEMA_VERSION,
-        "event_id": _event_id_for_mutation(mutation),
-        "mutation_id": mutation["id"],
+        "event_id": event_id,
         "created_at": created_at,
         "event_type": event["event_type"],
         "title": event["title"],
@@ -258,6 +268,11 @@ def _materialize_event_record(mutation: dict[str, Any], event: dict[str, Any]) -
         "compiled_at": None,
         "compiled_view_keys": [],
     }
+
+
+def _event_path(vault_path: str, created_at: str, event_id: str) -> Path:
+    day = created_at.split("T", 1)[0] if "T" in created_at else created_at[:10]
+    return _events_root(vault_path) / day / f"{event_id}.json"
 
 
 def _normalize_event_request(event: dict[str, Any]) -> dict[str, Any]:
@@ -332,14 +347,13 @@ def _events_root(vault_path: str) -> Path:
     return root_path(vault_path, "state_memory") / "events"
 
 
-def _event_id_for_mutation(mutation: dict[str, Any]) -> str:
-    return f"memory-event-{int(mutation['id']):08d}"
-
-
-def _event_path_for_mutation(vault_path: str, mutation: dict[str, Any]) -> Path:
-    created_at = str(mutation.get("created_at") or _now_iso())
-    day = created_at.split("T", 1)[0] if "T" in created_at else created_at[:10]
-    return _events_root(vault_path) / day / f"{_event_id_for_mutation(mutation)}.json"
+def _event_id_for_now(created_at: str) -> str:
+    stamp = re.sub(r"[^0-9]", "", created_at)[:14] or "event"
+    global _event_id_counter
+    with _event_id_guard:
+        _event_id_counter += 1
+        suffix = _event_id_counter
+    return f"memory-event-{stamp}-{suffix:08d}"
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -450,13 +464,3 @@ def _maybe_opportunistic_compile(vault_path: str, requested: list[str]) -> None:
         compile_memory_views(vault_path, view_keys=requested)
     except Exception:
         return
-
-
-def _decode_json(raw: Any) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        decoded = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return decoded if isinstance(decoded, dict) else {}

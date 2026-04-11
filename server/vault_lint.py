@@ -24,8 +24,7 @@ _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 # Required frontmatter fields per vault section.
 _REQUIRED_FIELDS: dict[str, list[str]] = {
     "inbox": ["paper_id", "status"],
-    "raw_source": ["paper_id"],
-    "raw_notes": ["paper_id", "compiled"],
+    "source_evidence": ["paper_id", "compiled"],
     "papers": ["citekey", "title"],
     "concepts": ["concept"],
     "methods": [],
@@ -112,7 +111,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     broken_backlinks: list[dict[str, str]] = []
 
     # Scan wiki/ and source-layer notes/evidence for outgoing wikilinks
-    scan_dirs = ["wiki", root_rel_path("sources_notes"), root_rel_path("sources_evidence")]
+    scan_dirs = ["wiki", root_rel_path("sources_evidence")]
     for scan_dir in scan_dirs:
         for fpath in _iter_md_files(pd_root, scan_dir):
             text = _read_full_text(fpath)
@@ -144,8 +143,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     missing_fm: list[dict[str, Any]] = []
     section_dir_map = {
         "inbox": "inbox",
-        "raw_source": root_rel_path("sources_evidence"),
-        "raw_notes": root_rel_path("sources_notes"),
+        "source_evidence": root_rel_path("sources_evidence"),
         "papers": "wiki/papers",
         "concepts": "wiki/concepts",
         "methods": "wiki/methods",
@@ -167,10 +165,10 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
 
     # --- Stale indexes ------------------------------------------------------
     index_dirs = [
-        "", "inbox", "sources", "sources/evidence", "sources/notes",
+        "", "inbox", "sources", "sources/evidence",
         "wiki", "wiki/papers", "wiki/concepts", "wiki/methods", "wiki/topics",
         "insights", "insights/queries", "insights/ideas", "insights/dialogues",
-        "insights/verification", "insights/digests", "memory",
+        "insights/digests", "memory",
     ]
     stale_indexes: list[dict[str, Any]] = []
     for rel_dir in index_dirs:
@@ -181,10 +179,10 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     results["stale_indexes"] = {"count": len(stale_indexes), "items": stale_indexes}
 
     # --- Uncompiled papers --------------------------------------------------
-    raw_notes_data = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True, detail="full")
+    uncompiled_data = query_vault_sync(vault_path, section="source_evidence", uncompiled_only=True, detail="full")
     uncompiled = [
         {"file": item.get("_path", ""), "title": item.get("title", "")}
-        for item in raw_notes_data.get("sections", {}).get("raw_notes", [])
+        for item in uncompiled_data.get("sections", {}).get("source_evidence", [])
     ]
     results["uncompiled_papers"] = {"count": len(uncompiled), "items": uncompiled}
 
@@ -209,7 +207,7 @@ def lint_vault_sync(vault_path: str) -> dict[str, Any]:
     _dedup_threshold = 0.75
     _dedup_data = query_vault_sync(vault_path, section="all", detail="full")
     _dedup_sections = _dedup_data.get("sections", {})
-    all_papers = list(_dedup_sections.get("raw_notes", [])) + list(_dedup_sections.get("papers", []))
+    all_papers = list(_dedup_sections.get("source_evidence", [])) + list(_dedup_sections.get("papers", []))
     title_entries: list[tuple[str, str, set[str], str, str]] = []  # (path, title, tokens, paper_id, citekey)
     for item in all_papers:
         title = str(item.get("title", "")).strip()
@@ -312,10 +310,9 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
         inbox_by_status[status] += 1
 
     # Raw counts
-    raw_source_count = len(sections.get("raw_source", []))
-    raw_notes_items = sections.get("raw_notes", [])
-    raw_notes_count = len(raw_notes_items)
-    compiled_count = sum(1 for item in raw_notes_items if item.get("compiled") is True)
+    source_evidence_items = sections.get("source_evidence", [])
+    source_evidence_count = len(source_evidence_items)
+    compiled_count = sum(1 for item in source_evidence_items if item.get("compiled") is True)
 
     # Wiki counts
     papers_count = len(sections.get("papers", []))
@@ -323,9 +320,9 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
     methods_count = len(sections.get("methods", []))
     topics_count = len(sections.get("topics", []))
 
-    # Per-topic paper counts (from raw_notes + papers)
+    # Per-topic paper counts (from source evidence + canonical paper pages)
     topic_counts: dict[str, int] = Counter()
-    for item in raw_notes_items + sections.get("papers", []):
+    for item in source_evidence_items + sections.get("papers", []):
         topics = item.get("topics", item.get("matched_topics", []))
         if isinstance(topics, str):
             topics = [topics]
@@ -358,12 +355,11 @@ def vault_stats_sync(vault_path: str) -> dict[str, Any]:
             "total": len(inbox_items),
             "by_status": dict(inbox_by_status),
         },
-        "raw_source": raw_source_count,
-        "raw_notes": raw_notes_count,
-        "compiled": compiled_count,
+        "source_evidence": source_evidence_count,
+        "compiled_source_evidence": compiled_count,
         "compilation_rate": (
-            round(compiled_count / raw_notes_count, 2)
-            if raw_notes_count > 0
+            round(compiled_count / source_evidence_count, 2)
+            if source_evidence_count > 0
             else 0
         ),
         "wiki": {
@@ -459,15 +455,19 @@ def _compute_stale_topics(
             except OSError:
                 pass
 
-        # Count new raw notes tagged with this topic
+        # Count new source-evidence notes tagged with this topic
         new_count = 0
-        for item in sections.get("raw_notes", []):
+        for item in sections.get("source_evidence", []):
             topics = item.get("topics", item.get("matched_topics", []))
             if isinstance(topics, str):
                 topics = [topics]
             if topic_name.lower() in [t.lower() for t in topics]:
-                # Check if raw note is newer than topic
-                note_date = str(item.get("retrieved_at", item.get("updated_at", "")))
+                # Check if source evidence is newer than topic
+                note_date = str(
+                    item.get("captured_at")
+                    or item.get("retrieved_at")
+                    or item.get("updated_at", "")
+                )
                 if last_updated and note_date:
                     try:
                         if note_date > last_updated.isoformat():
@@ -665,7 +665,7 @@ def analyze_knowledge_graph_sync(
     # Limit combination_opportunities to top 10
     gaps["combination_opportunities"] = gaps["combination_opportunities"][:10]
 
-    # --- IR tension signals (if compiled_ir/ exists) -----------------------
+    # --- IR tension signals (if .state/ir/ exists) -------------------------
     ir_signals: dict[str, Any] = {}
     try:
         from server.compile_ir import aggregate_tension_signals

@@ -171,10 +171,10 @@ class PaperAddTest(unittest.TestCase):
 
             self.assertFalse(result["added"])
             self.assertEqual(result["error"], "capture failed hard")
-            self.assertEqual(query_vault_sync(tmpdir, section="raw_source")["stats"]["raw_source"], 0)
-            self.assertEqual(query_vault_sync(tmpdir, section="raw_notes")["stats"]["raw_notes"], 0)
+            self.assertEqual(query_vault_sync(tmpdir, section="source_evidence")["stats"]["source_evidence"], 0)
+            self.assertEqual(query_vault_sync(tmpdir, section="papers")["stats"]["papers"], 0)
 
-    def test_add_paper_writes_raw_layers_and_local_export(self) -> None:
+    def test_add_paper_writes_source_evidence_and_canonical_wiki_page(self) -> None:
         paper = {
             "paper_id": "doi:10.1000/test-add",
             "title": "A Direct Add Paper",
@@ -227,21 +227,22 @@ class PaperAddTest(unittest.TestCase):
 
             self.assertTrue(result["added"])
             self.assertEqual(result["zotero_status"], "local_exported")
-            self.assertTrue(Path(result["raw_source_path"]).exists())
-            self.assertTrue(Path(result["raw_note_path"]).exists())
-            self.assertTrue((Path(tmpdir) / result["source_structured_path"]).exists())
-            raw_source_text = Path(result["raw_source_path"]).read_text(encoding="utf-8")
-            self.assertIn("## Captured Assets Index", raw_source_text)
-            self.assertIn(f"Structured data: {result['source_structured_path']}", raw_source_text)
+            self.assertTrue(Path(result["source_evidence_abs_path"]).exists())
+            self.assertTrue(Path(result["wiki_paper_abs_path"]).exists())
+            self.assertTrue((Path(tmpdir) / result["source_assets_path"]).exists())
+            evidence_text = Path(result["source_evidence_abs_path"]).read_text(encoding="utf-8")
+            self.assertIn("## Captured Assets Index", evidence_text)
+            self.assertIn(f"Structured data: {result['source_assets_path']}", evidence_text)
 
-            raw_notes = query_vault_sync(tmpdir, section="raw_notes")
-            self.assertEqual(raw_notes["stats"]["raw_notes"], 1)
-            self.assertEqual(raw_notes["sections"]["raw_notes"][0]["paper_id"], paper["paper_id"])
-            self.assertEqual(raw_notes["sections"]["raw_notes"][0]["zotero_status"], "local_exported")
-            self.assertEqual(raw_notes["sections"]["raw_notes"][0]["capture_fidelity"], "high")
+            wiki_papers = query_vault_sync(tmpdir, section="papers")
+            self.assertEqual(wiki_papers["stats"]["papers"], 1)
+            self.assertEqual(wiki_papers["sections"]["papers"][0]["paper_id"], paper["paper_id"])
+            self.assertEqual(wiki_papers["sections"]["papers"][0]["page_state"], "auto")
+            self.assertEqual(wiki_papers["sections"]["papers"][0]["zotero_status"], "local_exported")
+            self.assertEqual(query_vault_sync(tmpdir, section="source_evidence")["stats"]["source_evidence"], 1)
             self.assertEqual(
                 result["knowledge_impact"]["created_pages"],
-                [result["source_raw_path"], result["source_note_path"]],
+                [result["source_evidence_path"], result["wiki_paper_path"]],
             )
             self.assertEqual(result["knowledge_impact"]["queries_saved"], [])
             log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
@@ -260,7 +261,7 @@ class PaperAddTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            note_path = root / "sources" / "notes" / "2026-04-05" / "doe2026-existing.md"
+            note_path = root / "wiki" / "papers" / "doe2026-existing.md"
             write_markdown(
                 note_path,
                 {
@@ -268,8 +269,8 @@ class PaperAddTest(unittest.TestCase):
                     "citekey": "doe2026-existing",
                     "title": paper["title"],
                     "doi": paper["doi"],
-                    "compiled": False,
-                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-05/doe2026-existing.md",
+                    "page_state": "auto",
+                    "source_evidence_path": "Paper Distill/sources/evidence/2026-04-05/doe2026-existing.md",
                 },
                 "# Existing",
             )
@@ -288,7 +289,7 @@ class PaperAddTest(unittest.TestCase):
 
             self.assertFalse(result["added"])
             self.assertTrue(result["existing"])
-            self.assertTrue(result["raw_note_path"].endswith("doe2026-existing.md"))
+            self.assertTrue(result["wiki_paper_abs_path"].endswith("doe2026-existing.md"))
             prepare_mock.assert_not_called()
             zotero_mock.assert_not_called()
 
@@ -328,12 +329,15 @@ class PaperAddTest(unittest.TestCase):
             self.assertTrue(result["added"])
             self.assertEqual(result["zotero_status"], "error")
             self.assertIn("Local Zotero export failed", result["warning"])
-            self.assertTrue(Path(result["raw_source_path"]).exists())
-            self.assertTrue(Path(result["raw_note_path"]).exists())
+            self.assertTrue(Path(result["source_evidence_abs_path"]).exists())
+            self.assertTrue(Path(result["wiki_paper_abs_path"]).exists())
 
-            raw_source = query_vault_sync(tmpdir, section="raw_source")
-            self.assertEqual(raw_source["stats"]["raw_source"], 1)
-            self.assertEqual(raw_source["sections"]["raw_source"][0]["capture_method"], "pdf_text_recovered")
+            source_evidence = query_vault_sync(tmpdir, section="source_evidence")
+            self.assertEqual(source_evidence["stats"]["source_evidence"], 1)
+            self.assertEqual(
+                source_evidence["sections"]["source_evidence"][0]["capture_method"],
+                "pdf_text_recovered",
+            )
 
     def test_add_paper_detects_existing_paper_by_pdf_url(self) -> None:
         paper = {
@@ -349,15 +353,15 @@ class PaperAddTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = ensure_vault_structure(tmpdir)
-            note_path = root / "sources" / "notes" / "2026-04-05" / "url-dedup.md"
+            note_path = root / "wiki" / "papers" / "url-dedup.md"
             write_markdown(
                 note_path,
                 {
                     "paper_id": "hash:existing-url-note",
                     "title": "Existing URL Paper",
-                    "compiled": False,
+                    "page_state": "auto",
                     "canonical_pdf_url": "https://example.com/dedup.pdf",
-                    "source_raw_path": "Paper Distill/sources/evidence/2026-04-05/url-dedup-source.md",
+                    "source_evidence_path": "Paper Distill/sources/evidence/2026-04-05/url-dedup-source.md",
                 },
                 "# Existing URL Paper",
             )
@@ -373,7 +377,7 @@ class PaperAddTest(unittest.TestCase):
 
         self.assertFalse(result["added"])
         self.assertTrue(result["existing"])
-        self.assertTrue(result["raw_note_path"].endswith("url-dedup.md"))
+        self.assertTrue(result["wiki_paper_abs_path"].endswith("url-dedup.md"))
         prepare_mock.assert_not_called()
         zotero_mock.assert_not_called()
 

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import os
 import shutil
-import sqlite3
 import tempfile
 import unittest
 
 from server.database import close_db, get_db
 
 
-class DatabaseSchemaMigrationTest(unittest.TestCase):
+class DatabaseSchemaTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(
@@ -24,47 +23,9 @@ class DatabaseSchemaMigrationTest(unittest.TestCase):
         close_db(self.tmp)
         shutil.rmtree(self.tmp)
 
-    def test_compile_deps_migration_allows_paper_dependencies(self) -> None:
-        conn = sqlite3.connect(self.db_path)
-        conn.executescript(
-            """
-            CREATE TABLE concept_registry (
-                id TEXT PRIMARY KEY
-            );
-
-            CREATE TABLE compile_state (
-                page_id         TEXT NOT NULL,
-                page_type       TEXT NOT NULL,
-                compile_version INTEGER NOT NULL,
-                schema_version  TEXT NOT NULL,
-                compiled_at     TEXT NOT NULL,
-                PRIMARY KEY (page_id, page_type)
-            );
-
-            CREATE TABLE compile_deps (
-                page_id       TEXT NOT NULL,
-                page_type     TEXT NOT NULL,
-                dep_type      TEXT NOT NULL,
-                dep_id        TEXT NOT NULL,
-                dep_version   INTEGER NOT NULL,
-                FOREIGN KEY (page_id, page_type) REFERENCES compile_state(page_id, page_type),
-                FOREIGN KEY (dep_id) REFERENCES concept_registry(id)
-            );
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO compile_state
-                (page_id, page_type, compile_version, schema_version, compiled_at)
-            VALUES
-                ('query-a', 'query', 1, 'legacy', '2026-04-09T00:00:00')
-            """
-        )
-        conn.commit()
-        conn.close()
-
-        migrated = get_db(self.tmp)
-        table_sql = migrated.execute(
+    def test_compile_deps_schema_allows_paper_dependencies(self) -> None:
+        conn = get_db(self.tmp)
+        table_sql = conn.execute(
             """
             SELECT sql
             FROM sqlite_master
@@ -73,15 +34,16 @@ class DatabaseSchemaMigrationTest(unittest.TestCase):
         ).fetchone()["sql"]
         self.assertNotIn("REFERENCES concept_registry", table_sql)
 
-        migrated.execute(
+        conn.execute(
             """
             INSERT INTO compile_state
                 (page_id, page_type, compile_version, schema_version, compiled_at)
             VALUES
-                ('paper-a', 'paper', 1, 'legacy', '2026-04-09T00:00:00')
+                ('query-a', 'query', 1, 'current', '2026-04-09T00:00:00'),
+                ('paper-a', 'paper', 1, 'current', '2026-04-09T00:00:00')
             """
         )
-        migrated.execute(
+        conn.execute(
             """
             INSERT INTO compile_deps
                 (page_id, page_type, dep_type, dep_id, dep_version)
@@ -89,9 +51,9 @@ class DatabaseSchemaMigrationTest(unittest.TestCase):
                 ('query-a', 'query', 'paper', 'paper-a', 1)
             """
         )
-        migrated.commit()
+        conn.commit()
 
-        row = migrated.execute(
+        row = conn.execute(
             """
             SELECT dep_type, dep_id
             FROM compile_deps
@@ -102,7 +64,7 @@ class DatabaseSchemaMigrationTest(unittest.TestCase):
         self.assertEqual(row["dep_type"], "paper")
         self.assertEqual(row["dep_id"], "paper-a")
 
-        unique_index = migrated.execute(
+        unique_index = conn.execute(
             """
             SELECT name
             FROM sqlite_master

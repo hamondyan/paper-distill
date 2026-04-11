@@ -85,12 +85,6 @@ _DECAY_RULES = {
         "consolidated_stale_days": 365,
         "retire_days": 730,
     },
-    "killed-ideas": {
-        "provisional_stale_days": 60,
-        "confirmed_stale_days": 180,
-        "consolidated_stale_days": 365,
-        "retire_days": 730,
-    },
 }
 _DEFAULT_DECAY_RULES = {
     "provisional_stale_days": 30,
@@ -180,7 +174,7 @@ def runtime_effective_memory_events(
     *,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Back-compat event-like surface for callers that still expect events."""
+    """Return runtime-effective items in the older event-shaped envelope."""
     items = runtime_effective_memory_items(view_key, events, now=now)
     normalized: list[dict[str, Any]] = []
     for item in items:
@@ -366,12 +360,6 @@ def _event_signature(view_key: str, event: dict[str, Any]) -> str:
         }
         if structured:
             return f"structured:{json.dumps(structured, ensure_ascii=False, sort_keys=True)}"
-
-    if view_key == "killed-ideas":
-        for key in ("idea_id", "snapshot_id"):
-            value = str(metadata.get(key) or "").strip()
-            if value:
-                return f"{key}:{value}"
 
     summary = str(event.get("summary") or "").strip().lower()
     content = str(event.get("content") or "").strip().lower()

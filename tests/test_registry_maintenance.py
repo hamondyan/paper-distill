@@ -6,7 +6,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from server.compile_ir import SCHEMA_VERSION
 from server.concept_registry import (
     auto_merge_eligible,
     backfill_registry_from_wiki,
@@ -39,14 +41,13 @@ class _VaultTestBase(unittest.TestCase):
         pd_root = os.path.join(self.tmp, "Paper Distill")
         for d in [
             "inbox",
-            "raw/source",
-            "raw/notes",
+            "sources/evidence",
             "wiki/papers",
             "wiki/concepts",
             "wiki/methods",
             "wiki/topics",
-            "compiled_ir",
             ".state",
+            ".state/ir",
         ]:
             os.makedirs(os.path.join(pd_root, d), exist_ok=True)
         # Init DB
@@ -136,6 +137,22 @@ class AutoMergeTest(unittest.TestCase):
         reason = auto_merge_eligible("llm", "Large Language Model")
         assert reason is not None
 
+    def test_abbreviation_whitelist_can_be_extended_from_settings(self):
+        settings = {
+            "concept_registry": {
+                "abbreviation_whitelist": {
+                    "dp": "diffusion-policy",
+                }
+            }
+        }
+        with patch(
+            "server.concept_registry.get_paper_distill_settings",
+            return_value=settings,
+        ):
+            reason = auto_merge_eligible("DP", "Diffusion Policy")
+
+        assert reason == "abbreviation_whitelist:dp=diffusion-policy"
+
 
 # ============================================================================
 # Registry CRUD
@@ -168,6 +185,24 @@ class RegisterConceptTest(_VaultTestBase):
         result = register_concept(self.vault_path, "VLA")
         assert result["created"] is False
         assert result["merged_into"] == "vision-language-action"
+
+    def test_auto_merge_on_register_uses_settings_abbreviation(self):
+        settings = {
+            "concept_registry": {
+                "abbreviation_whitelist": {
+                    "dp": "diffusion-policy",
+                }
+            }
+        }
+        with patch(
+            "server.concept_registry.get_paper_distill_settings",
+            return_value=settings,
+        ):
+            register_concept(self.vault_path, "Diffusion Policy")
+            result = register_concept(self.vault_path, "DP")
+
+        assert result["created"] is False
+        assert result["merged_into"] == "diffusion-policy"
 
     def test_register_method_type(self):
         result = register_concept(self.vault_path, "PPO", concept_type="method")
@@ -409,7 +444,7 @@ class BackfillTest(_VaultTestBase):
             "SELECT * FROM compile_state WHERE page_id = 'smith2024'"
         ).fetchone()
         assert state is not None
-        assert state["schema_version"] == "legacy"
+        assert state["schema_version"] == SCHEMA_VERSION
 
 
 if __name__ == "__main__":

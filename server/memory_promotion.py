@@ -9,7 +9,7 @@ memory. The source event history remains append-only:
 """
 from __future__ import annotations
 
-import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +102,7 @@ def promote_memory_event(
     promoted_status: str = "confirmed",
     decision_note: str | None = None,
 ) -> dict[str, Any]:
-    """Promote one existing provisional memory event through the runtime."""
+    """Promote one existing provisional memory event directly."""
     try:
         normalized = _normalize_promotion_request(
             source_event_id=source_event_id,
@@ -114,56 +114,18 @@ def promote_memory_event(
             "ok": False,
             "promoted": False,
             "error": str(exc),
-            "mutation_id": None,
         }
 
-    from server.runtime import get_mutation_record, submit_mutation
-
-    result = submit_mutation(
-        vault_path,
-        mutation_type="memory_promote",
-        target_key=f"memory:promote:{normalized['source_event_id']}:{normalized['promoted_status']}",
-        payload=normalized,
-    )
-    normalized_result = _normalize_promotion_result(result, source_event_id=normalized["source_event_id"])
-
-    memory_mutation_id = normalized_result.get("memory_mutation_id")
-    if not memory_mutation_id:
-        return normalized_result
-
-    memory_record = get_mutation_record(vault_path, int(memory_mutation_id))
-    memory_result = dict(memory_record.get("result") or {})
-    if memory_result.get("appended"):
-        normalized_result["promoted_event_state"] = "appended"
-        normalized_result["promoted_event_id"] = memory_result.get("event_id")
-        normalized_result["promoted_event_path"] = memory_result.get("event_path")
-    elif memory_record.get("status") == "failed":
-        normalized_result["promoted_event_state"] = "failed"
-        normalized_result["promoted_event_error"] = (
-            memory_result.get("error") or memory_record.get("error")
-        )
-    else:
-        normalized_result["promoted_event_state"] = "queued"
-    return normalized_result
+    return _commit_memory_promotion(vault_path, normalized, created_at=_now_iso())
 
 
-def execute_memory_promote_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
-    """Single-writer handler for explicit memory confirmation/promotion."""
+def _commit_memory_promotion(
+    vault_path: str,
+    request: dict[str, Any],
+    *,
+    created_at: str,
+) -> dict[str, Any]:
     ensure_vault_structure(vault_path)
-    payload = _decode_payload(mutation)
-    try:
-        request = _normalize_promotion_request(
-            source_event_id=payload.get("source_event_id"),
-            promoted_status=payload.get("promoted_status"),
-            decision_note=payload.get("decision_note"),
-        )
-    except ValueError as exc:
-        return {
-            "ok": False,
-            "promoted": False,
-            "error": str(exc),
-        }
-
     source_event = _find_memory_event(vault_path, request["source_event_id"])
     if source_event is None:
         return {
@@ -183,7 +145,6 @@ def execute_memory_promote_mutation(vault_path: str, mutation: dict[str, Any]) -
             "source_event_id": request["source_event_id"],
             "promoted_status": str(existing_promotion.get("status") or request["promoted_status"]),
             "promotion_artifact_path": str(artifact_path),
-            "memory_mutation_id": None,
             "promoted_event_id": existing_promotion.get("event_id"),
         }
 
@@ -205,10 +166,11 @@ def execute_memory_promote_mutation(vault_path: str, mutation: dict[str, Any]) -
         request["promoted_status"],
     )
     artifact_frontmatter = _build_promotion_frontmatter(
-        mutation=mutation,
         source_event=source_event,
         request=request,
         impact_level=impact_level,
+        created_at=created_at,
+        promotion_id=_promotion_id_for_now(created_at),
     )
     artifact_body = _build_promotion_body(
         source_event=source_event,
@@ -226,21 +188,23 @@ def execute_memory_promote_mutation(vault_path: str, mutation: dict[str, Any]) -
         promotion_id=artifact_frontmatter["promotion_id"],
     )
 
-    try:
-        from server.runtime import enqueue_mutation
+    from server.memory_runtime import append_memory_event
 
-        enqueued = enqueue_mutation(
-            vault_path,
-            mutation_type="memory_append",
-            target_key="memory:events",
-            payload={"event": promoted_event},
-        )
-    except Exception as exc:
+    append_result = append_memory_event(
+        vault_path,
+        event=promoted_event,
+        created_at=created_at,
+    )
+    if not append_result.get("ok"):
         return {
             "ok": False,
             "promoted": False,
             "promotion_artifact_path": str(artifact_path),
-            "error": f"Failed to enqueue promoted memory append: {exc}",
+            "error": str(append_result.get("error") or "Failed to append promoted memory."),
+            "promoted_event_state": "failed",
+            "promoted_event_id": None,
+            "promoted_event_path": None,
+            "promoted_event_error": str(append_result.get("error") or ""),
         }
 
     return {
@@ -251,7 +215,10 @@ def execute_memory_promote_mutation(vault_path: str, mutation: dict[str, Any]) -
         "source_event_id": request["source_event_id"],
         "promoted_status": request["promoted_status"],
         "promotion_artifact_path": str(artifact_path),
-        "memory_mutation_id": enqueued.get("mutation_id"),
+        "promoted_event_state": "appended",
+        "promoted_event_id": append_result.get("event_id"),
+        "promoted_event_path": append_result.get("event_path"),
+        "promoted_event_error": None,
     }
 
 
@@ -298,7 +265,6 @@ def _normalize_promotion_result(result: dict[str, Any], *, source_event_id: str)
         "promoted_event_path": None,
         "promoted_event_error": None,
         "error": str(normalized.get("error") or "memory promotion failed"),
-        "mutation_id": normalized.get("mutation_id"),
     }
 
 
@@ -358,17 +324,17 @@ def _build_promoted_event(
 
 def _build_promotion_frontmatter(
     *,
-    mutation: dict[str, Any],
     source_event: dict[str, Any],
     request: dict[str, Any],
     impact_level: str,
+    created_at: str,
+    promotion_id: str,
 ) -> dict[str, Any]:
-    created_at = str(mutation.get("created_at") or _now_iso())
     title = str(source_event.get("title") or source_event.get("summary") or "Memory Promotion").strip()
     return {
         "type": "memory-promotion",
         "section": "insights/memory-promotions",
-        "promotion_id": _promotion_id_for_mutation(mutation),
+        "promotion_id": promotion_id,
         "title": f"Confirm memory: {title[:100]}",
         "source_event_id": source_event.get("event_id"),
         "source_status": source_event.get("status"),
@@ -422,8 +388,9 @@ def _promotion_note_path(vault_path: str, source_event_id: str, promoted_status:
     )
 
 
-def _promotion_id_for_mutation(mutation: dict[str, Any]) -> str:
-    return f"memory-promotion-{int(mutation['id']):08d}"
+def _promotion_id_for_now(created_at: str) -> str:
+    stamp = "".join(ch for ch in created_at if ch.isdigit())[:14] or "promotion"
+    return f"memory-promotion-{stamp}-{uuid.uuid4().hex[:8]}"
 
 
 def _paper_distill_ref(vault_path: str, path: Path) -> str:
@@ -440,17 +407,3 @@ def _is_promotion_event_metadata(metadata: dict[str, Any]) -> bool:
         str(metadata.get("promotion_source_event_id") or "").strip()
         and str(metadata.get("promotion_artifact_ref") or "").strip()
     )
-
-
-def _decode_payload(mutation: dict[str, Any]) -> dict[str, Any]:
-    payload = mutation.get("payload")
-    if isinstance(payload, dict):
-        return payload
-    raw = mutation.get("payload_json")
-    if not raw:
-        return {}
-    try:
-        decoded = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return decoded if isinstance(decoded, dict) else {}

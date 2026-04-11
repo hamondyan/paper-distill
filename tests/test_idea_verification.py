@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
 import unittest
@@ -11,20 +10,17 @@ import yaml
 
 from server.database import close_db
 from server.idea_verification import verify_idea
-from server.memory_runtime import read_memory_views
-from server.runtime import get_mutation_record
-from server.vault_contract import root_path
-from server.vault_ops import ensure_vault_structure, write_markdown as vault_write_markdown
+from server.vault_ops import ensure_vault_structure
 
 
-def _read_frontmatter(path: Path) -> dict:
+def _split_note(path: Path) -> tuple[dict, str]:
     content = path.read_text(encoding="utf-8")
     _, remainder = content.split("---\n", 1)
-    fm_text, _ = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}
+    fm_text, body = remainder.split("\n---\n", 1)
+    return yaml.safe_load(fm_text) or {}, body.strip()
 
 
-class IdeaVerificationRuntimeTest(unittest.TestCase):
+class IdeaVerificationNoteTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         ensure_vault_structure(self.tmp)
@@ -48,8 +44,8 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
                 ],
                 "sources": [
                     {
-                        "ref": "Paper Distill/sources/notes/2026-04-08/fixture.md",
-                        "summary": "Source notes highlight rare recovery failures after occlusion.",
+                        "ref": "Paper Distill/sources/evidence/2026-04-08/fixture.md",
+                        "summary": "Source evidence highlights rare recovery failures after occlusion.",
                     }
                 ],
                 "memory": [
@@ -61,7 +57,13 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
             },
         }
 
-    def test_verified_idea_persists_snapshot_and_promotes_durable_memo(self) -> None:
+    def _assert_no_secondary_artifacts(self) -> None:
+        verification_files = list(
+            (Path(self.tmp) / "Paper Distill" / "insights" / "verification").rglob("*.json")
+        )
+        self.assertEqual(verification_files, [])
+
+    def test_verified_idea_writes_single_active_note(self) -> None:
         result = verify_idea(
             self.tmp,
             idea=self._idea_payload(),
@@ -104,41 +106,32 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["snapshot_persisted"])
-        self.assertTrue(result["promoted"])
-        self.assertEqual(result["idea_state"], "durable")
+        self.assertEqual(result["idea_state"], "active")
         self.assertEqual(result["verification_state"], "verified")
-        self.assertEqual(result["killed_ideas_memory_state"], "skipped")
-        self.assertIsNone(result["killed_ideas_memory_mutation_id"])
+        self.assertEqual(result["decision_reason"], "")
+        self.assertEqual(result["decision_at"], "")
+        self.assertEqual(result["idea_write_state"], "saved")
 
-        snapshot_path = Path(result["snapshot_path"])
-        self.assertTrue(snapshot_path.exists())
-        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-        self.assertEqual(snapshot["verification_state"], "verified")
-        self.assertTrue(snapshot["promotion_eligible"])
-        self.assertEqual(snapshot["trust_context"]["order"], ["wiki", "sources", "memory", "external"])
-        excerpt = snapshot["external_verification"]["providers"][0]["evidence"][0]["excerpt"]
-        self.assertLessEqual(len(excerpt), 400)
-        self.assertTrue(excerpt.endswith("..."))
-
-        memo_path = Path(result["idea_path"])
-        self.assertTrue(memo_path.exists())
-        frontmatter = _read_frontmatter(memo_path)
-        self.assertEqual(frontmatter["idea_state"], "durable")
-        self.assertTrue(frontmatter["verified"])
+        note_path = Path(result["idea_path"])
+        self.assertTrue(note_path.exists())
+        frontmatter, body = _split_note(note_path)
+        self.assertEqual(frontmatter["type"], "idea-note")
+        self.assertEqual(frontmatter["idea_state"], "active")
         self.assertEqual(frontmatter["verification_state"], "verified")
-        self.assertIn("Paper Distill/insights/verification/", frontmatter["verification_snapshot"])
-        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
-        self.assertFalse(killed_ideas_state["overlay_applied"])
-        self.assertFalse(killed_ideas_state["views"]["killed-ideas"]["compiled"])
-        self.assertEqual(killed_ideas_state["views"]["killed-ideas"]["overlay_count"], 0)
-        self.assertEqual(killed_ideas_state["views"]["killed-ideas"]["body"], "")
+        self.assertEqual(frontmatter["decision_reason"], "")
+        self.assertEqual(frontmatter["decision_at"], "")
+        self.assertEqual(frontmatter["status"], "saved")
+        self.assertEqual(frontmatter["providers_succeeded"], ["web-search", "papers-with-code"])
+        self.assertNotIn("verification_snapshot", frontmatter)
+        self.assertIn("## Summary", body)
+        self.assertIn("## Local Evidence", body)
+        self.assertIn("## Hypothesis / Bridge", body)
+        self.assertIn("## Kill Criteria", body)
+        self.assertIn("## Next Step", body)
+        self.assertIn("### External Checks", body)
+        self._assert_no_secondary_artifacts()
 
-        mutation = get_mutation_record(self.tmp, result["mutation_id"])
-        self.assertEqual(mutation["status"], "done")
-        self.assertTrue(mutation["result"]["promoted"])
-
-    def test_provider_failure_persists_snapshot_and_keeps_draft(self) -> None:
+    def test_provider_failure_marks_note_parked_without_memory_followup(self) -> None:
         result = verify_idea(
             self.tmp,
             idea=self._idea_payload(),
@@ -169,27 +162,22 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["snapshot_persisted"])
-        self.assertFalse(result["promoted"])
-        self.assertEqual(result["idea_state"], "draft")
+        self.assertEqual(result["idea_state"], "parked")
         self.assertEqual(result["verification_state"], "provider_failed")
-        self.assertEqual(result["promotion_block_reason"], "provider_failed")
-        self.assertEqual(result["killed_ideas_memory_state"], "appended")
-        self.assertIsNotNone(result["killed_ideas_memory_mutation_id"])
-        self.assertIsNotNone(result["killed_ideas_event_id"])
+        self.assertEqual(result["decision_reason"], "provider_failed")
+        self.assertTrue(result["decision_at"])
+        self.assertEqual(result["missing_providers"], [])
 
-        memo_path = Path(result["idea_path"])
-        frontmatter = _read_frontmatter(memo_path)
-        self.assertEqual(frontmatter["idea_state"], "draft")
+        frontmatter, body = _split_note(Path(result["idea_path"]))
+        self.assertEqual(frontmatter["idea_state"], "parked")
+        self.assertEqual(frontmatter["decision_reason"], "provider_failed")
         self.assertEqual(frontmatter["providers_failed"], ["web-search"])
-        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
-        self.assertTrue(killed_ideas_state["overlay_applied"])
-        event = killed_ideas_state["views"]["killed-ideas"]["overlay_events"][0]
-        self.assertEqual(event["event_type"], "idea_outcome")
-        self.assertEqual(event["status"], "provisional")
-        self.assertEqual(event["metadata"]["promotion_block_reason"], "provider_failed")
+        self.assertIn("web-search", body)
+        self.assertIn("papers-with-code", body)
+        self.assertIn("Collect a clean pass from the failed or missing providers", body)
+        self._assert_no_secondary_artifacts()
 
-    def test_partial_verification_missing_provider_keeps_draft(self) -> None:
+    def test_partial_verification_marks_note_parked_with_missing_provider(self) -> None:
         result = verify_idea(
             self.tmp,
             idea=self._idea_payload(),
@@ -214,73 +202,19 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertFalse(result["promoted"])
-        self.assertEqual(result["idea_state"], "draft")
+        self.assertEqual(result["idea_state"], "parked")
         self.assertEqual(result["verification_state"], "partial")
+        self.assertEqual(result["decision_reason"], "partial_evidence")
         self.assertEqual(result["missing_providers"], ["semantic-scholar"])
-        self.assertEqual(result["promotion_block_reason"], "partial_evidence")
-        self.assertEqual(result["killed_ideas_memory_state"], "appended")
 
-        snapshot = json.loads(Path(result["snapshot_path"]).read_text(encoding="utf-8"))
-        self.assertEqual(snapshot["external_verification"]["missing_providers"], ["semantic-scholar"])
-        killed_ideas_state = read_memory_views(self.tmp, view_keys=["killed-ideas"])
-        event = killed_ideas_state["views"]["killed-ideas"]["overlay_events"][0]
-        self.assertEqual(event["status"], "provisional")
-        self.assertEqual(event["metadata"]["missing_providers"], ["semantic-scholar"])
+        frontmatter, body = _split_note(Path(result["idea_path"]))
+        self.assertEqual(frontmatter["idea_state"], "parked")
+        self.assertEqual(frontmatter["missing_providers"], ["semantic-scholar"])
+        self.assertIn("semantic-scholar", body)
+        self.assertIn("missing providers complete their checks", body)
+        self._assert_no_secondary_artifacts()
 
-    def test_snapshot_is_persisted_before_draft_memo_write(self) -> None:
-        observed: dict[str, object] = {}
-
-        def _guarded_write(path: Path, frontmatter: dict, body: str) -> None:
-            snapshots = sorted(root_path(self.tmp, "verification").rglob("*.json"))
-            self.assertEqual(len(snapshots), 1)
-            observed["snapshot_path"] = str(snapshots[0])
-            observed["snapshot"] = json.loads(snapshots[0].read_text(encoding="utf-8"))
-            observed["frontmatter"] = dict(frontmatter)
-            observed["body"] = body
-            vault_write_markdown(path, frontmatter, body)
-
-        with patch("server.idea_verification.write_markdown", side_effect=_guarded_write):
-            result = verify_idea(
-                self.tmp,
-                idea=self._idea_payload(),
-                verification={
-                    "required_providers": ["web-search", "semantic-scholar"],
-                    "providers": [
-                        {
-                            "provider": "web-search",
-                            "status": "succeeded",
-                            "query": "active labeling manipulation long horizon failure analysis",
-                            "evidence": [
-                                {
-                                    "title": "Failure-aware data selection for robotics",
-                                    "url": "https://example.com/failure-aware-data-selection",
-                                    "stance": "supporting",
-                                    "excerpt": "One provider succeeded, but the second provider is still missing.",
-                                }
-                            ],
-                        }
-                    ],
-                },
-            )
-
-        self.assertTrue(result["ok"])
-        self.assertTrue(result["snapshot_persisted"])
-        self.assertFalse(result["promoted"])
-        self.assertEqual(result["idea_state"], "draft")
-        self.assertEqual(result["promotion_block_reason"], "partial_evidence")
-        self.assertEqual(observed["snapshot_path"], result["snapshot_path"])
-        self.assertEqual(observed["snapshot"]["verification_state"], "partial")
-        self.assertFalse(observed["snapshot"]["promotion_eligible"])
-        self.assertEqual(observed["frontmatter"]["idea_state"], "draft")
-        self.assertFalse(observed["frontmatter"]["verified"])
-        self.assertEqual(
-            observed["frontmatter"]["promotion_block_reason"],
-            "partial_evidence",
-        )
-        self.assertIn("Verification state: partial", observed["body"])
-
-    def test_contradiction_persists_snapshot_and_blocks_promotion(self) -> None:
+    def test_contradiction_marks_note_rejected_and_keeps_reason_in_note(self) -> None:
         result = verify_idea(
             self.tmp,
             idea=self._idea_payload(),
@@ -311,37 +245,21 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["snapshot_persisted"])
-        self.assertFalse(result["promoted"])
-        self.assertEqual(result["idea_state"], "draft")
+        self.assertEqual(result["idea_state"], "rejected")
         self.assertEqual(result["verification_state"], "contradicted")
-        self.assertEqual(result["promotion_block_reason"], "contradiction_detected")
-        self.assertEqual(result["killed_ideas_memory_state"], "appended")
-        self.assertIsNotNone(result["killed_ideas_event_id"])
+        self.assertEqual(result["decision_reason"], "contradiction_detected")
+        self.assertTrue(result["decision_at"])
 
-        snapshot = json.loads(Path(result["snapshot_path"]).read_text(encoding="utf-8"))
-        self.assertEqual(snapshot["verification_state"], "contradicted")
-        self.assertEqual(len(snapshot["external_verification"]["contradictions"]), 1)
-        first_read = read_memory_views(self.tmp, view_keys=["killed-ideas"])
-        self.assertTrue(first_read["overlay_applied"])
-        killed_event = first_read["views"]["killed-ideas"]["overlay_events"][0]
-        self.assertEqual(killed_event["event_type"], "contradiction_note")
-        self.assertEqual(killed_event["status"], "rejected")
-        self.assertEqual(
-            killed_event["metadata"]["promotion_block_reason"],
-            "contradiction_detected",
-        )
+        frontmatter, body = _split_note(Path(result["idea_path"]))
+        self.assertEqual(frontmatter["idea_state"], "rejected")
+        self.assertEqual(frontmatter["decision_reason"], "contradiction_detected")
+        self.assertIn("## Kill Criteria", body)
+        self.assertIn("Local wiki already records a near-identical idea", body)
+        self.assertIn("Only reopen if the contradiction is resolved", body)
+        self._assert_no_secondary_artifacts()
 
-        second_read = read_memory_views(self.tmp, view_keys=["killed-ideas"])
-        self.assertFalse(second_read["overlay_applied"])
-        self.assertTrue((root_path(self.tmp, "memory") / "killed-ideas.md").exists())
-        self.assertIn(
-            "should not be treated as an active direction",
-            second_read["views"]["killed-ideas"]["body"],
-        )
-
-    def test_snapshot_write_failure_fails_loudly_and_does_not_write_memo(self) -> None:
-        with patch("server.idea_verification._atomic_write_json", side_effect=OSError("disk full")):
+    def test_note_write_failure_fails_without_creating_secondary_artifacts(self) -> None:
+        with patch("server.idea_verification.write_markdown", side_effect=OSError("disk full")):
             result = verify_idea(
                 self.tmp,
                 idea=self._idea_payload(),
@@ -366,19 +284,13 @@ class IdeaVerificationRuntimeTest(unittest.TestCase):
             )
 
         self.assertFalse(result["ok"])
-        self.assertFalse(result["snapshot_persisted"])
-        self.assertFalse(result["promoted"])
         self.assertEqual(result["idea_write_state"], "failed")
-        self.assertEqual(result["snapshot_write_state"], "failed")
-        self.assertEqual(result["killed_ideas_memory_state"], "skipped")
+        self.assertEqual(result["idea_state"], "unchanged")
         self.assertIn("disk full", result["error"])
-
-        memo_path = root_path(self.tmp, "ideas") / "embodied-active-labeling.md"
-        self.assertFalse(memo_path.exists())
-
-        mutation = get_mutation_record(self.tmp, result["mutation_id"])
-        self.assertEqual(mutation["status"], "failed")
-        self.assertIn("disk full", mutation["error"])
+        self.assertFalse(
+            (Path(self.tmp) / "Paper Distill" / "insights" / "ideas" / "embodied-active-labeling.md").exists()
+        )
+        self._assert_no_secondary_artifacts()
 
 
 if __name__ == "__main__":

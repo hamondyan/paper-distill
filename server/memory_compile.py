@@ -12,6 +12,8 @@ published event/view pairs as compiled.
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,7 +21,6 @@ from typing import Any
 import yaml
 
 from server.active_threads import build_active_thread_snapshot
-from server.database import get_db
 from server.memory_consolidation import consolidate_memory_events
 from server.memory_contract import (
     build_memory_view_frontmatter,
@@ -34,15 +35,6 @@ from server.memory_runtime import (
     list_memory_events,
     list_uncompiled_memory_events,
 )
-from server.publish import (
-    apply_staged_bundle,
-    begin_publish_run,
-    cleanup_staged_publish_run,
-    get_latest_publish_run,
-    mark_publish_run_failed,
-    mark_publish_run_published,
-    stage_publish_run,
-)
 from server.vault_contract import root_path
 from server.vault_ops import ensure_vault_structure
 
@@ -56,7 +48,7 @@ def compile_memory_views(
     *,
     view_keys: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Compile pending memory events into current views through the runtime."""
+    """Compile pending memory events directly into current views."""
     try:
         normalized_keys = _normalize_requested_view_keys(view_keys)
     except MemoryEventValidationError as exc:
@@ -66,54 +58,9 @@ def compile_memory_views(
             "compiled_view_keys": [],
             "compiled_event_count": 0,
             "error": str(exc),
-            "mutation_id": None,
         }
 
-    from server.runtime import submit_mutation
-
-    result = submit_mutation(
-        vault_path,
-        mutation_type="memory_compile",
-        target_key=_target_key(normalized_keys),
-        payload={"view_keys": normalized_keys},
-    )
-    return _normalize_compile_result(result)
-
-
-def execute_memory_compile_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
-    """Single-writer handler that publishes compiled memory current views."""
-    ensure_vault_structure(vault_path)
-    conn = get_db(vault_path)
-    payload = _decode_payload(mutation)
-    requested = _normalize_requested_view_keys(payload.get("view_keys"))
-    active_run = get_latest_publish_run(conn, mutation["id"])
-
-    if active_run.get("state") == "published":
-        return _result_from_bundle(active_run.get("bundle", {}))
-
-    bundle = _build_memory_compile_bundle(vault_path, requested)
-    if not bundle.get("compiled"):
-        return bundle
-
-    try:
-        if active_run.get("state") not in {"started", "staged"}:
-            active_run = begin_publish_run(
-                conn,
-                mutation_id=mutation["id"],
-                target_key=mutation["target_key"],
-                operation="memory_compile",
-                bundle=bundle,
-            )
-
-        active_run = stage_publish_run(vault_path, conn, active_run)
-        apply_staged_bundle(vault_path, active_run)
-        active_run = mark_publish_run_published(conn, active_run["run_id"])
-        cleanup_staged_publish_run(active_run)
-        return _result_from_bundle(active_run.get("bundle", {}))
-    except Exception as exc:
-        if active_run.get("run_id"):
-            mark_publish_run_failed(conn, active_run["run_id"], str(exc))
-        raise MemorySynthesisError(str(exc)) from exc
+    return _commit_memory_compile(vault_path, normalized_keys)
 
 
 def _target_key(view_keys: list[str]) -> str:
@@ -122,17 +69,27 @@ def _target_key(view_keys: list[str]) -> str:
     return "memory:compile:" + ",".join(sorted(view_keys))
 
 
-def _normalize_compile_result(result: dict[str, Any]) -> dict[str, Any]:
-    if result.get("ok"):
-        return result
-    return {
-        "ok": False,
-        "compiled": False,
-        "compiled_view_keys": [],
-        "compiled_event_count": 0,
-        "error": str(result.get("error") or "memory compile failed"),
-        "mutation_id": result.get("mutation_id"),
-    }
+def _commit_memory_compile(
+    vault_path: str,
+    requested: list[str],
+) -> dict[str, Any]:
+    ensure_vault_structure(vault_path)
+    bundle = _build_memory_compile_bundle(vault_path, requested)
+    if not bundle.get("compiled"):
+        return dict(bundle)
+
+    try:
+        _apply_memory_compile_bundle(vault_path, bundle)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "compiled": False,
+            "compiled_view_keys": [],
+            "compiled_event_count": 0,
+            "error": str(exc),
+        }
+
+    return _result_from_bundle(bundle)
 
 
 def _build_memory_compile_bundle(vault_path: str, requested: list[str]) -> dict[str, Any]:
@@ -453,22 +410,34 @@ def _frontmatter_block(payload: dict[str, Any]) -> str:
     return f"---\n{dumped}\n---"
 
 
-def _decode_payload(mutation: dict[str, Any]) -> dict[str, Any]:
-    payload = mutation.get("payload")
-    if isinstance(payload, dict):
-        return payload
-    raw = mutation.get("payload_json")
-    if not raw:
-        return {}
-    try:
-        decoded = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return decoded if isinstance(decoded, dict) else {}
-
-
 def _result_from_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     result = bundle.get("result")
     if isinstance(result, dict):
         return dict(result)
     raise MemoryEventPersistError("Memory compile publish bundle is missing result metadata.")
+
+
+def _apply_memory_compile_bundle(vault_path: str, bundle: dict[str, Any]) -> None:
+    backups: dict[Path, str | None] = {}
+    applied: list[Path] = []
+    try:
+        for file_spec in bundle.get("files", []):
+            dest = Path(vault_path).expanduser() / str(file_spec["dest_relpath"])
+            backups[dest] = dest.read_text(encoding="utf-8") if dest.exists() else None
+            _atomic_write_text(dest, str(file_spec["content"]))
+            applied.append(dest)
+    except Exception:
+        for dest in reversed(applied):
+            original = backups.get(dest)
+            if original is None:
+                dest.unlink(missing_ok=True)
+            else:
+                _atomic_write_text(dest, original)
+        raise
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(tmp_path, path)

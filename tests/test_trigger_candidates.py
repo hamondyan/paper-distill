@@ -16,7 +16,7 @@ class TriggerCandidatesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         pd_root = os.path.join(self.tmp, "Paper Distill")
-        for d in ["wiki/papers", "wiki/concepts", "compiled_ir", ".state"]:
+        for d in ["wiki/papers", "wiki/concepts", ".state", ".state/ir"]:
             os.makedirs(os.path.join(pd_root, d), exist_ok=True)
         get_db(self.tmp)
 
@@ -61,15 +61,15 @@ class TriggerCandidatesTest(unittest.TestCase):
             "benchmark_scope": benchmark_scope,
             "claimed_novelty": novelty,
             "tension_fields": {
-                "limitations": [{"claim": limitation, "source_ref": f"raw/source/{citekey}/section-6"}],
-                "assumptions": [{"claim": "Requires dense data", "source_ref": f"raw/source/{citekey}/section-2"}],
-                "failure_modes": [{"claim": "Fails under occlusion", "source_ref": f"raw/source/{citekey}/table-4"}],
-                "transfer_constraints": [{"claim": "No real robot eval", "source_ref": f"raw/source/{citekey}/section-7"}],
-                "open_questions": [{"question": "How to scale to real robots?", "source_ref": f"raw/source/{citekey}/section-8"}],
-                "negative_results": [{"claim": negative_result, "source_ref": f"raw/source/{citekey}/table-5"}],
+                "limitations": [{"claim": limitation, "source_ref": f"sources/evidence/{citekey}/section-6"}],
+                "assumptions": [{"claim": "Requires dense data", "source_ref": f"sources/evidence/{citekey}/section-2"}],
+                "failure_modes": [{"claim": "Fails under occlusion", "source_ref": f"sources/evidence/{citekey}/table-4"}],
+                "transfer_constraints": [{"claim": "No real robot eval", "source_ref": f"sources/evidence/{citekey}/section-7"}],
+                "open_questions": [{"question": "How to scale to real robots?", "source_ref": f"sources/evidence/{citekey}/section-8"}],
+                "negative_results": [{"claim": negative_result, "source_ref": f"sources/evidence/{citekey}/table-5"}],
             },
         }
-        with open(os.path.join(self.tmp, "Paper Distill", "compiled_ir", f"{citekey}_resolved.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.tmp, "Paper Distill", ".state", "ir", f"{citekey}_resolved.json"), "w", encoding="utf-8") as f:
             json.dump(payload, f)
 
     def test_trigger_candidates_surface_from_graph_and_ir(self) -> None:

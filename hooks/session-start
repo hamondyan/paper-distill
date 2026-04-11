@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # SessionStart hook for paper-distill plugin
-# Injects using-paper-distill skill into session context
+# Injects lightweight Paper Distill workflow routing context
 
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-# Read the bootstrap skill
-skill_content=$(cat "${PLUGIN_ROOT}/skills/using-paper-distill/SKILL.md" 2>&1 || echo "Error reading skill")
 
 # Escape for JSON
 escape_for_json() {
@@ -21,8 +15,8 @@ escape_for_json() {
     printf '%s' "$s"
 }
 
-skill_escaped=$(escape_for_json "$skill_content")
-context="<IMPORTANT>\nYou have Paper Distill installed.\n\n**Below is your 'paper-distill:using-paper-distill' skill. For all other skills, use the 'Skill' tool:**\n\n${skill_escaped}\n</IMPORTANT>"
+context_text="You have Paper Distill installed. Use the medium-grained workflow skills when relevant: paper-distill:paper-intake for discovery, summaries, ingest, and Zotero; paper-distill:knowledge-workbench for query, compile, lint, and maintenance; paper-distill:idea-workbench for research ideas and gap analysis."
+context=$(escape_for_json "$(printf '<IMPORTANT>\n%s\n</IMPORTANT>' "$context_text")")
 
 # Output for Claude Code
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then

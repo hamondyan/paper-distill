@@ -81,7 +81,7 @@ class LintVaultTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = _make_vault(tmpdir)
             write_markdown(
-                root / "sources" / "notes" / "2026-04-05" / "jones2024-bar.md",
+                root / "sources" / "evidence" / "2026-04-05" / "jones2024-bar.md",
                 {"paper_id": "arxiv:2401.00001", "compiled": False, "title": "Bar"},
                 "# Bar",
             )
@@ -116,7 +116,7 @@ class LintVaultTest(unittest.TestCase):
                 any("lonely-concept" in item for item in result["orphaned_articles"]["items"])
             )
 
-    def test_semantic_duplicates_ignore_raw_to_compiled_same_paper(self) -> None:
+    def test_semantic_duplicates_ignore_evidence_to_compiled_same_paper(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = _make_vault(tmpdir)
             frontmatter = {
@@ -126,9 +126,9 @@ class LintVaultTest(unittest.TestCase):
                 "compiled": True,
             }
             write_markdown(
-                root / "sources" / "notes" / "2026-04-05" / "same-paper.md",
+                root / "sources" / "evidence" / "2026-04-05" / "same-paper.md",
                 frontmatter,
-                "# Raw Note",
+                "# Source Evidence",
             )
             write_markdown(
                 root / "wiki" / "papers" / "same-paper.md",
@@ -152,7 +152,8 @@ class VaultStatsTest(unittest.TestCase):
             _make_vault(tmpdir)
             stats = vault_stats_sync(tmpdir)
             self.assertEqual(stats["inbox"]["total"], 0)
-            self.assertEqual(stats["raw_notes"], 0)
+            self.assertEqual(stats["source_evidence"], 0)
+            self.assertEqual(stats["compiled_source_evidence"], 0)
             self.assertEqual(stats["wiki"]["papers"], 0)
             self.assertEqual(stats["compilation_rate"], 0)
 
@@ -170,9 +171,9 @@ class VaultStatsTest(unittest.TestCase):
                 {"paper_id": "doi:b", "status": "proposed", "matched_topics": ["manipulation"]},
                 "# B",
             )
-            # Add raw note
+            # Add source evidence
             write_markdown(
-                root / "sources" / "notes" / "2026-04-05" / "c.md",
+                root / "sources" / "evidence" / "2026-04-05" / "c.md",
                 {"paper_id": "doi:c", "compiled": True, "topics": ["vla"]},
                 "# C",
             )
@@ -192,8 +193,8 @@ class VaultStatsTest(unittest.TestCase):
             self.assertEqual(stats["inbox"]["total"], 2)
             self.assertEqual(stats["inbox"]["by_status"]["approved"], 1)
             self.assertEqual(stats["inbox"]["by_status"]["proposed"], 1)
-            self.assertEqual(stats["raw_notes"], 1)
-            self.assertEqual(stats["compiled"], 1)
+            self.assertEqual(stats["source_evidence"], 1)
+            self.assertEqual(stats["compiled_source_evidence"], 1)
             self.assertEqual(stats["compilation_rate"], 1.0)
             self.assertEqual(stats["wiki"]["papers"], 1)
             self.assertEqual(stats["wiki"]["concepts"], 1)

@@ -6,9 +6,9 @@ Manages the `.state/paper-distill.db` database that backs:
   - Maintenance Queue           (authority layer)
 
 The DB lives under ``Paper Distill/.state/`` inside the vault and is
-excluded from version control (.gitignore).  Authority-layer tables
-can be exported to JSON for backup; index-layer tables can be rebuilt
-from vault files + compiled IR.
+excluded from version control (.gitignore). Authority-layer tables can be
+exported to JSON for backup; index-layer tables can be rebuilt from vault
+files + compiled IR.
 """
 from __future__ import annotations
 
@@ -82,55 +82,6 @@ CREATE TABLE IF NOT EXISTS maintenance_queue (
     resolved_at TEXT
 );
 
--- Durable Mutation Queue
-CREATE TABLE IF NOT EXISTS mutation_queue (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    mutation_type TEXT NOT NULL,          -- compile_publish | future runtime mutations
-    target_key    TEXT NOT NULL,          -- e.g. "paper:smith2024"
-    payload_json  TEXT NOT NULL,          -- JSON operation payload
-    payload_hash  TEXT NOT NULL,          -- stable dedupe hash for active rows
-    status        TEXT NOT NULL DEFAULT 'pending',
-                                         -- pending | processing | done | failed
-    claimed_by    TEXT,
-    claimed_at    TEXT,
-    attempts      INTEGER NOT NULL DEFAULT 0,
-    result_json   TEXT,
-    error         TEXT,
-    created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_mutation_queue_status_created
-    ON mutation_queue(status, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_mutation_queue_target_status
-    ON mutation_queue(target_key, status);
-
--- Publish Journal / Run State
-CREATE TABLE IF NOT EXISTS publish_journal (
-    run_id               TEXT PRIMARY KEY,
-    mutation_id          INTEGER NOT NULL,
-    target_key           TEXT NOT NULL,
-    operation            TEXT NOT NULL,   -- compile_publish | future publish ops
-    state                TEXT NOT NULL,   -- started | staged | published | failed
-    bundle_json          TEXT NOT NULL,   -- full durable publish plan
-    staged_root          TEXT,
-    staged_manifest_json TEXT,
-    error                TEXT,
-    started_at           TEXT NOT NULL,
-    staged_at            TEXT,
-    published_at         TEXT,
-    failed_at            TEXT,
-    updated_at           TEXT NOT NULL,
-    FOREIGN KEY (mutation_id) REFERENCES mutation_queue(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_publish_journal_mutation_state
-    ON publish_journal(mutation_id, state, updated_at);
-
-CREATE INDEX IF NOT EXISTS idx_publish_journal_state_updated
-    ON publish_journal(state, updated_at);
-
 -- ===================== Rebuildable Index Layer =====================
 
 -- Compile State (generic page_id + page_type)
@@ -140,7 +91,7 @@ CREATE TABLE IF NOT EXISTS compile_state (
     compile_version   INTEGER NOT NULL,
     schema_version    TEXT NOT NULL,      -- e.g. "2024-06"
     compiled_at       TEXT NOT NULL,
-    ir_path           TEXT,              -- points to compiled_ir/ JSON
+    ir_path           TEXT,              -- points to .state/ir/ JSON
     content_hash      TEXT,              -- hash of managed sections for conflict detect
     managed_hashes_json TEXT,            -- per-section managed block hashes
     managed_blocks_json TEXT,            -- previous generated managed block contents
@@ -202,7 +153,6 @@ def get_db(vault_path: str) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_SCHEMA_SQL)
-        _run_migrations(conn)
         conn.commit()
 
         _connections[key] = conn
@@ -222,101 +172,8 @@ def close_db(vault_path: str) -> None:
 def init_db(vault_path: str) -> Path:
     """Ensure the database file and tables exist.  Returns the DB path."""
     conn = get_db(vault_path)
-    _run_migrations(conn)
     conn.commit()
     return _db_path(vault_path)
-
-
-def _run_migrations(conn: sqlite3.Connection) -> None:
-    """Apply additive schema migrations for older local databases."""
-    _ensure_column(conn, "compile_state", "managed_hashes_json", "TEXT")
-    _ensure_column(conn, "compile_state", "managed_blocks_json", "TEXT")
-    _ensure_compile_deps_schema(conn)
-
-
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
-    cols = {
-        row["name"] if isinstance(row, sqlite3.Row) else row[1]
-        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
-
-
-def _ensure_compile_deps_schema(conn: sqlite3.Connection) -> None:
-    """Rebuild ``compile_deps`` when older schemas cannot express paper deps safely."""
-    table_row = conn.execute(
-        """
-        SELECT sql
-        FROM sqlite_master
-        WHERE type = 'table' AND name = 'compile_deps'
-        """
-    ).fetchone()
-    if not table_row:
-        return
-
-    table_sql = str(table_row["sql"] if isinstance(table_row, sqlite3.Row) else table_row[0] or "")
-    unique_index = conn.execute(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'index' AND name = 'idx_compile_deps_unique'
-        """
-    ).fetchone()
-    needs_rebuild = (
-        "FOREIGN KEY (dep_id)" in table_sql
-        or "REFERENCES concept_registry" in table_sql
-        or unique_index is None
-    )
-    if not needs_rebuild:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_compile_deps_dep ON compile_deps(dep_id, dep_type)"
-        )
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_deps_unique
-            ON compile_deps(page_id, page_type, dep_type, dep_id)
-            """
-        )
-        return
-
-    conn.commit()
-    conn.execute("PRAGMA foreign_keys=OFF")
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS compile_deps_new (
-                page_id     TEXT NOT NULL,
-                page_type   TEXT NOT NULL,
-                dep_type    TEXT NOT NULL,
-                dep_id      TEXT NOT NULL,
-                dep_version INTEGER NOT NULL,
-                FOREIGN KEY (page_id, page_type) REFERENCES compile_state(page_id, page_type)
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO compile_deps_new
-                (page_id, page_type, dep_type, dep_id, dep_version)
-            SELECT DISTINCT page_id, page_type, dep_type, dep_id, dep_version
-            FROM compile_deps
-            """
-        )
-        conn.execute("DROP TABLE compile_deps")
-        conn.execute("ALTER TABLE compile_deps_new RENAME TO compile_deps")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_compile_deps_dep ON compile_deps(dep_id, dep_type)"
-        )
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_deps_unique
-            ON compile_deps(page_id, page_type, dep_type, dep_id)
-            """
-        )
-        conn.commit()
-    finally:
-        conn.execute("PRAGMA foreign_keys=ON")
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +185,6 @@ _AUTHORITY_TABLES = (
     "concept_aliases",
     "concept_merge_history",
     "maintenance_queue",
-    "mutation_queue",
-    "publish_journal",
 )
 
 

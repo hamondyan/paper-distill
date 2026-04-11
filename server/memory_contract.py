@@ -23,8 +23,6 @@ _TYPED_MEMORY_EVENT_TYPES = frozenset(
         "preference_update",
         "profile_update",
         "thread_update",
-        "idea_outcome",
-        "contradiction_note",
     }
 )
 
@@ -104,29 +102,6 @@ _TYPED_MEMORY_VIEWS: dict[str, MemoryViewSpec] = {
         allowed_event_types=frozenset({"dialogue_capture", "thread_update"}),
         allowed_statuses=frozenset(
             {"provisional", "confirmed", "consolidated", "stale", "retired"}
-        ),
-    ),
-    "killed-ideas": MemoryViewSpec(
-        view_key="killed-ideas",
-        title="Killed Ideas",
-        description=(
-            "Compiled advisory memory view of rejected, contradicted, or "
-            "deprioritized ideas worth avoiding or revisiting carefully."
-        ),
-        read_role="specific-view",
-        summary_only=False,
-        allowed_event_types=frozenset(
-            {"dialogue_capture", "idea_outcome", "contradiction_note"}
-        ),
-        allowed_statuses=frozenset(
-            {
-                "provisional",
-                "confirmed",
-                "consolidated",
-                "rejected",
-                "stale",
-                "retired",
-            }
         ),
     ),
 }

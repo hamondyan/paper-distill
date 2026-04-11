@@ -1,68 +1,25 @@
-# Paper Distill 文档总览
+# Paper Distill Docs
 
-- 文档类型：导航
-- 状态：当前
-- 版本：v1 初代发布
-- 更新日期：2026-04-07
-- 适用对象：用户、集成方、维护者
+Paper Distill is an Obsidian-first, human-approved research knowledge system.
 
-## 文档分层
+## Start Here
 
-当前 `docs/` 采用“**发布文档优先，历史文档归档**”的结构：
+- [Installation](installation.md): install dependencies and start the MCP server.
+- [Configuration](configuration.md): configure vault path, topics, search, capture, Zotero, and Obsidian CLI querying.
+- [Commands](commands.md): user-facing slash commands and the MCP tools they map to.
+- [Workflows](workflows.md): discovery, ingestion, compile, query, idea, memory, and maintenance flows.
+- [Vault Layout](vault-layout.md): files and directories written inside the Obsidian vault.
+- [Architecture](architecture.md): code structure, runtime boundaries, data contracts, and state layers.
+- [Testing](testing.md): verification commands used for this repository.
+- [Obsidian CLI Validation](obsidian-cli-validation.md): real-environment CLI and Bases validation.
+- [TODO Status](todo.md): completion audit for the refactor checklist.
 
-- `product/`：产品定位、工作流、知识模型
-- `integration/`：安装、运行、客户端兼容
-- `reference/`：配置、目录结构、命令参考
-- `releases/`：版本说明、发布说明
-- `archive/`：旧计划、旧评审、已实施设计与历史工作流文档，保留追溯性
+## Current Model
 
-## 推荐阅读路径
+The visible knowledge path is:
 
-### 如果你是第一次接触 Paper Distill
+```text
+inbox -> sources/evidence -> wiki/papers -> wiki/concepts|methods|topics
+```
 
-1. [product/overview.md](product/overview.md)
-2. [product/workflow.md](product/workflow.md)
-3. [integration/installation.md](integration/installation.md)
-4. [integration/clients.md](integration/clients.md)
-
-### 如果你已经准备开始用
-
-1. [reference/configuration.md](reference/configuration.md)
-2. [reference/vault-layout.md](reference/vault-layout.md)
-3. [reference/commands.md](reference/commands.md)
-
-### 如果你想知道这次首发包含什么
-
-1. [releases/v1-launch.md](releases/v1-launch.md)
-
-### 如果你要追溯架构演进历史
-
-1. [archive/README.md](archive/README.md)
-
-## 当前文档清单
-
-### 产品文档
-
-- [product/overview.md](product/overview.md)
-- [product/workflow.md](product/workflow.md)
-- [product/knowledge-model.md](product/knowledge-model.md)
-
-### 集成文档
-
-- [integration/installation.md](integration/installation.md)
-- [integration/clients.md](integration/clients.md)
-
-### 参考文档
-
-- [reference/configuration.md](reference/configuration.md)
-- [reference/vault-layout.md](reference/vault-layout.md)
-- [reference/commands.md](reference/commands.md)
-
-### 发布文档
-
-- [releases/v1-launch.md](releases/v1-launch.md)
-
-### 历史归档
-
-- [archive/README.md](archive/README.md)
-- [archive/designs/raw-source-inline-v2.md](archive/designs/raw-source-inline-v2.md)
+Generated or intermediate machine state belongs under `.state/`. User-facing idea assets belong under `insights/ideas/`. Query and report assets belong under `insights/queries/`.

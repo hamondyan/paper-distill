@@ -1,0 +1,4 @@
+interface:
+  display_name: "Idea Workbench"
+  short_description: "Generate and curate research idea notes"
+  default_prompt: "Use $idea-workbench to find research gaps and create idea notes from my paper collection."

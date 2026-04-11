@@ -11,6 +11,31 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_SETTINGS_PATH = _REPO_ROOT / "settings.json"
 
+_DEFAULT_CONCEPT_ABBREVIATION_WHITELIST: dict[str, str] = {
+    "vla": "vision-language-action",
+    "vlm": "vision-language-model",
+    "llm": "large-language-model",
+    "llms": "large-language-models",
+    "rl": "reinforcement-learning",
+    "il": "imitation-learning",
+    "bc": "behavioral-cloning",
+    "vit": "vision-transformer",
+    "cnn": "convolutional-neural-network",
+    "gan": "generative-adversarial-network",
+    "nerf": "neural-radiance-field",
+    "slam": "simultaneous-localization-and-mapping",
+    "mpc": "model-predictive-control",
+    "ppo": "proximal-policy-optimization",
+    "dpo": "direct-preference-optimization",
+    "sac": "soft-actor-critic",
+    "ddpm": "denoising-diffusion-probabilistic-model",
+    "dit": "diffusion-transformer",
+    "moe": "mixture-of-experts",
+    "lora": "low-rank-adaptation",
+    "rag": "retrieval-augmented-generation",
+    "rt": "robotics-transformer",
+}
+
 _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
     "vault_path": "",
     "topics": {},
@@ -22,7 +47,7 @@ _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
     "compile": {
         "auto_after_ingest": False,
         "deep_compile_threshold": 5,
-        "source_policy": "notes_first",
+        "source_policy": "evidence_first",
     },
     "workflow": {
         "detailed_inbox_cards": True,
@@ -49,6 +74,9 @@ _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
     },
     "venue": {
         "authority_order": ["dblp", "crossref", "openalex", "arxiv"],
+    },
+    "concept_registry": {
+        "abbreviation_whitelist": dict(_DEFAULT_CONCEPT_ABBREVIATION_WHITELIST),
     },
     "zotero": {
         "enabled": True,

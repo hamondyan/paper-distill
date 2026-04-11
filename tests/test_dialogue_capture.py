@@ -107,15 +107,13 @@ class DialogueCaptureRuntimeTest(unittest.TestCase):
         self.assertEqual(accepted["capture_state"], "accepted")
         self.assertEqual(accepted["decision"], "accept")
         self.assertEqual(accepted["memory_write_state"], "appended")
-        self.assertIsNotNone(accepted["memory_mutation_id"])
         self.assertIsNotNone(accepted["memory_event_id"])
 
         note_path = Path(accepted["dialogue_path"])
         frontmatter = _read_frontmatter(note_path)
         self.assertEqual(frontmatter["capture_state"], "accepted")
         self.assertEqual(frontmatter["decision_note"], "Accepted as stable preference memory.")
-        self.assertEqual(frontmatter["memory_write_state"], "queued")
-        self.assertEqual(frontmatter["memory_mutation_id"], accepted["memory_mutation_id"])
+        self.assertEqual(frontmatter["memory_write_state"], "appended")
 
         first_read = read_memory_views(self.tmp, view_keys=["assistant-brief", "taste"])
         self.assertTrue(first_read["overlay_applied"])
@@ -152,7 +150,6 @@ class DialogueCaptureRuntimeTest(unittest.TestCase):
         self.assertTrue(rejected["ok"])
         self.assertEqual(rejected["capture_state"], "rejected")
         self.assertEqual(rejected["memory_write_state"], "skipped")
-        self.assertIsNone(rejected["memory_mutation_id"])
 
         note_path = Path(rejected["dialogue_path"])
         frontmatter = _read_frontmatter(note_path)

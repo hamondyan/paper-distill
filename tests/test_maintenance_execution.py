@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 
+from server.compile_ir import SCHEMA_VERSION
 from server.concept_registry import get_concept, register_concept, promote_concept
 from server.database import close_db, get_db
 from server.maintenance import confirm_task, execute_merge, execute_promote, execute_refresh
@@ -16,7 +17,7 @@ class MaintenanceExecutionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         pd_root = os.path.join(self.tmp, "Paper Distill")
-        for d in [".state", "wiki/papers", "wiki/concepts", "wiki/topics", "compiled_ir"]:
+        for d in [".state", ".state/ir", "wiki/papers", "wiki/concepts", "wiki/topics"]:
             os.makedirs(os.path.join(pd_root, d), exist_ok=True)
         get_db(self.tmp)
 
@@ -92,7 +93,8 @@ class MaintenanceExecutionTest(unittest.TestCase):
         conn.execute(
             """INSERT OR REPLACE INTO compile_state
                (page_id, page_type, compile_version, schema_version, compiled_at)
-               VALUES ('paper-a', 'paper', 1, 'legacy', '2026-04-06T00:00:00')"""
+               VALUES ('paper-a', 'paper', 1, ?, '2026-04-06T00:00:00')""",
+            (SCHEMA_VERSION,),
         )
         conn.execute(
             """INSERT OR REPLACE INTO compile_deps
@@ -124,7 +126,8 @@ class MaintenanceExecutionTest(unittest.TestCase):
         conn.execute(
             """INSERT OR REPLACE INTO compile_state
                (page_id, page_type, compile_version, schema_version, compiled_at)
-               VALUES ('paper-a', 'paper', 1, 'legacy', '2026-04-06T00:00:00')"""
+               VALUES ('paper-a', 'paper', 1, ?, '2026-04-06T00:00:00')""",
+            (SCHEMA_VERSION,),
         )
         conn.execute(
             """INSERT OR REPLACE INTO compile_deps

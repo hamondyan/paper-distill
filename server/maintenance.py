@@ -25,19 +25,17 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from typing import Any
 
-import yaml
-
-from server.concept_registry import auto_merge_eligible, get_concept, merge_concepts, promote_concept, slugify
+from server.concept_registry import auto_merge_eligible, get_concept, merge_concepts, promote_concept
 from server.compile_ir import commit_compile_result
 from server.database import get_db, _now_iso
 from server.vault_ops import (
     append_knowledge_log,
     mark_query_asset_stale,
     normalize_knowledge_impact,
-    refresh_global_navigation,
+    promote_concept_page_to_topic_asset,
+    rewrite_page_asset_links,
 )
 
 LOG = logging.getLogger(__name__)
@@ -57,7 +55,7 @@ def reconcile_maintenance_queue(
 
     Compares incoming findings against existing pending/confirmed tasks
     to avoid duplicates.  Optionally auto-confirms tasks that meet the
-    hard-coded eligibility rules.
+    safe eligibility rules.
 
     Parameters
     ----------
@@ -178,7 +176,6 @@ def reconcile_maintenance_queue(
         summary=f"Created {created} task(s) from lint and stats results.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
     return {
         "created": created,
         "skipped_duplicate": skipped,
@@ -342,7 +339,7 @@ def _auto_confirm_eligible(task_type: str, payload: dict) -> bool:
 
     Only three cases qualify (matching the concept registry auto-merge rules):
     1. Slug-identical concepts
-    2. Abbreviation ↔ full name in the hard-coded whitelist
+    2. Abbreviation ↔ full name in the configured whitelist
     3. Spelling variants
 
     All other tasks require human confirmation.
@@ -413,7 +410,7 @@ def execute_merge(vault_path: str, task_id: int) -> dict[str, Any]:
 
     impacted_pages = _dependent_pages_for_ids(conn, [from_id, to_id])
     for page in impacted_pages:
-        _rewrite_page_links(vault_path, page["page_id"], page["page_type"], from_id, to_id)
+        rewrite_page_asset_links(vault_path, page["page_id"], page["page_type"], from_id, to_id)
     propagation = _propagate_dependency_refresh(
         vault_path,
         impacted_pages,
@@ -433,7 +430,6 @@ def execute_merge(vault_path: str, task_id: int) -> dict[str, Any]:
         summary=f"Executed merge task {task_id} and rewrote impacted page links.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
     return {
         **result,
         "completed": True,
@@ -488,10 +484,17 @@ def execute_promote(vault_path: str, task_id: int) -> dict[str, Any]:
     )
     conn.commit()
 
-    _promote_concept_page_to_topic(vault_path, concept_id)
+    promote_concept_page_to_topic_asset(vault_path, concept_id)
     impacted_pages = _dependent_pages_for_ids(conn, [concept_id])
     for page in impacted_pages:
-        _rewrite_page_links(vault_path, page["page_id"], page["page_type"], concept_id, concept_id, to_section="topics")
+        rewrite_page_asset_links(
+            vault_path,
+            page["page_id"],
+            page["page_type"],
+            concept_id,
+            concept_id,
+            to_section="topics",
+        )
     refresh_summary = _refresh_topic_page(vault_path, concept_id)
     propagation = _propagate_dependency_refresh(
         vault_path,
@@ -514,7 +517,6 @@ def execute_promote(vault_path: str, task_id: int) -> dict[str, Any]:
         summary=f"Executed promotion task {task_id} and refreshed the topic page.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
     return {
         **result,
         "completed": True,
@@ -574,7 +576,6 @@ def execute_refresh(vault_path: str, task_id: int) -> dict[str, Any]:
         summary=f"Executed refresh task {task_id} and updated the topic summary.",
         impact=impact,
     )
-    refresh_global_navigation(vault_path)
     return {
         "completed": True,
         "task_id": task_id,
@@ -717,83 +718,6 @@ def _impact_paths_for_pages(pages: list[dict[str, Any]]) -> list[str]:
     return refs
 
 
-def _rewrite_page_links(
-    vault_path: str,
-    page_id: str,
-    page_type: str,
-    from_id: str,
-    to_id: str,
-    *,
-    to_section: str = "concepts",
-) -> None:
-    if page_type not in _PAGE_PATHS:
-        return
-    path = _page_path(vault_path, page_id, page_type)
-    if not os.path.exists(path):
-        return
-
-    raw = open(path, "r", encoding="utf-8").read()
-    frontmatter, body = _split_markdown(raw)
-    main_body, user_suffix = _split_user_body(body)
-
-    main_body = _replace_wikilinks(main_body, from_id, to_id, to_section=to_section)
-    if page_type in {"paper", "concept", "topic"}:
-        concepts = frontmatter.get("concepts", [])
-        if isinstance(concepts, str):
-            concepts = [concepts]
-        concepts = [to_id if slugify(str(item)) == from_id else item for item in concepts]
-        if concepts:
-            frontmatter["concepts"] = concepts
-        topics = frontmatter.get("topics", [])
-        if isinstance(topics, str):
-            topics = [topics]
-        topics = [to_id if slugify(str(item)) == from_id and to_section == "topics" else item for item in topics]
-        if topics:
-            frontmatter["topics"] = topics
-    elif page_type == "query":
-        concepts_referenced = frontmatter.get("concepts_referenced") or []
-        if isinstance(concepts_referenced, str):
-            concepts_referenced = [concepts_referenced]
-        topics_referenced = frontmatter.get("topics_referenced") or []
-        if isinstance(topics_referenced, str):
-            topics_referenced = [topics_referenced]
-
-        if to_section == "topics":
-            concepts_referenced = [
-                item for item in concepts_referenced if slugify(str(item)) != from_id
-            ]
-            if to_id not in topics_referenced:
-                topics_referenced.append(to_id)
-        else:
-            concepts_referenced = [
-                to_id if slugify(str(item)) == from_id else item for item in concepts_referenced
-            ]
-            topics_referenced = [
-                to_id if slugify(str(item)) == from_id else item for item in topics_referenced
-            ]
-
-        frontmatter["concepts_referenced"] = concepts_referenced
-        frontmatter["topics_referenced"] = topics_referenced
-
-        promotion_targets = list(frontmatter.get("promotion_targets", []) or [])
-        for target in promotion_targets:
-            if not isinstance(target, dict):
-                continue
-            if slugify(str(target.get("page_id", ""))) != from_id:
-                continue
-            target["page_id"] = to_id
-            if to_section == "topics":
-                target["page_type"] = "topic"
-        if promotion_targets:
-            frontmatter["promotion_targets"] = promotion_targets
-
-    rebuilt = main_body.strip()
-    if user_suffix:
-        rebuilt = f"{rebuilt}\n\n{user_suffix}".strip()
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(_render_markdown(frontmatter, rebuilt))
-
-
 def _propagate_dependency_refresh(
     vault_path: str,
     impacted_pages: list[dict[str, Any]],
@@ -838,25 +762,6 @@ def _propagate_dependency_refresh(
         "refreshed_pages": refreshed_pages,
         "stale_marked_pages": stale_marked_pages,
     }
-
-
-def _promote_concept_page_to_topic(vault_path: str, concept_id: str) -> None:
-    concept_path = _page_path(vault_path, concept_id, "concept")
-    if not os.path.exists(concept_path):
-        return
-    content = open(concept_path, "r", encoding="utf-8").read()
-    frontmatter, body = _split_markdown(content)
-    topic_path = _page_path(vault_path, concept_id, "topic")
-    os.makedirs(os.path.dirname(topic_path), exist_ok=True)
-    with open(topic_path, "w", encoding="utf-8") as f:
-        f.write(_render_markdown(frontmatter, body))
-    with open(concept_path, "w", encoding="utf-8") as f:
-        f.write(
-            _render_markdown(
-                {"concept": concept_id, "redirect_to": f"topics/{concept_id}"},
-                f"# {frontmatter.get('concept', concept_id)}\n\nPromoted to [[topics/{concept_id}]].",
-            )
-        )
 
 
 def _refresh_topic_page(vault_path: str, topic_id: str) -> dict[str, Any]:
@@ -912,34 +817,3 @@ def _refresh_topic_page(vault_path: str, topic_id: str) -> dict[str, Any]:
         deps=[{"dep_type": "topic", "dep_id": topic_id, "dep_version": topic.get("version", 1)}],
     )
     return result
-
-
-def _split_markdown(content: str) -> tuple[dict[str, Any], str]:
-    if not content.startswith("---\n"):
-        return {}, content
-    _, remainder = content.split("---\n", 1)
-    fm_text, body = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}, body.lstrip()
-
-
-def _render_markdown(frontmatter: dict[str, Any], body: str) -> str:
-    return f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()}\n---\n\n{body.strip()}\n"
-
-
-def _split_user_body(body: str) -> tuple[str, str]:
-    match = re.search(r"^##\s+(My Notes|Reading Notes)\b", body, re.MULTILINE)
-    if not match:
-        return body.strip(), ""
-    return body[: match.start()].strip(), body[match.start() :].strip()
-
-
-def _replace_wikilinks(text: str, from_id: str, to_id: str, *, to_section: str) -> str:
-    pattern = re.compile(rf"\[\[(concepts|topics)/{re.escape(from_id)}(?:\|([^\]]+))?\]\]")
-
-    def repl(match: re.Match[str]) -> str:
-        label = match.group(2)
-        if label:
-            return f"[[{to_section}/{to_id}|{label}]]"
-        return f"[[{to_section}/{to_id}]]"
-
-    return pattern.sub(repl, text)

@@ -1,4 +1,4 @@
-"""arXiv binding, ar5iv capture, and CRGP-DNL note generation."""
+"""arXiv binding, ar5iv capture, and source-grounded paper note extraction."""
 from __future__ import annotations
 
 import asyncio
@@ -914,7 +914,7 @@ def build_crgp_dnl(
     paper: dict[str, Any],
     source_doc: CleanedArxivDocument,
 ) -> dict[str, Any]:
-    """Build a deterministic CRGP-DNL note from cleaned source content."""
+    """Build deterministic paper-note sections from cleaned source content."""
     sections = source_doc.sections
     buckets = _section_bucket(sections)
     intro_sections = [
@@ -949,7 +949,7 @@ def build_crgp_dnl(
     )
 
     related_text = _take_paragraphs(_paragraphs_for_sections(related_sections), limit=2) or (
-        "The captured source does not expose a dedicated related-work section. Use the introduction and bibliography context in the source note for manual comparison."
+        "The captured source does not expose a dedicated related-work section. Use the introduction and bibliography context in the evidence capture for manual comparison."
     )
 
     _GAP_PATTERNS = (

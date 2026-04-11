@@ -4,6 +4,6 @@ description: Generate research ideas from knowledge base gap analysis
 user_invocable: true
 ---
 
-Run the idea-discover skill: analyze the wiki for research gaps and generate actionable ideas using 5-type gap analysis (recurring unsolved problems, methodology mismatches, evaluation gaps, combination opportunities, scaling questions).
+Run the `paper-distill:idea-workbench` skill: analyze the wiki for research gaps and generate actionable ideas using local evidence and graph/IR tension signals.
 
-Invoke `paper-distill:idea-discover` to let the knowledge maintainer turn current graph tension into idea memos that can be linked back into the wiki.
+Use editable idea notes in `insights/ideas/` so promising directions and negative knowledge stay linked back into the wiki.

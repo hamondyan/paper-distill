@@ -1,14 +1,14 @@
 """First-class dialogue capture flow for advisory memory.
 
 Dialogue capture turns memory-worthy conversation turns into explicit proposal
-artifacts under ``insights/dialogues/``. Accepted proposals enqueue one durable
-memory event, typically starting at ``provisional`` for later confirmation;
+artifacts under ``insights/dialogues/``. Accepted proposals append one durable
+memory event directly, typically starting at ``provisional`` for later confirmation;
 rejected proposals stay as dialogue artifacts only.
 """
 from __future__ import annotations
 
-import json
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -50,85 +50,50 @@ def capture_dialogue(
         )
     except DialogueCaptureValidationError as exc:
         return _capture_failure(
-            mutation_id=None,
             capture_id=candidate_capture_id,
             error=str(exc),
             capture_state="unknown",
             dialogue_path=None,
         )
-
-    from server.runtime import get_mutation_record, submit_mutation
-
-    result = submit_mutation(
+    return _execute_capture_request(
         vault_path,
-        mutation_type="dialogue_capture",
-        target_key=_capture_target_key(normalized),
-        payload=normalized,
-    )
-    normalized_result = _normalize_capture_result(
-        result,
-        capture_id=normalized.get("capture_id"),
+        request=normalized,
+        created_at=_now_iso(),
     )
 
-    memory_mutation_id = normalized_result.get("memory_mutation_id")
-    if not memory_mutation_id:
-        return normalized_result
 
-    memory_record = get_mutation_record(vault_path, int(memory_mutation_id))
-    memory_result = dict(memory_record.get("result") or {})
-    if memory_result.get("appended"):
-        normalized_result["memory_write_state"] = "appended"
-        normalized_result["memory_event_id"] = memory_result.get("event_id")
-        normalized_result["memory_event_path"] = memory_result.get("event_path")
-    elif memory_record.get("status") == "failed":
-        normalized_result["memory_write_state"] = "failed"
-        normalized_result["memory_error"] = (
-            memory_result.get("error") or memory_record.get("error")
-        )
-    else:
-        normalized_result["memory_write_state"] = "queued"
-    return normalized_result
-
-
-def execute_dialogue_capture_mutation(vault_path: str, mutation: dict[str, Any]) -> dict[str, Any]:
-    """Single-writer handler for dialogue capture proposal and resolution."""
+def _execute_capture_request(
+    vault_path: str,
+    *,
+    request: dict[str, Any],
+    created_at: str,
+) -> dict[str, Any]:
     ensure_vault_structure(vault_path)
-    payload = _decode_json(mutation.get("payload_json"))
-    candidate_capture_id = _candidate_capture_id(payload.get("capture_id"), payload.get("proposal"))
-
-    try:
-        request = _normalize_capture_request(
-            action=payload.get("action"),
-            proposal=payload.get("proposal"),
-            capture_id=payload.get("capture_id"),
-            decision_note=payload.get("decision_note"),
-        )
-    except DialogueCaptureValidationError as exc:
-        return _capture_failure(
-            mutation_id=mutation.get("id"),
-            capture_id=candidate_capture_id,
-            error=str(exc),
-            capture_state="unknown",
-            dialogue_path=None,
-        )
-
     if request["action"] == "propose":
-        return _execute_propose(vault_path, mutation, request)
-    return _execute_resolution(vault_path, mutation, request)
+        return _execute_propose(
+            vault_path,
+            request=request,
+            created_at=created_at,
+        )
+    return _execute_resolution(
+        vault_path,
+        request=request,
+        created_at=created_at,
+    )
 
 
 def _execute_propose(
     vault_path: str,
-    mutation: dict[str, Any],
+    *,
     request: dict[str, Any],
+    created_at: str,
 ) -> dict[str, Any]:
     proposal = dict(request["proposal"])
-    capture_id = request.get("capture_id") or _capture_id_for_mutation(mutation)
+    capture_id = request.get("capture_id") or _capture_id_for_created_at(created_at)
     note_path = _dialogue_note_path(vault_path, capture_id)
     if note_path.exists():
         existing_frontmatter, _ = _read_markdown_note(note_path)
         return _capture_success(
-            mutation_id=mutation["id"],
             capture_id=capture_id,
             dialogue_path=str(note_path),
             capture_state=str(existing_frontmatter.get("capture_state") or "proposed"),
@@ -136,11 +101,11 @@ def _execute_propose(
             memory_write_state=str(
                 existing_frontmatter.get("memory_write_state") or "pending_user_decision"
             ),
-            memory_mutation_id=_coerce_optional_int(existing_frontmatter.get("memory_mutation_id")),
             memory_error=_coerce_optional_str(existing_frontmatter.get("memory_error")),
+            memory_event_id=_coerce_optional_str(existing_frontmatter.get("memory_event_id")),
+            memory_event_path=_coerce_optional_str(existing_frontmatter.get("memory_event_path")),
         )
 
-    created_at = str(mutation.get("created_at") or _now_iso())
     frontmatter = _build_dialogue_frontmatter(
         capture_id=capture_id,
         proposal=proposal,
@@ -150,34 +115,35 @@ def _execute_propose(
         updated_at=created_at,
         decision_note="",
         memory_write_state="pending_user_decision",
-        memory_mutation_id=None,
         memory_error=None,
+        memory_event_id=None,
+        memory_event_path=None,
     )
     body = _build_dialogue_body(frontmatter)
     write_markdown(note_path, frontmatter, body)
     return _capture_success(
-        mutation_id=mutation["id"],
         capture_id=capture_id,
         dialogue_path=str(note_path),
         capture_state="proposed",
         decision="pending",
         memory_write_state="pending_user_decision",
-        memory_mutation_id=None,
         memory_error=None,
+        memory_event_id=None,
+        memory_event_path=None,
     )
 
 
 def _execute_resolution(
     vault_path: str,
-    mutation: dict[str, Any],
+    *,
     request: dict[str, Any],
+    created_at: str,
 ) -> dict[str, Any]:
     capture_id = str(request["capture_id"])
     action = str(request["action"])
     note_path = _dialogue_note_path(vault_path, capture_id)
     if not note_path.exists():
         return _capture_failure(
-            mutation_id=mutation["id"],
             capture_id=capture_id,
             error=f"Dialogue capture {capture_id} does not exist.",
             capture_state="unknown",
@@ -191,17 +157,16 @@ def _execute_resolution(
             current_state == "rejected" and action == "reject"
         ):
             return _capture_success(
-                mutation_id=mutation["id"],
                 capture_id=capture_id,
                 dialogue_path=str(note_path),
                 capture_state=current_state,
                 decision=str(frontmatter.get("decision") or action),
                 memory_write_state=str(frontmatter.get("memory_write_state") or "skipped"),
-                memory_mutation_id=_coerce_optional_int(frontmatter.get("memory_mutation_id")),
                 memory_error=_coerce_optional_str(frontmatter.get("memory_error")),
+                memory_event_id=_coerce_optional_str(frontmatter.get("memory_event_id")),
+                memory_event_path=_coerce_optional_str(frontmatter.get("memory_event_path")),
             )
         return _capture_failure(
-            mutation_id=mutation["id"],
             capture_id=capture_id,
             error=(
                 f"Dialogue capture {capture_id} is already {current_state} and cannot be "
@@ -209,10 +174,12 @@ def _execute_resolution(
             ),
             capture_state=current_state,
             dialogue_path=str(note_path),
+            memory_event_id=_coerce_optional_str(frontmatter.get("memory_event_id")),
+            memory_event_path=_coerce_optional_str(frontmatter.get("memory_event_path")),
         )
 
-    updated_at = str(mutation.get("created_at") or _now_iso())
     decision_note = str(request.get("decision_note") or "").strip()
+    updated_at = created_at
     if action == "reject":
         updated = dict(frontmatter)
         updated.update(
@@ -222,24 +189,28 @@ def _execute_resolution(
                 "decision_note": decision_note,
                 "updated": updated_at,
                 "memory_write_state": "skipped",
-                "memory_mutation_id": None,
                 "memory_error": None,
+                "memory_event_id": None,
+                "memory_event_path": None,
             }
         )
         write_markdown(note_path, updated, _build_dialogue_body(updated))
         return _capture_success(
-            mutation_id=mutation["id"],
             capture_id=capture_id,
             dialogue_path=str(note_path),
             capture_state="rejected",
             decision="reject",
             memory_write_state="skipped",
-            memory_mutation_id=None,
             memory_error=None,
+            memory_event_id=None,
+            memory_event_path=None,
         )
 
+    from server.memory_runtime import append_memory_event
+
     event = _memory_event_from_dialogue_frontmatter(vault_path, note_path, frontmatter)
-    memory_enqueue = _enqueue_memory_append(vault_path, event)
+    append_result = append_memory_event(vault_path, event=event)
+    memory_write_state = "appended" if append_result.get("ok") else "failed"
     updated = dict(frontmatter)
     updated.update(
         {
@@ -247,34 +218,35 @@ def _execute_resolution(
             "decision": "accept",
             "decision_note": decision_note,
             "updated": updated_at,
-            "memory_write_state": str(memory_enqueue.get("state") or "queued"),
-            "memory_mutation_id": memory_enqueue.get("mutation_id"),
-            "memory_error": memory_enqueue.get("error"),
+            "memory_write_state": memory_write_state,
+            "memory_error": None if append_result.get("ok") else str(append_result.get("error") or ""),
+            "memory_event_id": append_result.get("event_id") if append_result.get("ok") else None,
+            "memory_event_path": append_result.get("event_path") if append_result.get("ok") else None,
         }
     )
     write_markdown(note_path, updated, _build_dialogue_body(updated))
 
-    if memory_enqueue.get("error"):
+    if not append_result.get("ok"):
         return _capture_failure(
-            mutation_id=mutation["id"],
             capture_id=capture_id,
-            error=str(memory_enqueue["error"]),
+            error=str(append_result.get("error") or "Failed to append dialogue memory."),
             capture_state="accepted",
             dialogue_path=str(note_path),
             memory_write_state="failed",
-            memory_mutation_id=memory_enqueue.get("mutation_id"),
-            memory_error=str(memory_enqueue["error"]),
+            memory_error=str(append_result.get("error") or ""),
+            memory_event_id=None,
+            memory_event_path=None,
         )
 
     return _capture_success(
-        mutation_id=mutation["id"],
         capture_id=capture_id,
         dialogue_path=str(note_path),
         capture_state="accepted",
         decision="accept",
-        memory_write_state=str(memory_enqueue.get("state") or "queued"),
-        memory_mutation_id=memory_enqueue.get("mutation_id"),
+        memory_write_state="appended",
         memory_error=None,
+        memory_event_id=_coerce_optional_str(append_result.get("event_id")),
+        memory_event_path=_coerce_optional_str(append_result.get("event_path")),
     )
 
 
@@ -435,21 +407,6 @@ def _memory_event_from_dialogue_frontmatter(
     }
 
 
-def _enqueue_memory_append(vault_path: str, event: dict[str, Any]) -> dict[str, Any]:
-    try:
-        from server.runtime import enqueue_mutation
-
-        enqueued = enqueue_mutation(
-            vault_path,
-            mutation_type="memory_append",
-            target_key="memory:events",
-            payload={"event": event},
-        )
-    except Exception as exc:
-        return {"state": "failed", "error": f"Failed to enqueue dialogue memory append: {exc}"}
-    return {"state": "queued", "mutation_id": enqueued.get("mutation_id")}
-
-
 def _build_dialogue_frontmatter(
     *,
     capture_id: str,
@@ -460,8 +417,9 @@ def _build_dialogue_frontmatter(
     updated_at: str,
     decision_note: str,
     memory_write_state: str,
-    memory_mutation_id: int | None,
     memory_error: str | None,
+    memory_event_id: str | None,
+    memory_event_path: str | None,
 ) -> dict[str, Any]:
     return {
         "type": "dialogue-capture",
@@ -485,8 +443,9 @@ def _build_dialogue_frontmatter(
         "updated": updated_at,
         "decision_note": decision_note,
         "memory_write_state": memory_write_state,
-        "memory_mutation_id": memory_mutation_id,
         "memory_error": memory_error,
+        "memory_event_id": memory_event_id,
+        "memory_event_path": memory_event_path,
     }
 
 
@@ -533,7 +492,7 @@ def _build_dialogue_body(frontmatter: dict[str, Any]) -> str:
             f"- Decision: {frontmatter.get('decision') or 'pending'}",
             f"- Decision note: {frontmatter.get('decision_note') or 'none'}",
             f"- Memory write state: {frontmatter.get('memory_write_state') or 'none'}",
-            f"- Memory mutation id: {frontmatter.get('memory_mutation_id') or 'none'}",
+            f"- Memory event id: {frontmatter.get('memory_event_id') or 'none'}",
         ]
     )
     memory_error = str(frontmatter.get("memory_error") or "").strip()
@@ -544,49 +503,49 @@ def _build_dialogue_body(frontmatter: dict[str, Any]) -> str:
 
 def _capture_success(
     *,
-    mutation_id: int | None,
     capture_id: str,
     dialogue_path: str,
     capture_state: str,
     decision: str,
     memory_write_state: str,
-    memory_mutation_id: int | None,
     memory_error: str | None,
+    memory_event_id: str | None,
+    memory_event_path: str | None,
 ) -> dict[str, Any]:
     return {
         "ok": True,
-        "mutation_id": mutation_id,
         "capture_id": capture_id,
         "dialogue_path": dialogue_path,
         "capture_state": capture_state,
         "decision": decision,
         "memory_write_state": memory_write_state,
-        "memory_mutation_id": memory_mutation_id,
         "memory_error": memory_error,
+        "memory_event_id": memory_event_id,
+        "memory_event_path": memory_event_path,
     }
 
 
 def _capture_failure(
     *,
-    mutation_id: int | None,
     capture_id: str | None,
     error: str,
     capture_state: str,
     dialogue_path: str | None,
     memory_write_state: str = "skipped",
-    memory_mutation_id: int | None = None,
     memory_error: str | None = None,
+    memory_event_id: str | None = None,
+    memory_event_path: str | None = None,
 ) -> dict[str, Any]:
     return {
         "ok": False,
-        "mutation_id": mutation_id,
         "capture_id": capture_id,
         "dialogue_path": dialogue_path,
         "capture_state": capture_state,
         "decision": "pending" if capture_state == "unknown" else capture_state,
         "memory_write_state": memory_write_state,
-        "memory_mutation_id": memory_mutation_id,
         "memory_error": memory_error,
+        "memory_event_id": memory_event_id,
+        "memory_event_path": memory_event_path,
         "error": error,
     }
 
@@ -595,19 +554,20 @@ def _normalize_capture_result(result: dict[str, Any], *, capture_id: str | None)
     normalized = dict(result)
     normalized.setdefault("capture_id", capture_id)
     normalized.setdefault("memory_write_state", "skipped")
-    normalized.setdefault("memory_mutation_id", None)
     normalized.setdefault("memory_error", None)
+    normalized.setdefault("memory_event_id", None)
+    normalized.setdefault("memory_event_path", None)
     if "capture_state" in normalized and "dialogue_path" in normalized:
         return normalized
     return _capture_failure(
-        mutation_id=normalized.get("mutation_id"),
         capture_id=capture_id,
         error=str(normalized.get("error") or "dialogue capture failed"),
         capture_state=str(normalized.get("capture_state") or "unknown"),
         dialogue_path=normalized.get("dialogue_path"),
         memory_write_state=str(normalized.get("memory_write_state") or "skipped"),
-        memory_mutation_id=_coerce_optional_int(normalized.get("memory_mutation_id")),
         memory_error=_coerce_optional_str(normalized.get("memory_error")),
+        memory_event_id=_coerce_optional_str(normalized.get("memory_event_id")),
+        memory_event_path=_coerce_optional_str(normalized.get("memory_event_path")),
     )
 
 
@@ -645,6 +605,11 @@ def _capture_target_key(request: dict[str, Any]) -> str:
 
 def _capture_id_for_mutation(mutation: dict[str, Any]) -> str:
     return f"dialogue-capture-{int(mutation['id']):08d}"
+
+
+def _capture_id_for_created_at(created_at: str) -> str:
+    stamp = "".join(ch for ch in created_at if ch.isdigit())[:14] or "dialogue"
+    return f"dialogue-capture-{stamp}-{uuid.uuid4().hex[:8]}"
 
 
 def _normalize_capture_id(raw_capture_id: Any) -> str | None:
@@ -688,13 +653,3 @@ def _coerce_optional_int(value: Any) -> int | None:
 def _coerce_optional_str(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
-
-
-def _decode_json(raw: Any) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        decoded = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return decoded if isinstance(decoded, dict) else {}

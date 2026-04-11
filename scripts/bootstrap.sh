@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap Paper Distill vault structure in Obsidian
+# Bootstrap the current Paper Distill vault structure in Obsidian.
 set -euo pipefail
 
 VAULT_PATH="${1:-}"
@@ -14,21 +14,48 @@ PD_ROOT="${VAULT_PATH}/Paper Distill"
 
 echo "Creating Paper Distill vault structure at: ${PD_ROOT}"
 
-mkdir -p "${PD_ROOT}/raw/source"
-mkdir -p "${PD_ROOT}/raw/notes"
 mkdir -p "${PD_ROOT}/inbox"
+mkdir -p "${PD_ROOT}/sources/evidence"
+mkdir -p "${PD_ROOT}/zotero/imports"
+mkdir -p "${PD_ROOT}/wiki/papers"
 mkdir -p "${PD_ROOT}/wiki/concepts"
 mkdir -p "${PD_ROOT}/wiki/methods"
-mkdir -p "${PD_ROOT}/wiki/papers"
 mkdir -p "${PD_ROOT}/wiki/topics"
-mkdir -p "${PD_ROOT}/daily-log"
-mkdir -p "${PD_ROOT}/queries"
+mkdir -p "${PD_ROOT}/insights/queries"
+mkdir -p "${PD_ROOT}/insights/ideas"
+mkdir -p "${PD_ROOT}/insights/dialogues"
+mkdir -p "${PD_ROOT}/insights/digests"
+mkdir -p "${PD_ROOT}/insights/memory-promotions"
+mkdir -p "${PD_ROOT}/memory"
+mkdir -p "${PD_ROOT}/.state/ir"
+mkdir -p "${PD_ROOT}/.state/memory"
+
+write_index() {
+  local path="$1"
+  local section="$2"
+  local title="$3"
+  local body="$4"
+
+  if [[ ! -f "$path" ]]; then
+    cat > "$path" << EOF
+---
+type: index
+section: ${section}
+updated: ""
+---
+
+# ${title}
+
+${body}
+EOF
+  fi
+}
 
 if [[ ! -f "${PD_ROOT}/index.md" ]]; then
 cat > "${PD_ROOT}/index.md" << 'EOF'
-# Paper Distill Index
+# Paper Distill
 
-Knowledge map coming online. Run ingest, query, compile, or maintenance actions to refresh this overview.
+Use the MCP tools for library state and queries. This note is only a human landing page.
 EOF
 fi
 
@@ -40,157 +67,24 @@ Append-only timeline of ingest, query, compile, maintenance, and idea activity.
 EOF
 fi
 
-# Master index
-if [[ ! -f "${PD_ROOT}/_index.md" ]]; then
-cat > "${PD_ROOT}/_index.md" << 'EOF'
----
-type: index
-updated: ""
----
-
-# Paper Distill
-
-Human-approved research knowledge base with Zotero grounding.
-
-## Sections
-- `inbox/` candidate papers awaiting approval
-- `raw/source/` cleaned arXiv source captures
-- `raw/notes/` CRGP-DNL structured reading notes
-- `wiki/` compiled knowledge derived from approved raw notes
-- `queries/` saved Q&A and idea analyses
-EOF
-fi
-
-# inbox index
-if [[ ! -f "${PD_ROOT}/inbox/_index.md" ]]; then
-cat > "${PD_ROOT}/inbox/_index.md" << 'EOF'
----
-type: index
-section: inbox
-updated: ""
----
-
-# Inbox
-
-Candidate papers discovered by AI. Update each note's `status` field to:
-- `approved`
-- `rejected`
-- `deferred`
-EOF
-fi
-
-# raw index
-if [[ ! -f "${PD_ROOT}/raw/_index.md" ]]; then
-cat > "${PD_ROOT}/raw/_index.md" << 'EOF'
----
-type: index
-section: raw
-updated: ""
----
-
-# Raw Layer
-
-Dual-layer source capture for approved papers.
-
-- `source/` holds cleaned arXiv captures
-- `notes/` holds CRGP-DNL reading notes
-EOF
-fi
-
-if [[ ! -f "${PD_ROOT}/raw/source/_index.md" ]]; then
-cat > "${PD_ROOT}/raw/source/_index.md" << 'EOF'
----
-type: index
-section: raw/source
-updated: ""
----
-
-# Raw Source
-
-Cleaned arXiv full-text captures. This is the stable evidence layer.
-EOF
-fi
-
-if [[ ! -f "${PD_ROOT}/raw/notes/_index.md" ]]; then
-cat > "${PD_ROOT}/raw/notes/_index.md" << 'EOF'
----
-type: index
-section: raw/notes
-updated: ""
----
-
-# Raw Notes
-
-CRGP-DNL structured reading notes generated from `raw/source`.
-EOF
-fi
-
-# wiki index
-if [[ ! -f "${PD_ROOT}/wiki/_index.md" ]]; then
-cat > "${PD_ROOT}/wiki/_index.md" << 'EOF'
----
-type: index
-section: wiki
-updated: ""
----
-
-# Wiki
-
-Compiled knowledge derived only from approved raw notes.
-EOF
-fi
-
-# Subdirectory indexes
-for dir in concepts methods papers topics; do
-  idx="${PD_ROOT}/wiki/${dir}/_index.md"
-  title="$(printf '%s' "$dir" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')"
-  if [[ ! -f "$idx" ]]; then
-cat > "$idx" << EOF
----
-type: index
-section: wiki/${dir}
-updated: ""
----
-
-# ${title}
-
-_No ${dir} compiled yet._
-EOF
-  fi
-done
-
-# queries index
-if [[ ! -f "${PD_ROOT}/queries/_index.md" ]]; then
-cat > "${PD_ROOT}/queries/_index.md" << 'EOF'
----
-type: index
-section: queries
-updated: ""
----
-
-# Research Queries
-
-Saved Q&A results. Knowledge compounds over time.
-
-## Queries
-_No queries saved yet._
-EOF
-fi
-
-# daily log index
-if [[ ! -f "${PD_ROOT}/daily-log/_index.md" ]]; then
-cat > "${PD_ROOT}/daily-log/_index.md" << 'EOF'
----
-type: index
-section: daily-log
-updated: ""
----
-
-# Daily Log
-
-Saved discovery digests and day-by-day research tracking.
-EOF
-fi
+write_index "${PD_ROOT}/_index.md" "master" "Paper Distill" "Minimal landing note. Use query-library for current state."
+write_index "${PD_ROOT}/inbox/_index.md" "inbox" "Inbox" "Candidate papers awaiting human review."
+write_index "${PD_ROOT}/sources/_index.md" "sources" "Sources" "Evidence-first source layer for approved papers."
+write_index "${PD_ROOT}/sources/evidence/_index.md" "sources/evidence" "Source Evidence" "Cleaned source captures and sidecars."
+write_index "${PD_ROOT}/zotero/_index.md" "zotero" "Zotero Handoff" "Local-first Zotero handoff files."
+write_index "${PD_ROOT}/zotero/imports/_index.md" "zotero/imports" "Zotero Imports" "Import packs generated for local-first Zotero workflows."
+write_index "${PD_ROOT}/wiki/_index.md" "wiki" "Wiki" "Knowledge pages derived from source evidence and hidden IR."
+write_index "${PD_ROOT}/wiki/papers/_index.md" "wiki/papers" "Compiled Papers" "Canonical per-paper work pages."
+write_index "${PD_ROOT}/wiki/concepts/_index.md" "wiki/concepts" "Concepts" "Concept encyclopedia pages."
+write_index "${PD_ROOT}/wiki/methods/_index.md" "wiki/methods" "Methods" "Method comparison pages."
+write_index "${PD_ROOT}/wiki/topics/_index.md" "wiki/topics" "Topics" "Topic landscape pages."
+write_index "${PD_ROOT}/insights/_index.md" "insights" "Insights" "Research-facing outputs that are not canonical wiki pages."
+write_index "${PD_ROOT}/insights/queries/_index.md" "insights/queries" "Query Assets" "Saved query answers, comparisons, and reports."
+write_index "${PD_ROOT}/insights/ideas/_index.md" "insights/ideas" "Ideas" "Editable research idea notes."
+write_index "${PD_ROOT}/insights/dialogues/_index.md" "insights/dialogues" "Dialogues" "Captured research dialogues."
+write_index "${PD_ROOT}/insights/digests/_index.md" "insights/digests" "Digests" "Saved discovery digests."
+write_index "${PD_ROOT}/insights/memory-promotions/_index.md" "insights/memory-promotions" "Memory Promotions" "Memory promotion audit notes."
+write_index "${PD_ROOT}/memory/_index.md" "memory" "Memory" "Current advisory memory views."
 
 echo ""
 echo "Bootstrap complete."
@@ -198,11 +92,10 @@ echo ""
 echo "Vault root: ${PD_ROOT}"
 echo ""
 echo "Directories created:"
-echo "  inbox/        — Candidate papers awaiting human approval"
-echo "  raw/source/   — Cleaned arXiv source documents"
-echo "  raw/notes/    — Structured CRGP-DNL reading notes"
-echo "  wiki/         — LLM-compiled knowledge"
-echo "  daily-log/    — Daily digest entries"
-echo "  queries/      — Saved Q&A results"
-echo ""
-echo "Next: Configure vault_path in Paper Distill plugin settings."
+echo "  inbox/                       - Candidate papers awaiting human approval"
+echo "  sources/evidence/            - Source-grounded evidence captures"
+echo "  wiki/papers/                 - Canonical paper work pages"
+echo "  wiki/{concepts,methods,topics}/ - Reusable knowledge pages"
+echo "  insights/{queries,ideas,digests}/ - Research outputs"
+echo "  memory/                      - Advisory memory views"
+echo "  .state/ir/                   - Hidden compile IR"

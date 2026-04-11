@@ -2,9 +2,15 @@
 
 **{{ authors_short }}** ({{ year }}){% if venue %} | {{ venue }}{% endif %}
 
-[[sources/notes/{{ raw_date }}/{{ citekey }}|Source Note]] | [[sources/evidence/{{ raw_date }}/{{ citekey }}|Source Evidence]]{% if zotero_link %} | [Zotero]({{ zotero_link }}){% endif %}
+[[{{ source_evidence_path }}|Source Evidence]]{% if source_assets_path %} | `{{ source_assets_path }}`{% endif %}{% if zotero_link %} | [Zotero]({{ zotero_link }}){% endif %}
+
+> **Page state:** {{ page_state }} | **Confidence:** {{ "%.2f"|format(confidence|float) }}
 
 > **Why read this:** {{ why_read }}
+
+## Summary
+
+{{ summary }}
 
 ## Context
 
@@ -29,6 +35,10 @@
 ## Discussion & Next Steps
 
 {{ discussion }}
+
+## Next Step
+
+{{ next_steps }}
 
 ## Insights for My Research
 

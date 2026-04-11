@@ -4,7 +4,7 @@ description: Directly add a user-confirmed paper into the knowledge vault
 user_invocable: true
 ---
 
-Directly add a specific user-confirmed paper into the approved knowledge base using the `paper-distill:source-ingest` skill in `direct_identifier` mode.
+Directly add a specific user-confirmed paper into the approved knowledge base using the `paper-distill:paper-intake` skill in `direct_identifier` mode.
 
 The argument can be a DOI, arXiv ID, paper URL, or PDF URL. Examples:
 - `/add-paper 10.48550/arxiv.2410.24164`

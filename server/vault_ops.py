@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,6 @@ from server.template_render import render_template
 from server.vault_contract import (
     PAPER_DISTILL_ROOT,
     ROOT_DIRS,
-    assert_supported_write_path,
     paper_distill_root,
     root_path,
     root_rel_path,
@@ -23,9 +23,7 @@ from server.vault_contract import (
 
 LOG = logging.getLogger(__name__)
 
-_SECTION_DIRS = {
-    key: rel_path for key, rel_path in ROOT_DIRS.items()
-}
+_SECTION_DIRS = dict(ROOT_DIRS)
 
 _INDEX_CONTENT = {
     "master": """---
@@ -42,7 +40,7 @@ Research knowledge system with human approval, evidence-first source capture, in
 
 - `inbox/` candidate papers awaiting review
 - `sources/evidence/` source-grounded evidence captures
-- `sources/notes/` CRGP-DNL structured source notes
+- `wiki/papers/` canonical paper work pages
 - `wiki/` compiled knowledge pages
 - `insights/` saved digests, query assets, ideas, and dialogue artifacts
   plus memory promotion audit notes
@@ -74,7 +72,6 @@ updated: ""
 Evidence-first source layer for approved papers.
 
 - `evidence/` holds cleaned source captures plus sidecars
-- `notes/` holds CRGP-DNL reading notes grounded in source evidence
 """,
     "sources_evidence": """---
 type: index
@@ -85,16 +82,6 @@ updated: ""
 # Source Evidence
 
 Cleaned source captures. This is the stable evidence layer.
-""",
-    "sources_notes": """---
-type: index
-section: sources/notes
-updated: ""
----
-
-# Source Notes
-
-CRGP-DNL structured reading notes generated from `sources/evidence`.
 """,
     "zotero": """---
 type: index
@@ -124,7 +111,7 @@ updated: ""
 
 # Wiki
 
-Compiled knowledge derived only from approved source notes.
+Compiled knowledge derived only from approved source evidence and hidden IR.
 """,
     "papers": """---
 type: index
@@ -200,14 +187,6 @@ updated: ""
 
 # Memory Promotions
 """,
-    "verification": """---
-type: index
-section: insights/verification
-updated: ""
----
-
-# Verification
-""",
     "digests": """---
 type: index
 section: insights/digests
@@ -225,15 +204,6 @@ updated: ""
 # Memory
 """,
 }
-_RAW_NOTE_SECTIONS = (
-    "Context",
-    "Related Work",
-    "Gap",
-    "Proposal",
-    "Key Results",
-    "Discussion",
-    "Next Steps",
-)
 _KNOWLEDGE_IMPACT_KEYS = (
     "created_pages",
     "updated_pages",
@@ -248,10 +218,6 @@ _KNOWLEDGE_IMPACT_KEYS = (
 
 def _now_date() -> str:
     return datetime.now().date().isoformat()
-
-
-def global_index_path(vault_path: str) -> Path:
-    return paper_distill_root(vault_path) / "index.md"
 
 
 def knowledge_log_path(vault_path: str) -> Path:
@@ -283,7 +249,7 @@ def ensure_vault_structure(vault_path: str) -> Path:
     index_path = root / "index.md"
     if not index_path.exists():
         index_path.write_text(
-            "# Paper Distill Index\n\nKnowledge map coming online. Run an ingest, query, compile, or maintenance action to refresh this overview.\n",
+            "# Paper Distill\n\nUse the MCP tools for library state and queries. This note is only a human landing page.\n",
             encoding="utf-8",
         )
 
@@ -308,14 +274,12 @@ def _frontmatter_block(data: dict[str, Any]) -> str:
 
 
 def write_markdown(path: Path, frontmatter: dict[str, Any], body: str) -> Path:
-    assert_supported_write_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{_frontmatter_block(frontmatter)}\n{body.strip()}\n", encoding="utf-8")
     return path
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> Path:
-    assert_supported_write_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
@@ -333,6 +297,177 @@ def update_frontmatter(path: Path, updates: dict[str, Any]) -> None:
     path.write_text(f"{_frontmatter_block(frontmatter)}\n{body.lstrip()}", encoding="utf-8")
 
 
+_PAGE_ASSET_ROOTS = {
+    "paper": "papers",
+    "concept": "concepts",
+    "method": "methods",
+    "topic": "topics",
+    "query": "queries",
+}
+
+
+def _page_asset_path(vault_path: str, page_id: str, page_type: str) -> Path | None:
+    root_key = _PAGE_ASSET_ROOTS.get(page_type)
+    if root_key is None:
+        return None
+    return root_path(vault_path, root_key) / f"{page_id}.md"
+
+
+def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
+    content = path.read_text(encoding="utf-8")
+    if not content.startswith("---\n"):
+        return {}, content.strip()
+    _, remainder = content.split("---\n", 1)
+    fm_text, body = remainder.split("\n---\n", 1)
+    frontmatter = yaml.safe_load(fm_text) or {}
+    return (frontmatter if isinstance(frontmatter, dict) else {}), body.lstrip()
+
+
+def _split_user_body(body: str) -> tuple[str, str]:
+    match = re.search(r"^##\s+(My Notes|Reading Notes)\b", body, re.MULTILINE)
+    if not match:
+        return body.strip(), ""
+    return body[: match.start()].strip(), body[match.start() :].strip()
+
+
+def _replace_wikilinks(text: str, from_id: str, to_id: str, *, to_section: str) -> str:
+    pattern = re.compile(rf"\[\[(concepts|topics)/{re.escape(from_id)}(?:\|([^\]]+))?\]\]")
+
+    def repl(match: re.Match[str]) -> str:
+        label = match.group(2)
+        if label:
+            return f"[[{to_section}/{to_id}|{label}]]"
+        return f"[[{to_section}/{to_id}]]"
+
+    return pattern.sub(repl, text)
+
+
+def rewrite_page_asset_links(
+    vault_path: str,
+    page_id: str,
+    page_type: str,
+    from_id: str,
+    to_id: str,
+    *,
+    to_section: str = "concepts",
+) -> Path | None:
+    """Rewrite concept/topic references for a visible page asset."""
+    from server.concept_registry import slugify
+
+    path = _page_asset_path(vault_path, page_id, page_type)
+    if path is None or not path.exists():
+        return None
+
+    frontmatter, body = _read_markdown_note(path)
+    main_body, user_suffix = _split_user_body(body)
+    main_body = _replace_wikilinks(main_body, from_id, to_id, to_section=to_section)
+
+    if page_type in {"paper", "concept", "topic"}:
+        concepts = frontmatter.get("concepts", [])
+        if isinstance(concepts, str):
+            concepts = [concepts]
+        concepts = [to_id if slugify(str(item)) == from_id else item for item in concepts]
+        if concepts:
+            frontmatter["concepts"] = concepts
+
+        topics = frontmatter.get("topics", [])
+        if isinstance(topics, str):
+            topics = [topics]
+        topics = [
+            to_id if slugify(str(item)) == from_id and to_section == "topics" else item
+            for item in topics
+        ]
+        if topics:
+            frontmatter["topics"] = topics
+    elif page_type == "query":
+        concepts_referenced = frontmatter.get("concepts_referenced") or []
+        if isinstance(concepts_referenced, str):
+            concepts_referenced = [concepts_referenced]
+        topics_referenced = frontmatter.get("topics_referenced") or []
+        if isinstance(topics_referenced, str):
+            topics_referenced = [topics_referenced]
+
+        if to_section == "topics":
+            concepts_referenced = [
+                item for item in concepts_referenced if slugify(str(item)) != from_id
+            ]
+            if to_id not in topics_referenced:
+                topics_referenced.append(to_id)
+        else:
+            concepts_referenced = [
+                to_id if slugify(str(item)) == from_id else item for item in concepts_referenced
+            ]
+            topics_referenced = [
+                to_id if slugify(str(item)) == from_id else item for item in topics_referenced
+            ]
+
+        frontmatter["concepts_referenced"] = concepts_referenced
+        frontmatter["topics_referenced"] = topics_referenced
+
+        promotion_targets = list(frontmatter.get("promotion_targets", []) or [])
+        for target in promotion_targets:
+            if not isinstance(target, dict):
+                continue
+            if slugify(str(target.get("page_id", ""))) != from_id:
+                continue
+            target["page_id"] = to_id
+            if to_section == "topics":
+                target["page_type"] = "topic"
+        if promotion_targets:
+            frontmatter["promotion_targets"] = promotion_targets
+
+    rebuilt = main_body.strip()
+    if user_suffix:
+        rebuilt = f"{rebuilt}\n\n{user_suffix}".strip()
+    write_markdown(path, frontmatter, rebuilt)
+    return path
+
+
+def promote_concept_page_to_topic_asset(vault_path: str, concept_id: str) -> dict[str, str] | None:
+    """Copy a concept page into topics/ and replace the concept page with a redirect note."""
+    concept_path = _page_asset_path(vault_path, concept_id, "concept")
+    topic_path = _page_asset_path(vault_path, concept_id, "topic")
+    if concept_path is None or topic_path is None or not concept_path.exists():
+        return None
+
+    frontmatter, body = _read_markdown_note(concept_path)
+    write_markdown(topic_path, frontmatter, body)
+    concept_title = str(frontmatter.get("concept") or concept_id)
+    write_markdown(
+        concept_path,
+        {"concept": concept_id, "redirect_to": f"topics/{concept_id}"},
+        f"# {concept_title}\n\nPromoted to [[topics/{concept_id}]].",
+    )
+    return {
+        "concept_path": str(concept_path),
+        "topic_path": str(topic_path),
+    }
+
+
+def mark_inbox_capture_failed(
+    path: Path,
+    *,
+    error: str,
+    canonical_html_url: str = "",
+    canonical_pdf_url: str = "",
+) -> dict[str, str]:
+    """Apply a capture-failed update to an inbox note through the inbox asset contract."""
+    updates = {
+        "capture_status": "failed",
+        "capture_error": error,
+        "canonical_html_url": canonical_html_url,
+        "canonical_pdf_url": canonical_pdf_url,
+    }
+    update_frontmatter(path, updates)
+    return updates
+
+
+def mark_inbox_capture_succeeded(path: Path, updates: dict[str, Any]) -> dict[str, Any]:
+    """Apply a successful capture update to an inbox note through the inbox asset contract."""
+    update_frontmatter(path, updates)
+    return dict(updates)
+
+
 def citekey_for_paper(paper: dict[str, Any]) -> str:
     surname = first_author_surname(paper) or "unknown"
     year = str(paper.get("year") or "nd")
@@ -348,31 +483,29 @@ def inbox_note_path(vault_path: str, paper: dict[str, Any]) -> Path:
     return day_dir / f"{slug}.md"
 
 
-def raw_source_path(vault_path: str, citekey: str) -> Path:
+def source_evidence_path(vault_path: str, citekey: str) -> Path:
     ensure_vault_structure(vault_path)
     return root_path(vault_path, "sources_evidence") / _now_date() / f"{citekey}.md"
 
 
-def raw_source_sidecar_path(vault_path: str, citekey: str) -> Path:
+def source_evidence_sidecar_path(vault_path: str, citekey: str) -> Path:
     ensure_vault_structure(vault_path)
     return root_path(vault_path, "sources_evidence") / _now_date() / f"{citekey}.assets.json"
 
 
-def raw_note_path(vault_path: str, citekey: str) -> Path:
+def wiki_paper_path(vault_path: str, citekey: str) -> Path:
     ensure_vault_structure(vault_path)
-    return root_path(vault_path, "sources_notes") / _now_date() / f"{citekey}.md"
+    return root_path(vault_path, "papers") / f"{citekey}.md"
 
 
 def compiled_ir_path(vault_path: str, citekey: str) -> Path:
     """Return path for the raw Extract IR JSON."""
-    root = paper_distill_root(vault_path)
-    return root / "compiled_ir" / f"{citekey}.json"
+    return root_path(vault_path, "state_ir") / f"{citekey}.json"
 
 
 def compiled_ir_resolved_path(vault_path: str, citekey: str) -> Path:
     """Return path for the Resolved IR JSON."""
-    root = paper_distill_root(vault_path)
-    return root / "compiled_ir" / f"{citekey}_resolved.json"
+    return root_path(vault_path, "state_ir") / f"{citekey}_resolved.json"
 
 
 def state_db_path(vault_path: str) -> Path:
@@ -650,61 +783,6 @@ def _read_frontmatter(path: Path) -> dict[str, Any]:
     return frontmatter if isinstance(frontmatter, dict) else {}
 
 
-def _recent_items(directory: Path, *, limit: int = 5, title_key: str = "title") -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    if not directory.exists():
-        return items
-    for path in directory.rglob("*.md"):
-        if path.name == "_index.md":
-            continue
-        fm = _read_frontmatter(path)
-        try:
-            mtime = path.stat().st_mtime
-        except OSError:
-            mtime = 0.0
-        items.append(
-            {
-                "path": str(path),
-                "relative_path": str(path.relative_to(directory.parents[0])),
-                "title": str(fm.get(title_key) or fm.get("title") or path.stem),
-                "type": str(fm.get("type", "")),
-                "mtime": mtime,
-            }
-        )
-    items.sort(key=lambda item: item["mtime"], reverse=True)
-    return items[:limit]
-
-
-def refresh_global_navigation(vault_path: str) -> Path:
-    root = ensure_vault_structure(vault_path)
-
-    from server.maintenance import get_pending_tasks
-    from server.vault_query import query_vault_sync
-
-    all_sections = query_vault_sync(vault_path, section="all", detail="full")
-    queries = _recent_items(root_path(vault_path, "queries"), limit=5)
-    concepts = _recent_items(root_path(vault_path, "concepts"), limit=5, title_key="concept")
-    topics = _recent_items(root_path(vault_path, "topics"), limit=5, title_key="topic")
-    pending_tasks = get_pending_tasks(vault_path)
-    uncompiled = query_vault_sync(vault_path, section="raw_notes", uncompiled_only=True, detail="full")
-
-    body = render_template(
-        "global-index.md.j2",
-        {
-            "date": _now_date(),
-            "stats": all_sections.get("stats", {}),
-            "recent_queries": queries,
-            "recent_concepts": concepts,
-            "recent_topics": topics,
-            "pending_maintenance_count": len(pending_tasks),
-            "uncompiled_count": uncompiled.get("stats", {}).get("raw_notes", 0),
-            **template_contract_context(),
-        },
-    )
-    global_index_path(vault_path).write_text(body, encoding="utf-8")
-    return global_index_path(vault_path)
-
-
 def append_knowledge_log(
     vault_path: str,
     *,
@@ -748,7 +826,7 @@ def build_inbox_body(paper: dict[str, Any]) -> str:
     })
 
 
-def build_raw_source_body(source_doc: Any, source_structured_path: str = "") -> str:
+def build_source_evidence_body(source_doc: Any, source_structured_path: str = "") -> str:
     body = str(getattr(source_doc, "markdown", "")).strip()
     figures = list(getattr(source_doc, "figures", []) or [])
     tables = list(getattr(source_doc, "tables", []) or [])
@@ -776,42 +854,33 @@ def build_raw_source_body(source_doc: Any, source_structured_path: str = "") -> 
         return index_block
     return f"{body}\n\n{index_block}"
 
-
-def build_raw_note_body(note_payload: dict[str, Any]) -> str:
+def build_wiki_paper_body(note_payload: dict[str, Any]) -> str:
     paper = note_payload.get("paper", {})
     sections = note_payload.get("sections", {})
-    evidence = note_payload.get("evidence", {})
-    return render_template("raw-note.md.j2", {
-        "title": paper.get("title", "Untitled Paper"),
-        "sections_order": list(_RAW_NOTE_SECTIONS),
-        "sections": sections,
-        "evidence": evidence,
-        "zotero_mode": paper.get("zotero_mode") or "N/A",
-        "zotero_status": paper.get("zotero_status") or "N/A",
-        "zotero_uri": paper.get("zotero_uri") or "N/A",
-        "zotero_import_path": paper.get("zotero_import_path") or "N/A",
-        "source_raw_path": paper.get("source_raw_path") or "N/A",
-        "source_structured_path": paper.get("source_structured_path") or "N/A",
-        "canonical_html_url": paper.get("canonical_html_url") or "N/A",
-        "canonical_pdf_url": paper.get("canonical_pdf_url") or "N/A",
-        "capture_fidelity": paper.get("capture_fidelity") or "N/A",
-        **template_contract_context(),
-    })
-
-
-def build_raw_body(paper: dict[str, Any]) -> str:
-    """Backward-compatible alias for the new note layer."""
-    note_payload = {
-        "paper": paper,
-        "sections": {
-            "Context": paper.get("summary") or paper.get("why_recommended") or "Approved from inbox.",
-            "Related Work": paper.get("abstract") or "Abstract unavailable.",
-            "Gap": paper.get("why_recommended") or "Gap not yet extracted.",
-            "Proposal": paper.get("abstract") or "Proposal unavailable.",
-            "Key Results": "Results unavailable in the legacy raw note format.",
-            "Discussion": "Discussion unavailable in the legacy raw note format.",
-            "Next Steps": "Regenerate this note through the v2.1 source capture pipeline for a higher-quality note.",
+    return render_template(
+        "wiki-paper.md.j2",
+        {
+            "title": paper.get("title", "Untitled Paper"),
+            "authors_short": paper.get("authors_short", ""),
+            "year": paper.get("year") or "n.d.",
+            "venue": paper.get("venue", ""),
+            "citekey": paper.get("citekey", ""),
+            "source_evidence_path": paper.get("source_evidence_path", ""),
+            "source_assets_path": paper.get("source_assets_path", ""),
+            "zotero_link": paper.get("zotero_uri", ""),
+            "page_state": paper.get("page_state", "auto"),
+            "confidence": paper.get("confidence", 0.0),
+            "why_read": paper.get("why_read", "Auto-generated from source evidence."),
+            "summary": paper.get("summary", ""),
+            "context": sections.get("Context", ""),
+            "related_work": sections.get("Related Work", ""),
+            "gap": sections.get("Gap", ""),
+            "proposal": sections.get("Proposal", ""),
+            "results": sections.get("Key Results", ""),
+            "discussion": sections.get("Discussion", ""),
+            "insights": paper.get("insights", ""),
+            "connections": paper.get("connections", ""),
+            "next_steps": sections.get("Next Steps", ""),
+            **template_contract_context(),
         },
-        "evidence": {},
-    }
-    return build_raw_note_body(note_payload)
+    )
