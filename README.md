@@ -10,11 +10,11 @@ It is built around one rule: papers only become long-term knowledge after a huma
 - Stages candidates in `Paper Distill/inbox/` for human approval.
 - Captures approved papers into `Paper Distill/sources/evidence/`.
 - Maintains canonical paper pages in `Paper Distill/wiki/papers/`.
-- Compiles reusable wiki pages for concepts, methods, topics, and paper syntheses.
+- Compiles reusable wiki pages for concepts, methods, topics, and paper syntheses via the EDC pipeline (Extract → Resolve → Write).
 - Saves substantive research answers into `Paper Distill/insights/queries/`.
 - Writes research ideas as editable notes in `Paper Distill/insights/ideas/`.
 - Supports Zotero handoff through `local_first`, `web_api`, or `disabled` modes.
-- Exposes everything through MCP tools for Codex, Claude, and OpenClaw-style agents.
+- Exposes everything through 32 MCP tools for Claude, Codex, and compatible agents.
 
 ## Core Flow
 
@@ -54,7 +54,21 @@ Paper Distill/
 ├── memory/
 ├── zotero/imports/
 └── .state/
+    ├── ir/               ← Compile IR JSON
+    ├── memory/           ← Memory event state
+    └── paper-distill.db  ← Concept registry, compile state, maintenance queue
 ```
+
+## MCP Tools (32 total)
+
+| Domain | Tools |
+|--------|-------|
+| **Library** | `search_papers`, `resolve_metadata`, `zotero_add`, `zotero_search`, `fetch_pdf_text`, `score_papers`, `query-library`, `bootstrap-library`, `update_learned_preferences` |
+| **Source** | `source-discover`, `source-ingest` |
+| **Knowledge** | `wiki-lint`, `library-stats`, `upsert_wiki_article`, `register_concept_tool`, `resolve_concept_tool`, `merge_concepts_tool`, `list_concepts_tool`, `reconcile_maintenance`, `get_maintenance_queue`, `resolve_maintenance_task`, `export_db_state`, `backfill_registry`, `paper-distill-extract`, `knowledge-compile-resolve`, `knowledge-compile-publish`, `knowledge-compile-status`, `execute_maintenance_task`, `enqueue_maintenance_task` |
+| **Idea** | `idea-discover`, `idea-tension-signals`, `idea-trigger-candidates` |
+
+See [MCP Tool Reference](docs/mcp-tool-reference.md) for full parameter documentation.
 
 ## Documentation
 
@@ -62,11 +76,15 @@ Paper Distill/
 - [Configuration](docs/configuration.md)
 - [Commands](docs/commands.md)
 - [Workflows](docs/workflows.md)
-- [Vault Layout](docs/vault-layout.md)
 - [Architecture](docs/architecture.md)
-- [Testing](docs/testing.md)
+- [MCP Tool Reference](docs/mcp-tool-reference.md)
+- [Frontmatter Reference](docs/frontmatter-reference.md)
+- [Compile IR Schema](docs/compile-ir-schema.md)
+- [Skill / Agent Boundary](docs/skill-agent-boundary.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Vault Layout](docs/vault-layout.md)
 - [Obsidian CLI Validation](docs/obsidian-cli-validation.md)
-- [TODO Status](docs/todo.md)
+- [Testing](docs/testing.md)
 
 ## License
 

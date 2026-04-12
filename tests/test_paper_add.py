@@ -103,7 +103,7 @@ def _runtime(tmpdir: str, mode: str = "local_first", library_id: str = "", api_k
 class PaperAddTest(unittest.TestCase):
     def test_capture_options_include_reference_and_citation_controls(self) -> None:
         with patch(
-            "server.server.get_paper_distill_settings",
+            "server.capture_settings.get_paper_distill_settings",
             return_value={
                 "capture": {
                     "remove_refs": False,

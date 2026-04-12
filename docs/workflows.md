@@ -28,21 +28,33 @@ The tool resolves metadata, captures source evidence, creates the wiki paper pag
 
 ## Compile
 
-Compile refreshes wiki pages from evidence and hidden IR.
-
-Generated IR lives in:
+The EDC pipeline (Extract → Resolve → Write) refreshes wiki pages from evidence and hidden IR.
 
 ```text
-Paper Distill/.state/ir/
+sources/evidence/{date}/{citekey}.md
+  │
+  ▼  (agent reads evidence, builds IR)
+paper-distill-extract(citekey, ir_json)
+  │ writes
+  ▼
+.state/ir/{citekey}.json
+  │
+  ▼  (pure Python, no LLM)
+knowledge-compile-resolve([citekeys])
+  │ writes
+  ▼
+.state/ir/{citekey}_resolved.json
+  │
+  ▼  (agent writes compiled markdown)
+knowledge-compile-publish(page_id, page_type, content, frontmatter, ir_path, deps)
+  │
+  ▼
+wiki/papers/{citekey}.md
 ```
 
-Canonical paper pages live in:
+Manual notes (sections like `## My Notes`) are detected before the Write step and appended after generated content. If `knowledge-compile-publish` returns `manual_edit_conflict: true`, the write is aborted and the user is notified.
 
-```text
-Paper Distill/wiki/papers/
-```
-
-Manual notes are preserved when managed blocks are refreshed.
+See [Compile IR Schema](compile-ir-schema.md) for the full IR field reference.
 
 ## Query
 

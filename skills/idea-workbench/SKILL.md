@@ -9,6 +9,20 @@ description: Use when the user asks for research ideas, gap analysis, open probl
 
 Turn local evidence into editable research idea notes. Ideas are first-class Markdown assets under `insights/ideas/`, not transient chat or sidecar artifacts.
 
+## Tool Selection
+
+Three tools serve different analysis granularities — use them in order, they are not interchangeable:
+
+| Tool | Returns | When to use |
+|------|---------|-------------|
+| `idea-discover` | Broad graph analysis: methodology mismatches, combination opportunities, recurring problems | **Must be called first in every ideation session** |
+| `idea-tension-signals` | Structured tension data from resolved IR: recurring limitations, open questions, contradictions | Call after `idea-discover` identifies a promising area |
+| `idea-trigger-candidates` | Narrow view: contradiction candidates, limitation spikes, cross-cluster bridges, evaluation benchmark splits | For maintaining triggers and specific hypothesis generation — **not a replacement for `idea-discover`** |
+
+Standard sequence: `idea-discover` → `idea-tension-signals(min_occurrence=2)` → `idea-trigger-candidates` (optional) → read 2-3 reference papers → draft
+
+`idea-trigger-candidates` is a subset view of `idea-discover` output, not an alternative.
+
 ## Generate
 
 1. Read `settings.json -> paper_distill.research_profile` for direction and preferences.
@@ -55,3 +69,22 @@ Use these sections:
 - State assumptions and conflicts explicitly.
 - Prefer fewer stronger ideas over broad speculative lists.
 - Keep negative knowledge in the idea note itself.
+
+## Skill / Tool Contract
+
+**This Skill is responsible (prompt layer):**
+- Parse user intent and route to the correct tool and mode
+- Enforce editorial rules (two-paper rule, similar-idea check before creating new notes)
+- Sequence tool calls correctly (`idea-discover` before `idea-tension-signals`)
+- Present results in readable form and suggest follow-up actions
+
+**MCP Tool is responsible (Python layer):**
+- Perform deterministic I/O (vault read/write, IR graph traversal)
+- Validate schema and path safety
+- Return structured tension data, graph clusters, and trigger candidates
+- Report facts and errors; never make editorial decisions
+
+**Neither layer does:**
+- Tools do not decide which ideas are worth pursuing — that is the researcher's judgment
+- This Skill does not write idea note files directly — all file writes go through tools
+- Tools do not read user intent — they only execute the parameters they receive

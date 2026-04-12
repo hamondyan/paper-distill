@@ -35,9 +35,58 @@ For lightweight refresh after intake, update canonical `wiki/papers` from eviden
 4. For manual work, use `enqueue_maintenance_task(...)` first, then execute only after adjudication.
 5. Present a maintainer report: broken links, missing metadata, uncompiled evidence, stale topics, orphaned articles, confirmed tasks, and likely knowledge impact.
 
+## Write Path Rules
+
+Two tools can both write wiki pages but serve different purposes — **never mix them in the same compile flow**:
+
+| Tool | Purpose | Updates `compile_state`? |
+|------|---------|--------------------------|
+| `knowledge-compile-publish` | EDC Write phase — records `content_hash`, deps, version | **Yes** |
+| `upsert_wiki_article` | One-off writes outside EDC (concept stubs, method pages) | **No** |
+
+Rules:
+1. Any paper wiki page that goes through Extract → Resolve → Write **must** use `knowledge-compile-publish`
+2. Concept/method stubs created outside the EDC flow use `upsert_wiki_article`
+3. **Never** call `upsert_wiki_article` on a page previously written by `knowledge-compile-publish` — it silently corrupts `content_hash`
+4. When unsure, call `knowledge-compile-status(page_id, page_type)` first
+
+## Manual Section Protection
+
+Before calling `knowledge-compile-publish`:
+1. Read the existing file and check for sections marked `## My Notes`, `## Personal Takeaways`, `## Action Items`, or `## Follow-up`
+2. If present: append those sections **verbatim** after the generated content block before passing to the tool
+3. The tool itself does not merge — merging is the caller's (your) responsibility
+4. If the tool returns `manual_edit_conflict: true`, **stop immediately**, report the conflict to the user, and do not overwrite
+
+## Concept Registration Rules
+
+Tool behavior and editorial rules are intentionally separate:
+- `knowledge-compile-resolve` auto-registers on first reference (the registry entry is needed for the Resolve phase)
+- **The "two-paper rule" is an editorial rule**: only create a `wiki/concepts/{slug}.md` stub page after `list_concepts_tool(min_paper_count=2)` confirms the concept appears in two or more papers
+- Registry entry exists ≠ wiki page exists
+
 ## Rules
 
 - `wiki/papers` is the canonical paper workspace; `sources/evidence` is the evidence layer.
 - Frontmatter quality drives Obsidian CLI/Bases, backlinks, and future queries.
 - Preserve human-authored sections; if managed blocks conflict, report the conflict instead of overwriting.
 - Use Obsidian for visible reading and navigation, but keep hidden IR under `.state/`.
+
+## Skill / Tool Contract
+
+**This Skill is responsible (prompt layer):**
+- Parse user intent and route to the correct tool and mode
+- Enforce editorial rules (two-paper rule, conflict checks, manual section preservation)
+- Merge manual sections into generated content before calling write tools
+- Present results in readable form and suggest follow-up actions
+
+**MCP Tool is responsible (Python layer):**
+- Perform deterministic I/O (vault read/write, API calls)
+- Validate schema and path safety
+- Update machine state (compile_state, concept_registry, maintenance_queue)
+- Report facts and errors; never make editorial decisions
+
+**Neither layer does:**
+- Tools do not judge whether a paper is "good enough" — that is the human inbox decision
+- This Skill does not write files directly — all file writes go through tools
+- Tools do not read user intent — they only execute the parameters they receive

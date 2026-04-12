@@ -1,20 +1,17 @@
-"""Paper Distill MCP Server.
+"""Paper Distill MCP Server — runtime helpers and tool implementations.
 
-Search, scoring, vault querying, and lightweight deterministic workflow tools
-for the Paper Distill knowledge system.
+Business logic lives in focused sub-modules; this file wires them together and
+exposes the MCP tool surface (registration is done by *_tools.py via server.py).
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import unquote
-
-from fastmcp import FastMCP
+from typing import Any
 
 from server.arxiv_capture import (
     CleanedArxivDocument,
@@ -83,16 +80,86 @@ from server.vault_ops import (
 )
 from server.zotero import add_papers as _zotero_add, search_papers as _zotero_search
 
+# ---------------------------------------------------------------------------
+# Re-exports from focused sub-modules
+# (keeps server.py's _rt.* bindings working without modification)
+# ---------------------------------------------------------------------------
+from server.paper_scoring import (
+    _ACRONYM_MAP,
+    _annotate_paper,
+    _best_topic_fit,
+    _canonical_topics,
+    _collapse_text,
+    _safe_citations,
+    _safe_parse_date,
+    _score_author_preference_v2,
+    _score_impact_v2,
+    _score_keyword_alignment,
+    _score_metadata_quality_v2,
+    _score_novelty_v2,
+    _score_recency_v2,
+    _score_rejected_keywords,
+    _score_topic_fit,
+    _score_venue_tier_v2,
+    _tokenize,
+)
+from server.paper_frontmatter import (
+    _DISCOVERY_UPDATE_FIELDS,
+    _canonical_url_updates,
+    _discover_frontmatter,
+    _merge_discovered_paper,
+    _prepare_discovered_paper,
+    _processed_error,
+    _processed_success,
+    _source_frontmatter,
+    _successful_capture_updates,
+    _wiki_frontmatter,
+)
+from server.capture_settings import (
+    _capture_method_from_source_doc,
+    _capture_options,
+    _capture_request_kwargs,
+    _capture_settings,
+    _relative_to_vault_if_possible,
+    _selected_topics,
+    _zotero_runtime,
+)
+from server.paper_identity import (
+    _DOI_PATTERN,
+    _abs_vault_path,
+    _candidate_identifiers,
+    _explicit_candidate,
+    _existing_paper_ids,
+    _extract_doi,
+    _extract_abstract_from_text,
+    _extract_title_from_text,
+    _extract_year_from_text,
+    _find_existing_paper,
+    _matched_topics_for_explicit_paper,
+    _matches_existing_item,
+    _source_doc_from_text,
+    _source_doc_sidecar_payload,
+)
+from server.discovery_helpers import (
+    _candidate_already_processed,
+    _diagnose_discovery_drift,
+    _extract_markdown_section,
+    _limit_by_diversity,
+    _load_candidate_sections,
+    _search_query_for_topic,
+)
+from server.ingestion_helpers import (
+    _ingestion_paths,
+    _wiki_body_payload,
+)
+
 logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     level=logging.INFO,
 )
 LOG = logging.getLogger("paper-distill")
 
-mcp = FastMCP("paper-distill")
 
-# Wave 1 user-facing MCP surface. Keep names centralized so tool registration
-# stays explicit and downstream tests can assert the exact contract.
 _MCP_TOOL_SURFACE = {
     "query_library": "query-library",
     "bootstrap_library": "bootstrap-library",
@@ -120,24 +187,6 @@ _SEARCH_SOURCES = {
 
 # Per-source timeout for circuit breaking
 _SOURCE_TIMEOUT = 15  # seconds
-_DISCOVERY_UPDATE_FIELDS = (
-    "best_topic",
-    "_score",
-    "_score_breakdown",
-    "why_recommended",
-    "tldr",
-    "abstract",
-    "open_access_url",
-    "venue_raw",
-    "venue_normalized",
-    "venue_tier",
-    "venue_source",
-    "arxiv_id",
-    "canonical_pdf_url",
-    "canonical_html_url",
-    "canonical_item_url",
-)
-_DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -156,346 +205,43 @@ async def _search_with_timeout(fn, query: str, max_results: int, name: str):
         return []
 
 
-def _safe_citations(paper: dict) -> int | None:
-    """Return citation count when available, otherwise ``None``."""
-    c = paper.get("citation_count")
-    if c is None or c == "":
-        return None
-    try:
-        return max(0, int(c))
-    except (ValueError, TypeError):
-        return None
 
 
-def _safe_parse_date(paper: dict) -> datetime | None:
-    """Robust multi-format date parsing."""
-    from dateutil.parser import parse as dateparse
-
-    for field in ("published", "date", "year"):
-        raw = paper.get(field)
-        if raw:
-            try:
-                return dateparse(str(raw), fuzzy=True)
-            except (ValueError, TypeError, OverflowError):
-                continue
-    return None
 
 
-def _tokenize(text: str) -> set[str]:
-    """Lowercase token set, min 2 chars."""
-    return {w for w in re.split(r"\W+", text.lower()) if len(w) >= 2}
 
 
-def _collapse_text(text: str) -> str:
-    return " ".join((text or "").split()).strip()
 
 
-def _annotate_paper(
-    paper: dict,
-    venue_aliases: dict[str, str] | None = None,
-    venue_tiers: dict[str, list[str]] | None = None,
-) -> dict:
-    annotated = dict(paper)
-    annotated["arxiv_id"] = annotated.get("arxiv_id") or paper_arxiv_id(annotated)
-    venue_raw = annotated.get("venue", "") or ""
-    venue_normalized, venue_tier = normalize_venue_tier(
-        venue_raw,
-        venue_aliases=venue_aliases,
-        venue_tiers=venue_tiers,
-    )
-    annotated["venue_raw"] = venue_raw
-    annotated["venue_normalized"] = venue_normalized
-    annotated["venue_tier"] = venue_tier
-    annotated["paper_id"] = annotated.get("paper_id") or paper_id(annotated)
-    annotated["canonical_pdf_url"] = canonical_pdf_url(annotated)
-    annotated["canonical_html_url"] = canonical_html_url(annotated)
-    annotated["canonical_item_url"] = canonical_item_url(annotated)
-    return annotated
-
-def _canonical_url_updates(paper: dict) -> dict[str, str]:
-    return {
-        "canonical_html_url": paper.get("canonical_html_url", ""),
-        "canonical_pdf_url": paper.get("canonical_pdf_url", ""),
-    }
 
 
-def _discover_frontmatter(paper: dict) -> dict:
-    return {
-        "paper_id": paper["paper_id"],
-        "status": paper["status"],
-        "title": paper.get("title", ""),
-        "authors": paper.get("authors", []),
-        "year": paper.get("year"),
-        "doi": paper.get("doi", ""),
-        "arxiv_id": paper.get("arxiv_id", ""),
-        "sources": [src for src in paper.get("source", "").split(",") if src],
-        "venue_raw": paper.get("venue_raw", ""),
-        "venue_normalized": paper.get("venue_normalized", ""),
-        "venue_tier": paper.get("venue_tier", "unknown"),
-        "venue_source": paper.get("venue_source", ""),
-        "best_topic": paper.get("best_topic", ""),
-        "matched_topics": paper.get("matched_topics", []),
-        "score_total": paper.get("_score", 0.0),
-        "score_breakdown": paper.get("_score_breakdown", {}),
-        "arxiv_binding_status": paper.get("arxiv_binding_status", "matched"),
-        "capture_status": paper.get("capture_status", "pending"),
-        "capture_error": paper.get("capture_error", ""),
-        "summary": paper.get("tldr", ""),
-        "abstract": paper.get("abstract", ""),
-        "why_recommended": paper.get("why_recommended", ""),
-        "open_access_url": paper.get("open_access_url", ""),
-        "canonical_pdf_url": paper.get("canonical_pdf_url", ""),
-        "canonical_html_url": paper.get("canonical_html_url", ""),
-        "canonical_item_url": paper.get("canonical_item_url", ""),
-        "source_evidence_path": paper.get("source_evidence_path", ""),
-        "wiki_paper_path": paper.get("wiki_paper_path", ""),
-        "zotero_mode": paper.get("zotero_mode", ""),
-        "zotero_status": paper.get("zotero_status", ""),
-        "zotero_import_path": paper.get("zotero_import_path", ""),
-        "retrieved_at": paper["retrieved_at"],
-        "decision_note": "",
-    }
 
 
-def _merge_discovered_paper(existing: dict, incoming: dict, topic_key: str) -> None:
-    matched_topics = set(existing.get("matched_topics", []))
-    matched_topics.add(topic_key)
-    existing["matched_topics"] = sorted(matched_topics)
-    if incoming.get("_score", 0.0) <= existing.get("_score", 0.0):
-        return
-    for field in _DISCOVERY_UPDATE_FIELDS:
-        if incoming.get(field):
-            existing[field] = incoming.get(field)
 
 
-def _prepare_discovered_paper(paper: dict, topic_key: str, topic: dict) -> dict:
-    prepared = dict(paper)
-    prepared["matched_topics"] = [topic_key]
-    prepared["status"] = "proposed"
-    prepared["retrieved_at"] = datetime.now().date().isoformat()
-    prepared["decision_note"] = ""
-    prepared["arxiv_binding_status"] = prepared.get("arxiv_binding_status", "matched")
-    prepared["capture_status"] = "pending"
-    prepared["capture_error"] = ""
-    prepared["source_evidence_path"] = ""
-    prepared["wiki_paper_path"] = ""
-    prepared["venue_source"] = (
-        prepared.get("venue_source")
-        or prepared.get("_venue_source")
-        or prepared.get("source", "")
-    )
-    prepared["why_recommended"] = (
-        prepared.get("tldr")
-        or f"High match for {topic.get('label', topic_key)} with score {paper.get('_score', 0):.2f}."
-    )
-    return prepared
 
 
-def _source_frontmatter(
-    research_item: ResearchItem,
-    appendix_policy: str,
-    source_structured_rel_path: str = "",
-    capture_method: str = "ar5iv_html_cleaned",
-    capture_fidelity: str = "high",
-    capture_source: str = "",
-    figure_count: int = 0,
-    table_count: int = 0,
-    equation_count: int = 0,
-) -> dict:
-    return research_item.to_source_frontmatter(
-        source_structured_path=source_structured_rel_path,
-        appendix_policy=appendix_policy,
-        capture_method=capture_method,
-        capture_fidelity=capture_fidelity,
-        capture_source=capture_source,
-        figure_count=figure_count,
-        table_count=table_count,
-        equation_count=equation_count,
-    )
 
 
-def _wiki_frontmatter(
-    research_item: ResearchItem,
-    source_rel_path: str,
-    source_structured_rel_path: str,
-    zotero_mode: str,
-    zotero_status: str,
-    zotero_import_path: str,
-    zotero_key: str,
-    zotero_uri: str,
-    confidence: float,
-    capture_fidelity: str,
-) -> dict:
-    return research_item.to_wiki_frontmatter(
-        source_evidence_path=source_rel_path,
-        source_assets_path=source_structured_rel_path,
-        zotero_mode=zotero_mode,
-        zotero_status=zotero_status,
-        zotero_import_path=zotero_import_path,
-        zotero_uri=zotero_uri,
-        zotero_key=zotero_key,
-        confidence=confidence,
-        capture_fidelity=capture_fidelity,
-    )
 
 
-def _successful_capture_updates(
-    wiki_rel_path: str,
-    source_rel_path: str,
-    source_structured_rel_path: str,
-    paper: dict,
-    zotero_mode: str,
-    zotero_status: str,
-    zotero_import_path: str,
-    zotero_key: str,
-    zotero_uri: str,
-) -> dict[str, str]:
-    return {
-        "processed_at": datetime.now().date().isoformat(),
-        "capture_status": "succeeded",
-        "capture_error": "",
-        "source_evidence_path": source_rel_path,
-        "wiki_paper_path": wiki_rel_path,
-        "source_structured_path": source_structured_rel_path,
-        **_canonical_url_updates(paper),
-        "zotero_mode": zotero_mode,
-        "zotero_status": zotero_status,
-        "zotero_import_path": zotero_import_path,
-        "zotero_key": zotero_key,
-        "zotero_uri": zotero_uri,
-        "page_state": "auto",
-    }
 
 
-def _processed_error(candidate: dict, error: str) -> dict[str, str]:
-    return {
-        "paper_id": candidate.get("paper_id", ""),
-        "error": error,
-    }
 
 
-def _processed_success(
-    candidate: dict,
-    zotero_mode: str,
-    zotero_status: str,
-    zotero_import_path: str,
-    zotero_key: str,
-    zotero_uri: str,
-    source_path: Path,
-    wiki_path: Path,
-) -> dict[str, str]:
-    return {
-        "paper_id": candidate.get("paper_id", ""),
-        "zotero_mode": zotero_mode,
-        "zotero_status": zotero_status,
-        "zotero_import_path": zotero_import_path,
-        "zotero_key": zotero_key,
-        "zotero_uri": zotero_uri,
-        "source_evidence_abs_path": str(source_path),
-        "wiki_paper_abs_path": str(wiki_path),
-        "page_state": "auto",
-    }
-def _selected_topics(query: str | None, topic_keys: list[str] | None) -> dict[str, dict]:
-    topics = get_topics()
-    if query:
-        return {
-            "ad-hoc": {
-                "label": query,
-                "keywords": [query],
-            }
-        }
-    if not topic_keys:
-        return topics
-
-    selected = {
-        key: value for key, value in topics.items()
-        if key in topic_keys
-    }
-    for key in topic_keys:
-        if key in selected:
-            continue
-        normalized = str(key).replace("_", " ").replace("-", " ").strip()
-        selected[key] = {
-            "label": normalized.title() if normalized else str(key),
-            "keywords": [normalized or str(key)],
-        }
-    return selected
 
 
-def _capture_settings() -> tuple[str, int]:
-    capture_settings = get_paper_distill_settings().get("capture", {})
-    appendix_policy = str(capture_settings.get("appendix_policy", "summary_only"))
-    min_body_chars = int(capture_settings.get("min_body_chars", 1500))
-    return appendix_policy, min_body_chars
 
 
-def _capture_options() -> dict[str, int | bool]:
-    capture_settings = get_paper_distill_settings().get("capture", {})
-    return {
-        "preserve_math": bool(capture_settings.get("preserve_math", True)),
-        "preserve_figures": bool(capture_settings.get("preserve_figures", True)),
-        "preserve_tables": bool(capture_settings.get("preserve_tables", True)),
-        "remove_refs": bool(capture_settings.get("remove_refs", True)),
-        "remove_inline_citations": bool(capture_settings.get("remove_inline_citations", False)),
-        "remove_internal_links": bool(capture_settings.get("remove_internal_links", True)),
-        "write_structured_sidecar": bool(capture_settings.get("write_structured_sidecar", True)),
-        "extract_figure_assets": bool(capture_settings.get("extract_figure_assets", False)),
-        "max_figures": int(capture_settings.get("max_figures", 12)),
-        "max_tables": int(capture_settings.get("max_tables", 12)),
-        "max_equations": int(capture_settings.get("max_equations", 24)),
-    }
 
 
-def _capture_request_kwargs(
-    appendix_policy: str,
-    min_body_chars: int,
-    capture_options: dict[str, int | bool] | None = None,
-) -> dict[str, int | bool | str]:
-    options = capture_options or {}
-    return {
-        "appendix_policy": appendix_policy,
-        "min_body_chars": min_body_chars,
-        "preserve_math": bool(options.get("preserve_math", True)),
-        "preserve_figures": bool(options.get("preserve_figures", True)),
-        "preserve_tables": bool(options.get("preserve_tables", True)),
-        "max_figures": int(options.get("max_figures", 12)),
-        "max_tables": int(options.get("max_tables", 12)),
-        "max_equations": int(options.get("max_equations", 24)),
-        "remove_refs": bool(options.get("remove_refs", True)),
-        "remove_inline_citations": bool(options.get("remove_inline_citations", False)),
-        "remove_internal_links": bool(options.get("remove_internal_links", True)),
-    }
 
 
-def _capture_method_from_source_doc(source_doc: Any, fallback: str = "ar5iv_html_cleaned") -> str:
-    capture_method = str(getattr(source_doc, "capture_method", "")).strip()
-    return capture_method or fallback
 
 
-def _relative_to_vault_if_possible(vault_path: str, maybe_path: str) -> str:
-    if not maybe_path:
-        return ""
-    target = Path(maybe_path).expanduser()
-    try:
-        return str(target.relative_to(Path(vault_path).expanduser()))
-    except ValueError:
-        return str(target)
 
 
-def _zotero_runtime(vault_path: str) -> dict[str, str]:
-    zotero_settings = get_zotero_settings()
-    mode = get_zotero_mode()
-    enabled = bool(zotero_settings.get("enabled", True))
-    if not enabled:
-        mode = "disabled"
 
-    return {
-        "mode": mode,
-        "collection_name": get_zotero_collection_name(),
-        "library_id": get_env("ZOTERO_LIBRARY_ID"),
-        "api_key": get_env("ZOTERO_API_KEY"),
-        "local_export_dir": get_zotero_local_export_dir(vault_path),
-    }
 
 
 async def _prepare_ingestion_candidate(
@@ -556,55 +302,8 @@ async def _prepare_ingestion_candidate(
     return paper, source_doc, ""
 
 
-def _ingestion_paths(vault_path: str, paper: dict) -> tuple[str, Path, Path, Path, str, str, str]:
-    citekey = citekey_for_paper(paper)
-    source_path = source_evidence_path(vault_path, citekey)
-    source_structured_path = source_evidence_sidecar_path(vault_path, citekey)
-    wiki_path = wiki_paper_path(vault_path, citekey)
-    source_rel_path = str(source_path.relative_to(Path(vault_path)))
-    source_structured_rel_path = str(source_structured_path.relative_to(Path(vault_path)))
-    wiki_rel_path = str(wiki_path.relative_to(Path(vault_path)))
-    return citekey, source_path, source_structured_path, wiki_path, source_rel_path, source_structured_rel_path, wiki_rel_path
 
 
-def _wiki_body_payload(
-    research_item: ResearchItem,
-    paper: dict,
-    source_rel_path: str,
-    source_structured_rel_path: str,
-    zotero_mode: str,
-    zotero_status: str,
-    zotero_import_path: str,
-    zotero_key: str,
-    zotero_uri: str,
-    capture_fidelity: str,
-    dnl_note: dict,
-) -> dict:
-    note_paper = {
-        "title": research_item.title,
-        "authors_short": ", ".join(research_item.authors[:3]) or "Unknown authors",
-        "year": research_item.year,
-        "venue": research_item.venue,
-        "citekey": research_item.citekey,
-        "source_evidence_path": source_rel_path,
-        "source_assets_path": source_structured_rel_path,
-        "zotero_mode": zotero_mode,
-        "zotero_status": zotero_status,
-        "zotero_import_path": zotero_import_path,
-        "zotero_uri": zotero_uri,
-        "zotero_key": zotero_key,
-        "capture_fidelity": capture_fidelity,
-        "page_state": "auto",
-        "confidence": dnl_note.get("confidence", 0.5),
-        "why_read": paper.get("tldr") or dnl_note.get("sections", {}).get("Context", "") or "Auto-generated from source evidence.",
-        "summary": paper.get("abstract", ""),
-        "insights": dnl_note.get("sections", {}).get("Discussion", ""),
-        "connections": "",
-    }
-    return {
-        "paper": note_paper,
-        "sections": dnl_note.get("sections", {}),
-    }
 
 
 async def _write_ingestion_outputs(
@@ -706,270 +405,30 @@ async def _write_ingestion_outputs(
     return source_path, wiki_path, source_rel_path, wiki_rel_path
 
 
-def _existing_paper_ids(
-    vault_path: str,
-    sections: tuple[str, ...] = ("inbox", "source_evidence", "papers"),
-) -> set[str]:
-    known: set[str] = set()
-    for section in sections:
-        data = query_vault_sync(vault_path, section=section, detail="full")
-        for item in data.get("sections", {}).get(section, []):
-            pid = str(item.get("paper_id", "")).strip()
-            if pid:
-                known.add(pid)
-            doi = str(item.get("doi", "")).strip().lower()
-            if doi:
-                known.add(f"doi:{doi}")
-            arxiv_id = str(item.get("arxiv_id", "")).strip().lower()
-            if arxiv_id:
-                known.add(f"arxiv:{arxiv_id}")
-    return known
 
 
-def _extract_doi(value: str) -> str:
-    text = unquote((value or "").strip())
-    if text.lower().startswith("doi:"):
-        text = text[4:].strip()
-    match = _DOI_PATTERN.search(text)
-    if not match:
-        return ""
-    return match.group(0).rstrip(").,;")
 
 
-def _extract_title_from_text(text: str) -> str:
-    for line in text.splitlines():
-        candidate = _collapse_text(line)
-        lowered = candidate.lower()
-        if len(candidate) < 15 or len(candidate) > 220:
-            continue
-        if lowered in {"abstract", "introduction", "references"}:
-            continue
-        if lowered.startswith(("http", "doi:", "arxiv:")):
-            continue
-        return candidate
-    return ""
 
 
-def _extract_abstract_from_text(text: str) -> str:
-    match = re.search(
-        r"(?:^|\n)\s*abstract\s*\n+(.*?)(?=\n\s*(?:1\.?\s+introduction|introduction|keywords|contents)\b|\n\s*\n|\Z)",
-        text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if match:
-        abstract = _collapse_text(match.group(1))
-        if len(abstract) >= 60:
-            return abstract
-
-    paragraphs = [
-        _collapse_text(chunk)
-        for chunk in re.split(r"\n\s*\n", text)
-    ]
-    for paragraph in paragraphs:
-        lowered = paragraph.lower()
-        if len(paragraph) >= 80 and not lowered.startswith(("abstract", "keywords", "references")):
-            return paragraph
-    return ""
 
 
-def _extract_year_from_text(text: str) -> int | None:
-    match = re.search(r"\b(19|20)\d{2}\b", text[:2000])
-    if not match:
-        return None
-    try:
-        return int(match.group(0))
-    except ValueError:
-        return None
 
 
-def _source_doc_from_text(
-    paper: dict,
-    text: str,
-    min_body_chars: int,
-) -> CleanedArxivDocument:
-    paragraphs = [
-        _collapse_text(chunk)
-        for chunk in re.split(r"\n\s*\n", text)
-    ]
-    paragraphs = [paragraph for paragraph in paragraphs if len(paragraph) >= 40]
-    if not paragraphs:
-        raise ValueError("PDF text extraction returned too little structured content")
-
-    title = paper.get("title") or _extract_title_from_text(text) or "Untitled Paper"
-    abstract = paper.get("abstract") or _extract_abstract_from_text(text)
-    body_paragraphs = paragraphs[: min(len(paragraphs), 24)]
-    body_text = "\n\n".join(body_paragraphs)
-    if len(body_text) < min_body_chars:
-        raise ValueError(f"recovered PDF text too short ({len(body_text)} chars)")
-
-    markdown = "\n".join(
-        [
-            f"# {title}",
-            "",
-            "## Abstract",
-            "",
-            abstract or "Abstract unavailable.",
-            "",
-            "## Recovered Text",
-            "",
-            body_text,
-        ]
-    ).strip()
-    return CleanedArxivDocument(
-        title=title,
-        abstract=abstract,
-        markdown=markdown,
-        sections=[
-            {
-                "heading": "Recovered Text",
-                "level": 2,
-                "paragraphs": body_paragraphs,
-                "captions": [],
-            }
-        ],
-        appendix_snapshot=[],
-        quality={
-            "body_chars": len(body_text),
-            "has_abstract": bool(abstract),
-            "section_count": 1,
-            "appendix_chars": 0,
-            "appendix_sections": 0,
-            "bibliography_ratio": 0.0,
-        },
-        capture_fidelity="low",
-        capture_source="pdf_text",
-        capture_method="pdf_text_recovered",
-    )
 
 
-def _source_doc_sidecar_payload(source_doc: CleanedArxivDocument) -> dict:
-    return {
-        "title": source_doc.title,
-        "abstract": source_doc.abstract,
-        "capture_fidelity": getattr(source_doc, "capture_fidelity", "unknown"),
-        "capture_source": getattr(source_doc, "capture_source", ""),
-        "capture_method": getattr(source_doc, "capture_method", ""),
-        "quality": getattr(source_doc, "quality", {}),
-        "sections": getattr(source_doc, "sections", []),
-        "appendix_snapshot": getattr(source_doc, "appendix_snapshot", []),
-        "figures": getattr(source_doc, "figures", []),
-        "tables": getattr(source_doc, "tables", []),
-        "equations": getattr(source_doc, "equations", []),
-    }
 
 
-def _explicit_candidate(paper: dict, matched_topics: list[str]) -> dict[str, Any]:
-    best_topic = matched_topics[0] if matched_topics else ""
-    return {
-        "paper_id": paper.get("paper_id", ""),
-        "matched_topics": matched_topics,
-        "best_topic": best_topic,
-    }
 
 
-def _matched_topics_for_explicit_paper(
-    paper: dict,
-    topic_keys: list[str] | None = None,
-) -> list[str]:
-    selected = _selected_topics(None, topic_keys)
-    if not selected:
-        return []
-
-    scored: list[tuple[float, str]] = []
-    for topic_key, topic in selected.items():
-        score = _score_topic_fit(paper, topic.get("keywords", []))
-        if score > 0:
-            scored.append((score, topic_key))
-
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    if scored:
-        return [topic_key for _, topic_key in scored]
-    if topic_keys:
-        return list(dict.fromkeys(topic_keys))
-    return []
 
 
-def _candidate_identifiers(paper: dict) -> set[str]:
-    identifiers: set[str] = set()
-    pid = str(paper.get("paper_id", "")).strip().lower()
-    has_stable_metadata = bool(
-        paper.get("doi")
-        or paper.get("arxiv_id")
-        or paper.get("title")
-        or paper.get("authors")
-        or paper.get("year")
-    )
-    if pid and (not pid.startswith("hash:") or has_stable_metadata):
-        identifiers.add(pid)
-    doi = str(paper.get("doi", "")).strip().lower()
-    if doi:
-        identifiers.add(f"doi:{doi}")
-    arxiv_id = str(paper.get("arxiv_id", "")).strip().lower()
-    if arxiv_id:
-        identifiers.add(f"arxiv:{arxiv_id}")
-    for url in (
-        paper.get("canonical_item_url", ""),
-        paper.get("canonical_pdf_url", ""),
-        paper.get("open_access_url", ""),
-        paper.get("url", ""),
-    ):
-        cleaned = str(url).strip().lower()
-        if cleaned:
-            identifiers.add(f"url:{cleaned}")
-    return identifiers
 
 
-def _matches_existing_item(item: dict, identifiers: set[str]) -> bool:
-    item_ids = {
-        str(item.get("paper_id", "")).strip().lower(),
-        f"doi:{str(item.get('doi', '')).strip().lower()}",
-        f"arxiv:{str(item.get('arxiv_id', '')).strip().lower()}",
-        f"url:{str(item.get('canonical_item_url', '')).strip().lower()}",
-        f"url:{str(item.get('canonical_pdf_url', '')).strip().lower()}",
-        f"url:{str(item.get('open_access_url', '')).strip().lower()}",
-    }
-    item_ids.discard("")
-    item_ids.discard("doi:")
-    item_ids.discard("arxiv:")
-    item_ids.discard("url:")
-    return bool(item_ids & identifiers)
 
 
-def _abs_vault_path(vault_path: str, rel_path: str) -> str:
-    if not rel_path:
-        return ""
-    return str((Path(vault_path).expanduser() / rel_path).resolve())
 
 
-def _find_existing_paper(vault_path: str, paper: dict) -> dict[str, Any] | None:
-    identifiers = _candidate_identifiers(paper)
-    if not identifiers:
-        return None
-
-    source_evidence = query_vault_sync(vault_path, section="source_evidence", detail="full").get("sections", {}).get("source_evidence", [])
-    wiki_papers = query_vault_sync(vault_path, section="papers", detail="full").get("sections", {}).get("papers", [])
-
-    matched_source = next((item for item in source_evidence if _matches_existing_item(item, identifiers)), None)
-    matched_wiki = [item for item in wiki_papers if _matches_existing_item(item, identifiers)]
-    if not matched_source and not matched_wiki:
-        return None
-
-    representative = matched_wiki[0] if matched_wiki else matched_source
-    return {
-        "paper_id": representative.get("paper_id", paper.get("paper_id", "")),
-        "title": representative.get("title", paper.get("title", "")),
-        "source_evidence_abs_path": _abs_vault_path(
-            vault_path,
-            (matched_source or {}).get("_path", "") or representative.get("source_evidence_path", ""),
-        ),
-        "wiki_paper_abs_path": _abs_vault_path(vault_path, matched_wiki[0].get("_path", "")) if matched_wiki else "",
-        "wiki_paths": [
-            _abs_vault_path(vault_path, item.get("_path", ""))
-            for item in matched_wiki
-            if item.get("_path")
-        ],
-        "compiled": bool(matched_wiki),
-    }
 
 
 async def _resolve_explicit_paper(identifier: str) -> dict[str, Any]:
@@ -1068,268 +527,35 @@ async def _prepare_direct_add_candidate(
     return _annotate_paper(prepared), source_doc, "pdf_text_recovered", ""
 
 
-def _canonical_topics(
-    topics: dict | None = None,
-    topic_keywords: list[str] | None = None,
-) -> dict[str, dict]:
-    if topics:
-        canonical = {}
-        for key, value in topics.items():
-            if isinstance(value, dict):
-                canonical[key] = {
-                    "label": value.get("label", key),
-                    "keywords": value.get("keywords", []),
-                    "aliases": value.get("aliases", []),
-                    "must_include": value.get("must_include", []),
-                    "must_exclude": value.get("must_exclude", []),
-                }
-        if canonical:
-            return canonical
-
-    if topic_keywords:
-        return {
-            "ad-hoc": {
-                "label": "Ad Hoc Topic",
-                "keywords": topic_keywords,
-                "aliases": [],
-                "must_include": [],
-                "must_exclude": [],
-            }
-        }
-
-    return {}
 
 
-_ACRONYM_MAP: dict[str, str] = {
-    "llm": "large language model",
-    "llms": "large language models",
-    "vlm": "vision language model",
-    "vla": "vision language action",
-    "rl": "reinforcement learning",
-    "il": "imitation learning",
-    "bc": "behavioral cloning",
-    "vit": "vision transformer",
-    "cnn": "convolutional neural network",
-    "gan": "generative adversarial network",
-    "diffusion": "denoising diffusion",
-    "nerf": "neural radiance field",
-    "slam": "simultaneous localization and mapping",
-    "mpc": "model predictive control",
-}
+# _ACRONYM_MAP is re-exported from server.paper_scoring (see import block above)
 
 
-def _score_topic_fit(paper: dict, topic_keywords: list[str], topic_aliases: list[str] | None = None) -> float:
-    title = paper.get("title", "")
-    abstract = paper.get("abstract", "")
-    venue = paper.get("venue_normalized", paper.get("venue", ""))
-    paper_tokens = _tokenize(f"{title} {abstract} {venue}")
-    keyword_tokens = set()
-    for kw in topic_keywords:
-        keyword_tokens.update(_tokenize(kw))
-    # Expand with aliases
-    for alias in (topic_aliases or []):
-        keyword_tokens.update(_tokenize(alias))
-    # Expand with built-in acronym map
-    expanded = set()
-    for token in keyword_tokens:
-        if token in _ACRONYM_MAP:
-            expanded.update(_tokenize(_ACRONYM_MAP[token]))
-    keyword_tokens.update(expanded)
-    if not keyword_tokens:
-        return 0.0
-    overlap = len(paper_tokens & keyword_tokens)
-    return min(overlap / len(keyword_tokens), 1.0)
 
 
-def _best_topic_fit(paper: dict, topics: dict[str, dict]) -> tuple[str, float]:
-    best_topic = ""
-    best_score = 0.0
-    for topic_key, topic in topics.items():
-        topic_keywords = topic.get("keywords", [])
-        topic_aliases = topic.get("aliases", [])
-        score = _score_topic_fit(paper, topic_keywords, topic_aliases)
-        if score > best_score:
-            best_topic = topic_key
-            best_score = score
-    return best_topic, best_score
 
 
-def _score_recency_v2(paper: dict) -> float:
-    now = datetime.now(timezone.utc)
-    dt = _safe_parse_date(paper)
-
-    if dt is not None and (
-        paper.get("published") or paper.get("date")
-    ):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        days = max((now - dt).days, 0)
-        if days <= 365:
-            return 1.0
-        if days <= 730:
-            return 0.85
-        if days <= 1460:
-            return 0.60
-        return 0.35
-
-    year = paper.get("year")
-    try:
-        year_val = int(year)
-    except (TypeError, ValueError):
-        return 0.50
-
-    age = max(now.year - year_val, 0)
-    if age == 0:
-        return 0.90
-    if age == 1:
-        return 0.80
-    if age == 2:
-        return 0.70
-    if age <= 4:
-        return 0.55
-    return 0.40
 
 
-def _score_impact_v2(paper: dict) -> float:
-    citations = _safe_citations(paper)
-    if citations is None:
-        return 0.50
-    cap = 200
-    base = min(math.log(citations + 1) / math.log(cap + 1), 1.0)
-    # Velocity bonus for papers older than 3 months
-    dt = _safe_parse_date(paper)
-    if dt is not None and citations > 0:
-        now = datetime.now(timezone.utc)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        months = max((now - dt).days / 30.0, 1.0)
-        if months >= 3:
-            velocity = min(citations / months / 10.0, 0.3)
-            return min(base + velocity, 1.0)
-    return base
 
 
-def _score_novelty_v2(paper: dict, known_ids: set[str]) -> float:
-    pid = paper_id(paper)
-    return 0.0 if pid in known_ids else 1.0
 
 
-def _score_venue_tier_v2(paper: dict) -> float:
-    tier = paper.get("venue_tier", "unknown")
-    if tier == "tier_s":
-        return 1.0
-    if tier == "tier_a":
-        return 0.80
-    if tier == "workshop_or_unclear":
-        return 0.30
-    return 0.50
 
 
-def _score_author_preference_v2(
-    paper: dict,
-    whitelist_authors: list[str] | None,
-    preferred_venues: list[str] | None,
-) -> float:
-    authors = {str(author).strip().lower() for author in paper.get("authors", [])}
-    whitelist = {author.strip().lower() for author in (whitelist_authors or [])}
-    if authors & whitelist:
-        return 1.0
-
-    venue = str(paper.get("venue_normalized", "")).strip().lower()
-    preferred = {venue_name.strip().lower() for venue_name in (preferred_venues or [])}
-    if venue and venue in preferred:
-        return 0.70
-    return 0.0
 
 
-def _score_metadata_quality_v2(paper: dict) -> float:
-    checks = [
-        bool(paper.get("abstract")),
-        bool(paper.get("authors")),
-        bool(paper.get("venue") or paper.get("venue_normalized")),
-        bool(paper.get("open_access_url") or paper.get("doi")),
-    ]
-    return sum(1 for passed in checks if passed) / len(checks)
 
 
-def _score_keyword_alignment(
-    paper: dict,
-    keywords: list[str] | None,
-) -> float:
-    """Return a bounded relevance boost from user/profile keywords."""
-    if not keywords:
-        return 0.0
-
-    normalized_keywords: list[str] = []
-    seen_keywords: set[str] = set()
-    for keyword in keywords:
-        normalized = str(keyword or "").strip().lower()
-        if len(normalized) < 3 or normalized in seen_keywords:
-            continue
-        seen_keywords.add(normalized)
-        normalized_keywords.append(normalized)
-    if not normalized_keywords:
-        return 0.0
-
-    title = (paper.get("title") or "").lower()
-    abstract = (paper.get("abstract") or "").lower()
-    venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
-
-    matched_score = 0.0
-    for normalized in normalized_keywords:
-        if normalized in title:
-            matched_score += 0.45
-        elif normalized in abstract:
-            matched_score += 0.20
-        elif normalized in venue:
-            matched_score += 0.10
-
-    max_score = max(len(normalized_keywords) * 0.45, 0.45)
-    return min(matched_score / max_score, 1.0)
 
 
-def _score_rejected_keywords(
-    paper: dict,
-    rejected_keywords: list[str] | None,
-) -> float:
-    """Return a negative penalty if rejected keywords are found.
-
-    Tiered penalties:
-      - title match:    -0.80 (strongest signal — paper is *about* the rejected topic)
-      - abstract match: -0.40 (moderate — could be related work mention)
-      - venue match:    -0.15 (weak — venue covers broad area)
-
-    Multiple matches within the same tier do NOT stack; the worst single tier
-    penalty is returned.  This avoids over-punishing papers that mention a
-    rejected term in *both* title and abstract.
-    """
-    if not rejected_keywords:
-        return 0.0
-
-    rejected_lower = [kw.strip().lower() for kw in rejected_keywords if kw.strip()]
-    if not rejected_lower:
-        return 0.0
-
-    title = (paper.get("title") or "").lower()
-    abstract = (paper.get("abstract") or "").lower()
-    venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
-
-    worst = 0.0
-    for kw in rejected_lower:
-        if kw in title:
-            worst = min(worst, -0.80)
-        elif kw in abstract:
-            worst = min(worst, -0.40)
-        elif kw in venue:
-            worst = min(worst, -0.15)
-    return worst
 
 
 # ---------------------------------------------------------------------------
 # Tool 1: search_papers
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def search_papers(
     query: str,
     sources: list[str] | None = None,
@@ -1391,7 +617,6 @@ async def search_papers(
 # Tool 2: resolve_metadata
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def resolve_metadata(doi: str) -> dict:
     """Resolve full metadata for a DOI via CrossRef + Unpaywall OA lookup.
 
@@ -1430,7 +655,6 @@ async def resolve_metadata(doi: str) -> dict:
 # Tool 3: zotero_add
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def zotero_add(papers: list[dict]) -> list[dict]:
     """Add papers to Zotero library with auto-metadata enrichment.
 
@@ -1462,7 +686,6 @@ async def zotero_add(papers: list[dict]) -> list[dict]:
 # Tool 4: zotero_search
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def zotero_search(query: str, limit: int = 20) -> list[dict]:
     """Search existing papers in Zotero library.
 
@@ -1527,7 +750,6 @@ def _extract_arxiv_id(url: str) -> str | None:
     return None
 
 
-@mcp.tool()
 async def fetch_pdf_text(url: str, max_pages: int = 10) -> str:
     """Fetch and extract text from an open-access paper.
 
@@ -1579,7 +801,6 @@ async def fetch_pdf_text(url: str, max_pages: int = 10) -> str:
 # Tool 6: score_papers (v2 topic-aware deterministic formula)
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def score_papers(
     papers: list[dict],
     topic_keywords: list[str] | None = None,
@@ -1686,7 +907,6 @@ async def score_papers(
 # Tool 7: query-library (AI's interface to library state)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["query_library"])
 async def query_vault(
     section: str = "all",
     topic: str | None = None,
@@ -1757,7 +977,6 @@ async def query_vault(
 # Tool 8: bootstrap_vault
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["bootstrap_library"])
 async def bootstrap_vault(vault_path: str | None = None) -> dict:
     """Initialize the Paper Distill directory structure inside an Obsidian vault."""
     target = vault_path or get_vault_path()
@@ -1771,88 +990,12 @@ async def bootstrap_vault(vault_path: str | None = None) -> dict:
     }
 
 
-def _search_query_for_topic(topic_key: str, topic: dict) -> str:
-    keywords = topic.get("keywords", [])
-    aliases = topic.get("aliases", [])
-    must_include = topic.get("must_include", [])
-    must_exclude = topic.get("must_exclude", [])
-    parts = [str(kw) for kw in keywords]
-    parts.extend(str(a) for a in aliases)
-    if must_include:
-        parts.extend(f"+{term}" for term in must_include)
-    if must_exclude:
-        parts.extend(f"-{term}" for term in must_exclude)
-    if parts:
-        return " ".join(parts)
-    return topic.get("label", topic_key)
 
 
-def _limit_by_diversity(papers: list[dict], cap: int) -> list[dict]:
-    """Enforce two diversity constraints: title-cluster cap AND author cap."""
-    if cap <= 0:
-        return papers
-    author_cap = max(cap, 2)  # at least 2 per author
-    clusters: dict[str, int] = {}
-    author_counts: dict[str, int] = {}
-    kept: list[dict] = []
-    for paper in papers:
-        # Title cluster diversity
-        cluster_key = " ".join(sorted(_tokenize(paper.get("title", "")))) or str(paper.get("paper_id", ""))
-        clusters.setdefault(cluster_key, 0)
-        if clusters[cluster_key] >= cap:
-            continue
-        # Author diversity
-        surname = first_author_surname(paper)
-        if surname:
-            author_counts.setdefault(surname, 0)
-            if author_counts[surname] >= author_cap:
-                continue
-            author_counts[surname] += 1
-        clusters[cluster_key] += 1
-        kept.append(paper)
-    return kept
 
 
-def _extract_markdown_section(content: str, heading: str) -> str:
-    pattern = re.compile(
-        rf"^## {re.escape(heading)}\n+(.*?)(?=^## |\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
-    match = pattern.search(content)
-    if not match:
-        return ""
-    return match.group(1).strip()
 
 
-def _load_candidate_sections(vault_path: str, note_rel_path: str) -> dict[str, str]:
-    note_path = Path(vault_path) / note_rel_path
-    if not note_path.exists():
-        return {}
-
-    content = note_path.read_text(encoding="utf-8")
-    links = _extract_markdown_section(content, "Links")
-    open_access_url = ""
-    pdf_url = ""
-    html_url = ""
-    if links:
-        pdf_match = re.search(r"- PDF:\s+(https?://\S+)", links)
-        html_match = re.search(r"- HTML:\s+(https?://\S+)", links)
-        open_access_match = re.search(r"- Open access:\s+(https?://\S+)", links)
-        if pdf_match:
-            pdf_url = pdf_match.group(1)
-        if html_match:
-            html_url = html_match.group(1)
-        if open_access_match:
-            open_access_url = open_access_match.group(1)
-
-    return {
-        "summary": _extract_markdown_section(content, "Summary"),
-        "abstract": _extract_markdown_section(content, "Abstract"),
-        "why_recommended": _extract_markdown_section(content, "Why Recommended"),
-        "open_access_url": open_access_url or pdf_url,
-        "canonical_pdf_url": pdf_url,
-        "canonical_html_url": html_url,
-    }
 
 
 async def _enrich_inbox_candidate(candidate: dict, vault_path: str | None = None) -> dict:
@@ -1901,14 +1044,6 @@ async def _enrich_inbox_candidate(candidate: dict, vault_path: str | None = None
     )
 
 
-def _candidate_already_processed(candidate: dict, existing_raw_ids: set[str]) -> bool:
-    pid = str(candidate.get("paper_id", "")).lower()
-    return (
-        not pid
-        or pid in existing_raw_ids
-        or candidate.get("capture_status") == "succeeded"
-        or candidate.get("wiki_paper_path")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1916,68 +1051,7 @@ def _candidate_already_processed(candidate: dict, existing_raw_ids: set[str]) ->
 # ---------------------------------------------------------------------------
 
 
-def _diagnose_discovery_drift(
-    scored: list[dict],
-    topic: dict,
-    coverage_threshold: float = 0.30,
-    off_topic_threshold: float = 0.60,
-) -> dict:
-    """Diagnose whether scored results have drifted from the target topic.
 
-    Returns dict with 'drifted' bool and optional 'exclude_terms' for refinement.
-    """
-    keyword_tokens = set()
-    for kw in topic.get("keywords", []):
-        keyword_tokens.update(_tokenize(kw))
-    for alias in topic.get("aliases", []):
-        keyword_tokens.update(_tokenize(alias))
-
-    if not keyword_tokens or not scored:
-        return {"drifted": False}
-
-    # Check keyword coverage: how many papers mention at least one keyword
-    covered = 0
-    for paper in scored:
-        paper_tokens = _tokenize(
-            f"{paper.get('title', '')} {paper.get('abstract', '')}"
-        )
-        if paper_tokens & keyword_tokens:
-            covered += 1
-    coverage = covered / len(scored)
-
-    # Check venue drift: count papers from clearly off-topic venues
-    scoring_settings = get_scoring_settings()
-    known_venues = set()
-    for tier in scoring_settings.get("venue_tiers", {}).values():
-        known_venues.update(v.lower() for v in tier)
-
-    off_topic_count = 0
-    off_topic_venues: dict[str, int] = {}
-    for paper in scored:
-        venue = (paper.get("venue_normalized") or paper.get("venue") or "").lower()
-        if venue and venue not in known_venues and "arxiv" not in venue:
-            off_topic_count += 1
-            off_topic_venues[venue] = off_topic_venues.get(venue, 0) + 1
-    off_topic_ratio = off_topic_count / len(scored)
-
-    drifted = coverage < coverage_threshold or off_topic_ratio > off_topic_threshold
-    exclude_terms = []
-    if drifted:
-        # Suggest excluding the most frequent off-topic venue keywords
-        for venue, count in sorted(off_topic_venues.items(), key=lambda x: -x[1])[:3]:
-            for token in _tokenize(venue):
-                if token not in keyword_tokens and len(token) > 3:
-                    exclude_terms.append(token)
-                    break
-
-    return {
-        "drifted": drifted,
-        "keyword_coverage": coverage,
-        "off_topic_venue_ratio": off_topic_ratio,
-        "exclude_terms": exclude_terms[:3],
-    }
-
-@mcp.tool(name=_MCP_TOOL_SURFACE["source_discover"])
 async def discover_papers(
     query: str | None = None,
     topic_keys: list[str] | None = None,
@@ -2104,7 +1178,6 @@ async def discover_papers(
 # Tool 10: source-ingest
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["source_ingest"])
 async def source_ingest(
     mode: str = "approved_inbox",
     identifier: str = "",
@@ -2470,7 +1543,6 @@ async def add_paper(
 # Tool 11: wiki-lint
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["wiki_lint"])
 async def lint_vault() -> dict:
     """Run deterministic structural health checks on the vault.
 
@@ -2488,7 +1560,6 @@ async def lint_vault() -> dict:
 # Tool 12: library-stats
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["library_stats"])
 async def vault_stats() -> dict:
     """Compute vault statistics: paper counts per stage, compilation rate,
     wiki article counts, per-topic breakdowns, and last activity timestamp.
@@ -2503,7 +1574,6 @@ async def vault_stats() -> dict:
 # Tool 13: idea-discover
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["idea_discover"])
 async def analyze_knowledge_graph(user_topics: list[str] | None = None) -> dict:
     """Analyze the vault's concept-paper graph to find structural research gaps.
 
@@ -2550,7 +1620,6 @@ async def analyze_knowledge_graph(user_topics: list[str] | None = None) -> dict:
 # Tool 15: update_learned_preferences
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def update_learned_preferences(
     accepted_keywords: list[str] | None = None,
     rejected_keywords: list[str] | None = None,
@@ -2620,7 +1689,6 @@ async def update_learned_preferences(
 # Tool 16: upsert_wiki_article
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def upsert_wiki_article(
     citekey: str,
     section: str,
@@ -2709,7 +1777,6 @@ async def upsert_wiki_article(
 # Tool 17: register_concept
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def register_concept_tool(
     canonical: str,
     concept_type: str = "concept",
@@ -2741,7 +1808,6 @@ async def register_concept_tool(
 # Tool 18: resolve_concept
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def resolve_concept_tool(surface_form: str) -> dict:
     """Resolve a surface form to its canonical concept in the registry.
 
@@ -2764,7 +1830,6 @@ async def resolve_concept_tool(surface_form: str) -> dict:
 # Tool 19: merge_concepts
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def merge_concepts_tool(
     from_id: str,
     to_id: str,
@@ -2795,7 +1860,6 @@ async def merge_concepts_tool(
 # Tool 20: list_concepts
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def list_concepts_tool(
     concept_type: str | None = None,
     min_paper_count: int = 0,
@@ -2820,7 +1884,6 @@ async def list_concepts_tool(
 # Tool 21: reconcile_maintenance
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def reconcile_maintenance(auto_confirm: bool = True) -> dict:
     """Run lint + stats, then generate deduplicated maintenance tasks.
 
@@ -2853,7 +1916,6 @@ async def reconcile_maintenance(auto_confirm: bool = True) -> dict:
 # Tool 22: get_maintenance_queue
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def get_maintenance_queue(
     task_type: str | None = None,
     status: str | None = None,
@@ -2880,7 +1942,6 @@ async def get_maintenance_queue(
 # Tool 23: resolve_maintenance_task
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def resolve_maintenance_task(
     task_id: int,
     action: str = "confirm",
@@ -2913,7 +1974,6 @@ async def resolve_maintenance_task(
 # Tool 24: export_db_state
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def export_db_state() -> dict:
     """Export authority-layer database tables to JSON for backup.
 
@@ -2933,7 +1993,6 @@ async def export_db_state() -> dict:
 # Tool 25: backfill_registry
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def backfill_registry() -> dict:
     """Populate the concept registry from existing wiki frontmatter.
 
@@ -2957,7 +2016,6 @@ async def backfill_registry() -> dict:
 # Tool 25: paper-distill-extract
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["paper_distill_extract"])
 async def write_compile_ir(citekey: str, ir_json: dict) -> dict:
     """Validate and persist an Extract-stage IR produced by the agent.
 
@@ -2985,7 +2043,6 @@ async def write_compile_ir(citekey: str, ir_json: dict) -> dict:
 # Tool 26: knowledge-compile-resolve
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_resolve"])
 async def resolve_compile_ir(citekeys: list[str]) -> list[dict]:
     """Entity-link candidate_concepts in raw IRs against the concept registry.
 
@@ -3015,7 +2072,6 @@ async def resolve_compile_ir(citekeys: list[str]) -> list[dict]:
 # Tool 27: knowledge-compile-publish
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_publish"])
 async def commit_compile_result(
     page_id: str,
     page_type: str,
@@ -3052,7 +2108,6 @@ async def commit_compile_result(
 # Tool 28: idea-tension-signals
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["idea_tension_signals"])
 async def query_tension_signals(
     min_occurrence: int = 2,
     topic: str | None = None,
@@ -3086,7 +2141,6 @@ async def query_tension_signals(
 # Tool 29: knowledge-compile-status
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["knowledge_compile_status"])
 async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
     """Get the compile state record for a wiki page.
 
@@ -3110,7 +2164,6 @@ async def get_compile_state(page_id: str, page_type: str = "paper") -> dict:
 # Tool 31: execute_maintenance_task
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def execute_maintenance_task(task_id: int) -> dict:
     """Execute a confirmed maintenance task through the Phase 3 controller.
 
@@ -3145,7 +2198,6 @@ async def execute_maintenance_task(task_id: int) -> dict:
 # Tool 32: enqueue_maintenance_task
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 async def enqueue_maintenance_task(
     task_type: str,
     payload: dict,
@@ -3180,7 +2232,6 @@ async def enqueue_maintenance_task(
 # Tool 32: idea-trigger-candidates
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name=_MCP_TOOL_SURFACE["idea_trigger_candidates"])
 async def query_trigger_candidates(user_topics: list[str] | None = None) -> dict:
     """Return advanced Phase 3 trigger candidates for maintenance and ideation.
 
@@ -3211,13 +2262,3 @@ async def query_trigger_candidates(user_topics: list[str] | None = None) -> dict
     }
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-def main():
-    mcp.run()
-
-
-if __name__ == "__main__":
-    main()
