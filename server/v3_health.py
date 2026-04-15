@@ -15,6 +15,7 @@ _WIKILINK_RE = re.compile(
     r"\[\[(?P<target>[^\]|#]+)(?P<section>#[^\]|]+)?(?P<label>\|[^\]]+)?\]\]"
 )
 _NON_WORD_RE = re.compile(r"[\W_]+", re.UNICODE)
+_FOOTER_CUES = ("related:", "see also:", "links:", "references:")
 
 
 def _surface_key(value: str) -> str:
@@ -85,6 +86,15 @@ def _repeated_link_issues(path: Path, text: str) -> list[dict[str, str]]:
     return issues
 
 
+def _malformed_link_issues(path: Path, text: str) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        unmatched = _WIKILINK_RE.sub("", line)
+        if "[[" in unmatched or "]]" in unmatched:
+            issues.append({"code": "malformed_link", "path": str(path), "line": str(line_no)})
+    return issues
+
+
 def _as_aliases(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -146,11 +156,18 @@ def _link_quality_issues(path: Path, text: str, known_surfaces: set[str]) -> lis
     issues: list[dict[str, str]] = []
     lines = text.splitlines()
     footer_start = max(1, len(lines) - 7)
+    footer_link_count = 0
+    has_footer_cue = False
+    reported_footer = False
 
     for line_no, line in enumerate(lines, start=1):
         matches = list(_WIKILINK_RE.finditer(line))
+        if line_no >= footer_start:
+            footer_link_count += len(matches)
+            has_footer_cue = has_footer_cue or any(cue in line.casefold() for cue in _FOOTER_CUES)
         if len(matches) >= 4 and line_no >= footer_start:
             issues.append({"code": "template_footer_link", "path": str(path), "line": str(line_no)})
+            reported_footer = True
         for match in matches:
             target = match.group("target").strip()
             key = _surface_key(target)
@@ -163,6 +180,8 @@ def _link_quality_issues(path: Path, text: str, known_surfaces: set[str]) -> lis
                         "line": str(line_no),
                     }
                 )
+    if not reported_footer and has_footer_cue and footer_link_count >= 3:
+        issues.append({"code": "template_footer_link", "path": str(path)})
     return issues
 
 
@@ -173,8 +192,7 @@ def lint_vault_v3(vault_path: Path) -> dict[str, Any]:
         if _frontmatter_line_count(text) > 20:
             issues.append({"code": "frontmatter_too_large", "path": str(path)})
         if "[[" in text or "]]" in text:
-            if text.count("[[") != text.count("]]"):
-                issues.append({"code": "malformed_link", "path": str(path)})
+            issues.extend(_malformed_link_issues(path, text))
             issues.extend(_repeated_link_issues(path, text))
             issues.extend(_link_quality_issues(path, text, known_surfaces))
     return {"ok": True, "issues": issues}

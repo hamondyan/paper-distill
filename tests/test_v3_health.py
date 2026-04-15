@@ -71,6 +71,32 @@ def test_lint_vault_flags_dead_links_alias_ambiguity_and_footer_linking(
     assert {"dead_link", "alias_ambiguity", "template_footer_link"} <= codes
 
 
+def test_lint_vault_flags_balanced_malformed_links_and_split_footer_links(
+    tmp_path: Path,
+) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text("# Transformer\n", encoding="utf-8")
+    concept_dir.joinpath("attention.md").write_text("# Attention\n", encoding="utf-8")
+    concept_dir.joinpath("rag.md").write_text("# RAG\n", encoding="utf-8")
+    paper_dir.joinpath("demo.md").write_text(
+        "# Demo\n\n"
+        "Malformed but balanced: [[|Empty Target]]\n\n"
+        "Related:\n"
+        "- [[Transformer]]\n"
+        "- [[Attention]]\n"
+        "- [[RAG]]\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+    codes = {issue["code"] for issue in result["issues"]}
+
+    assert {"malformed_link", "template_footer_link"} <= codes
+
+
 def test_merge_concept_rewrites_links_updates_aliases_and_refreshes_qmd(
     tmp_path: Path,
     monkeypatch,
