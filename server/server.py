@@ -1,20 +1,29 @@
-"""Thin Paper Distill MCP entrypoint."""
+"""Thin Paper Distill MCP entrypoint.
+
+Registers 12 consolidated MCP tools across 5 domain groups:
+    core:      query-library, update-preferences
+    intake:    search-papers, discover, ingest, read-paper
+    knowledge: compile, write-wiki, concept, maintain
+    ideas:     idea-analyze
+    health:    vault-health
+"""
 from __future__ import annotations
 
 from fastmcp import FastMCP
 
 from server import server_runtime as _rt
-from server.idea_tools import register_idea_tools
-from server.knowledge_tools import register_knowledge_tools
-from server.library_tools import register_library_tools
-from server.source_tools import register_source_tools
+from server.tools_core import register_core_tools
+from server.tools_intake import register_intake_tools
+from server.tools_knowledge import register_knowledge_tools
+from server.tools_ideas import register_idea_tools
+from server.tools_health import register_health_tools
 
 mcp = FastMCP("paper-distill")
 
+# ---- Internal bindings for cross-module calls within server_runtime ----
 get_vault_path = _rt.get_vault_path
 get_topics = _rt.get_topics
 get_paper_distill_settings = _rt.get_paper_distill_settings
-build_crgp_dnl = _rt.build_crgp_dnl
 bind_paper_to_arxiv = _rt.bind_paper_to_arxiv
 capture_arxiv_source = _rt.capture_arxiv_source
 _zotero_add = _rt._zotero_add
@@ -33,7 +42,6 @@ _SYNC_BINDINGS = (
     "get_topics",
     "get_paper_distill_settings",
     "search_papers",
-    "build_crgp_dnl",
     "bind_paper_to_arxiv",
     "capture_arxiv_source",
     "_zotero_add",
@@ -110,10 +118,12 @@ for _name in _DELEGATED_ASYNC_NAMES:
 _capture_options = _delegate_sync("_capture_options")
 _selected_topics = _delegate_sync("_selected_topics")
 
-register_library_tools(mcp)
-register_source_tools(mcp)
+# ---- Register consolidated MCP tools (12 total) ----
+register_core_tools(mcp)
+register_intake_tools(mcp)
 register_knowledge_tools(mcp)
 register_idea_tools(mcp)
+register_health_tools(mcp)
 
 
 def main():

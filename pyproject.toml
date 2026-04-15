@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 paper-distill-server = "server.server:main"
+paper-distill-admin = "server.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["server"]

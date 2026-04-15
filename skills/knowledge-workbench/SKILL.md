@@ -9,50 +9,88 @@ description: Use when the user asks research questions against the approved vaul
 
 Use approved evidence and hidden IR to answer, compile, and maintain the Obsidian wiki. Read machine data through `query-library`; never treat `_index.md` files as backend truth.
 
+## Available Tools
+
+| Tool | Purpose |
+|------|---------|
+| `query-library` | Unified read-only query (sections, stats, lint, compile_status, concepts) |
+| `compile` | Unified compile pipeline (prepare → save for CRGP; or extract_ir → resolve_ir → publish for EDC) |
+| `write-wiki` | One-off wiki writes outside compile (concept stubs, method pages) |
+| `concept` | Concept registry: register / resolve / merge |
+| `maintain` | Maintenance task lifecycle: reconcile / queue / confirm / reject / execute / enqueue |
+| `vault-health` | Combined lint + stats health report |
+
 ## Query
 
 1. Classify the question: factual, comparative, landscape, cross-cutting, or coverage gap.
-2. Call `query-library` for relevant sections; prefer `wiki/papers`, concepts, methods, topics, and `sources/evidence`.
+2. Call `query-library(view="sections", section=...)` for relevant sections; prefer `wiki/papers`, concepts, methods, topics, and `sources/evidence`.
 3. Read the relevant pages, follow backlinks, and state gaps explicitly instead of inventing coverage.
 4. Save substantive answers to `insights/queries/{slug}.md` with frontmatter for question, source pages, referenced papers/concepts/topics, derived actions, and promotion targets.
 5. Report what was answered, what asset was created, and what could be compiled or searched next.
 
 ## Compile
 
-Use the EDC path for structured compilation:
+Use the unified `compile` tool in **two steps**:
 
-1. **Extract:** read `sources/evidence` plus source PDF/HTML context; submit required IR through `paper-distill-extract(citekey, ir_json)` so hidden JSON lands in `.state/ir/`.
-2. **Resolve:** call `knowledge-compile-resolve(citekeys)` to normalize concepts through the registry.
-3. **Write:** call `knowledge-compile-publish(page_id, page_type, content, frontmatter, ir_path, deps)` to refresh managed sections while preserving manual sections such as `## My Notes`.
+1. **Prepare:** call `compile(citekey, step="prepare")` — loads source evidence, paper metadata, and any existing sections.
+2. **Generate + Save:** while reading the paper, generate both 7 CRGP sections **and** the structured `metadata` dict; then call `compile(citekey, step="save", sections={...}, metadata={...})`.
+
+The `save` step handles everything atomically: renders the wiki markdown, writes the IR to `.state/ir/`, auto-registers and links concepts, and updates SQLite `compile_state` (including `ir_path`).
+
+**`metadata` schema** (submit alongside `sections` in the same `save` call):
+
+```yaml
+candidate_concepts:
+  - name: "Vision-Language-Action Models"
+    type: method          # concept | method | topic
+    aliases: ["VLA"]      # optional
+tension_fields:
+  limitations:      [str | {claim, source_ref?}]   # required
+  assumptions:      [str | {claim, source_ref?}]   # required
+  open_questions:   [str | {question, source_ref?}] # required
+  negative_results: [str | {claim, source_ref?}]   # required
+  failure_modes:    [str | {claim, source_ref?}]   # optional
+  transfer_constraints: [str | {claim, source_ref?}] # optional
+benchmark_scope: "..."   # optional
+claimed_novelty: "..."   # optional
+topics: [...]            # optional
+```
+
+`metadata` is **always recommended** — omitting it leaves `compile_state.ir_path` null, which silently prevents this paper's limitations and assumptions from appearing in `idea-analyze` gap analysis.
+
+For lightweight prose refresh only (no re-analysis), `step="save"` without `metadata` is acceptable.
+
+> **Internal note**: `extract_ir / resolve_ir / publish` steps remain available for programmatic pipelines but are not part of the standard user workflow.
 
 For lightweight refresh after intake, update canonical `wiki/papers` from evidence + hidden IR, add backlinks, and create concept stubs only when a concept is referenced by at least two papers.
 
 ## Maintain
 
-1. Run `wiki-lint`, then `library-stats` for deterministic structure and coverage.
-2. Use `reconcile_maintenance(auto_confirm=true|false)` and inspect `get_maintenance_queue(...)`.
-3. Execute confirmed merge/promote/refresh tasks with `execute_maintenance_task(task_id)`.
-4. For manual work, use `enqueue_maintenance_task(...)` first, then execute only after adjudication.
-5. Present a maintainer report: broken links, missing metadata, uncompiled evidence, stale topics, orphaned articles, confirmed tasks, and likely knowledge impact.
+1. Run `vault-health()` for combined structural checks and coverage stats.
+2. Use `maintain(action="reconcile", auto_confirm=true|false)` to generate maintenance tasks.
+3. View tasks with `maintain(action="queue")`.
+4. Execute confirmed tasks with `maintain(action="execute", task_id=...)`.
+5. For manual work, use `maintain(action="enqueue", task_type=..., payload=...)` first, then execute only after adjudication.
+6. Present a maintainer report: broken links, missing metadata, uncompiled evidence, stale topics, orphaned articles, confirmed tasks, and likely knowledge impact.
 
 ## Write Path Rules
 
-Two tools can both write wiki pages but serve different purposes — **never mix them in the same compile flow**:
+Two tools can write wiki pages — **never mix them for the same page**:
 
 | Tool | Purpose | Updates `compile_state`? |
 |------|---------|--------------------------|
-| `knowledge-compile-publish` | EDC Write phase — records `content_hash`, deps, version | **Yes** |
-| `upsert_wiki_article` | One-off writes outside EDC (concept stubs, method pages) | **No** |
+| `compile(step="save")` | Compile pipeline — records content_hash, deps, version, ir_path | **Yes** |
+| `write-wiki` | One-off writes outside compile (concept stubs, method pages) | **No** |
 
 Rules:
-1. Any paper wiki page that goes through Extract → Resolve → Write **must** use `knowledge-compile-publish`
-2. Concept/method stubs created outside the EDC flow use `upsert_wiki_article`
-3. **Never** call `upsert_wiki_article` on a page previously written by `knowledge-compile-publish` — it silently corrupts `content_hash`
-4. When unsure, call `knowledge-compile-status(page_id, page_type)` first
+1. Any paper wiki page that goes through compile **must** use the `compile` tool
+2. Concept/method stubs created outside compile use `write-wiki`
+3. **Never** call `write-wiki` on a page previously written by `compile` — it silently corrupts content_hash
+4. When unsure, call `query-library(view="compile_status", page_id=...)` first
 
 ## Manual Section Protection
 
-Before calling `knowledge-compile-publish`:
+Before calling `compile(step="publish")`:
 1. Read the existing file and check for sections marked `## My Notes`, `## Personal Takeaways`, `## Action Items`, or `## Follow-up`
 2. If present: append those sections **verbatim** after the generated content block before passing to the tool
 3. The tool itself does not merge — merging is the caller's (your) responsibility
@@ -61,8 +99,8 @@ Before calling `knowledge-compile-publish`:
 ## Concept Registration Rules
 
 Tool behavior and editorial rules are intentionally separate:
-- `knowledge-compile-resolve` auto-registers on first reference (the registry entry is needed for the Resolve phase)
-- **The "two-paper rule" is an editorial rule**: only create a `wiki/concepts/{slug}.md` stub page after `list_concepts_tool(min_paper_count=2)` confirms the concept appears in two or more papers
+- `compile(step="resolve_ir")` auto-registers on first reference (the registry entry is needed for the Resolve phase)
+- **The "two-paper rule" is an editorial rule**: only create a `wiki/concepts/{slug}.md` stub page after `query-library(view="concepts", min_paper_count=2)` confirms the concept appears in two or more papers
 - Registry entry exists ≠ wiki page exists
 
 ## Rules
@@ -85,8 +123,3 @@ Tool behavior and editorial rules are intentionally separate:
 - Validate schema and path safety
 - Update machine state (compile_state, concept_registry, maintenance_queue)
 - Report facts and errors; never make editorial decisions
-
-**Neither layer does:**
-- Tools do not judge whether a paper is "good enough" — that is the human inbox decision
-- This Skill does not write files directly — all file writes go through tools
-- Tools do not read user intent — they only execute the parameters they receive

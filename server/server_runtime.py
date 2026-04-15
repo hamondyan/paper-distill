@@ -16,7 +16,6 @@ from typing import Any
 from server.arxiv_capture import (
     CleanedArxivDocument,
     bind_paper_to_arxiv,
-    build_crgp_dnl,
     capture_arxiv_source,
     clean_ar5iv_html,
 )
@@ -65,7 +64,6 @@ from server.vault_ops import (
     append_knowledge_log,
     build_inbox_body,
     build_source_evidence_body,
-    build_wiki_paper_body,
     citekey_for_paper,
     ensure_vault_structure,
     inbox_note_path,
@@ -113,7 +111,6 @@ from server.paper_frontmatter import (
     _processed_success,
     _source_frontmatter,
     _successful_capture_updates,
-    _wiki_frontmatter,
 )
 from server.capture_settings import (
     _capture_method_from_source_doc,
@@ -150,7 +147,6 @@ from server.discovery_helpers import (
 )
 from server.ingestion_helpers import (
     _ingestion_paths,
-    _wiki_body_payload,
 )
 
 logging.basicConfig(
@@ -174,6 +170,8 @@ _MCP_TOOL_SURFACE = {
     "knowledge_compile_resolve": "knowledge-compile-resolve",
     "knowledge_compile_publish": "knowledge-compile-publish",
     "knowledge_compile_status": "knowledge-compile-status",
+    "crgp_prepare_context": "crgp-prepare-context",
+    "crgp_save_sections": "crgp-save-sections",
 }
 
 # Source registry
@@ -242,6 +240,22 @@ async def _search_with_timeout(fn, query: str, max_results: int, name: str):
 
 
 
+
+
+_CRGP_SECTION_KEYS = (
+    "Context", "Related Work", "Gap", "Proposal",
+    "Key Results", "Discussion", "Next Steps",
+)
+
+
+def _empty_dnl_note(paper: dict) -> dict:
+    """Stub DNL note with empty sections — CRGP content is filled by LLM later."""
+    return {
+        "paper_id": paper_id(paper),
+        "sections": {k: "" for k in _CRGP_SECTION_KEYS},
+        "evidence": {},
+        "confidence": 0.0,
+    }
 
 
 async def _prepare_ingestion_candidate(
@@ -320,8 +334,6 @@ async def _write_ingestion_outputs(
     dnl_note: dict,
     capture_method: str = "ar5iv_html_cleaned",
 ) -> tuple[Path, Path, str, str]:
-    from server.compile_ir import commit_compile_result as commit_compiled_page
-
     capture_options = _capture_options()
     capture_method = capture_method or _capture_method_from_source_doc(source_doc)
     capture_fidelity = str(getattr(source_doc, "capture_fidelity", "unknown"))
@@ -365,43 +377,6 @@ async def _write_ingestion_outputs(
             source_structured_path,
             _source_doc_sidecar_payload(source_doc),
         )
-    wiki_frontmatter = _wiki_frontmatter(
-        research_item,
-        source_rel_path,
-        source_structured_rel_path,
-        zotero_mode,
-        zotero_status,
-        zotero_import_path,
-        zotero_key,
-        zotero_uri,
-        dnl_note.get("confidence", 0.5),
-        capture_fidelity,
-    )
-    wiki_body = build_wiki_paper_body(
-        _wiki_body_payload(
-            research_item,
-            paper,
-            source_rel_path,
-            source_structured_rel_path,
-            zotero_mode,
-            zotero_status,
-            zotero_import_path,
-            zotero_key,
-            zotero_uri,
-            capture_fidelity,
-            dnl_note,
-        )
-    )
-    await asyncio.to_thread(
-        commit_compiled_page,
-        vault_path,
-        citekey,
-        "paper",
-        wiki_body,
-        wiki_frontmatter,
-        None,
-        [],
-    )
     return source_path, wiki_path, source_rel_path, wiki_rel_path
 
 
@@ -1285,7 +1260,7 @@ async def process_inbox(
             conflicts_or_skips.append(f"{candidate.get('paper_id', '')}: {error}")
             continue
 
-        dnl_note = build_crgp_dnl(paper, source_doc)
+        dnl_note = _empty_dnl_note(paper)
         paper["citekey"] = citekey_for_paper(paper)
         zotero_items = await _zotero_add(
             [paper],
@@ -1346,7 +1321,7 @@ async def process_inbox(
             ),
         )
         existing_raw_ids.add(pid)
-        created_pages.extend([source_rel_path, wiki_rel_path])
+        created_pages.extend([source_rel_path])
         updated_pages.append(str(candidate.get("_path", "")))
         processed_titles.append(str(candidate.get("title", "")).strip() or candidate.get("paper_id", "paper"))
         processed.append(
@@ -1389,11 +1364,11 @@ async def add_paper(
     topic_keys: list[str] | None = None,
     collection_name: str = "",
 ) -> dict:
-    """Directly add one explicit paper into source evidence and wiki/papers.
+    """Directly add one explicit paper into source evidence.
 
     Accepts a DOI, arXiv identifier, arXiv URL, DOI URL, or direct PDF URL.
     Unlike discovery, this bypasses inbox because the paper is already
-    user-approved.
+    user-approved. The wiki/papers page is created later by the compile step.
     """
     vault_path = get_vault_path()
     if not vault_path:
@@ -1456,7 +1431,7 @@ async def add_paper(
         }
 
     candidate["paper_id"] = paper.get("paper_id", candidate.get("paper_id", ""))
-    dnl_note = build_crgp_dnl(paper, source_doc)
+    dnl_note = _empty_dnl_note(paper)
     paper["citekey"] = citekey_for_paper(paper)
 
     zotero_key = ""
@@ -1504,7 +1479,7 @@ async def add_paper(
 
     impact = normalize_knowledge_impact(
         {
-            "created_pages": [source_rel_path, wiki_rel_path],
+            "created_pages": [source_rel_path],
             "conflicts_or_skips": [zotero_warning] if zotero_warning else [],
         }
     )
@@ -1512,7 +1487,7 @@ async def add_paper(
         vault_path,
         event_type="source-ingest",
         title=paper.get("title", "") or paper.get("paper_id", "paper"),
-        summary="Added a user-approved paper directly into sources/evidence and wiki/papers.",
+        summary="Added a user-approved paper into sources/evidence. Run /compile to generate the wiki page.",
         impact=impact,
     )
 
@@ -2262,3 +2237,61 @@ async def query_trigger_candidates(user_topics: list[str] | None = None) -> dict
     }
 
 
+
+
+# ---------------------------------------------------------------------------
+# Tools: crgp-prepare-context / crgp-save-sections
+# ---------------------------------------------------------------------------
+
+async def prepare_crgp_context(citekey: str) -> dict:
+    """Return paper source evidence and metadata for LLM-driven CRGP generation.
+
+    Reads the wiki frontmatter, source evidence markdown, and structured
+    sidecar (figures, tables, equations) so the LLM has everything needed
+    to write grounded CRGP sections.  Also returns any previously stored
+    sections from compile_state.managed_blocks_json.
+
+    Args:
+        citekey: Paper citekey (e.g. "brohan2023rt2").
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.crgp_tools import prepare_crgp_context as _prepare
+    return await asyncio.to_thread(_prepare, vault_path, citekey)
+
+
+async def save_crgp_sections(
+    citekey: str,
+    sections: dict,
+    confidence: float = 0.93,
+    metadata: dict | None = None,
+) -> dict:
+    """Persist LLM-generated CRGP sections to the wiki MD and SQLite compile_state.
+
+    Rebuilds the full wiki page body from the provided sections and the
+    existing frontmatter metadata, then calls commit_compile_result to
+    atomically update both the markdown file and compile_state (version
+    bump, managed_blocks_json, content_hash).
+
+    sections must contain all 7 keys:
+        Context, Related Work, Gap, Proposal, Key Results, Discussion, Next Steps
+
+    When ``metadata`` is provided (candidate_concepts + tension_fields), the
+    function also writes the IR to .state/ir/ and resolves concepts, so that
+    aggregate_tension_signals() can include this paper in gap analysis.
+
+    Args:
+        citekey:    Paper citekey.
+        sections:   Dict mapping section name → markdown prose text.
+        confidence: Confidence to record (default 0.93 for LLM-generated).
+        metadata:   Optional structured metadata for IR persistence (see
+                    crgp_tools.save_crgp_sections for full schema).
+    """
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"error": "VAULT_PATH not configured."}
+
+    from server.crgp_tools import save_crgp_sections as _save
+    return await asyncio.to_thread(_save, vault_path, citekey, sections, confidence, metadata)

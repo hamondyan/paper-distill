@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from server.arxiv_capture import bind_paper_to_arxiv, build_crgp_dnl, capture_arxiv_source, clean_ar5iv_html
+from server.arxiv_capture import bind_paper_to_arxiv, capture_arxiv_source, clean_ar5iv_html
 
 
 _SAMPLE_AR5IV_HTML = """
@@ -110,28 +110,6 @@ class ArxivCaptureTest(unittest.TestCase):
         self.assertNotIn("Example reference that should be removed", cleaned.markdown)
         self.assertEqual(cleaned.appendix_snapshot[0]["heading"], "Appendix A Additional Details")
         self.assertNotIn("second appendix paragraph", cleaned.markdown)
-
-    def test_build_crgp_dnl_uses_cleaned_sections(self) -> None:
-        cleaned = clean_ar5iv_html(_SAMPLE_AR5IV_HTML, min_body_chars=300)
-        note = build_crgp_dnl(
-            {
-                "title": cleaned.title,
-                "authors": ["Jane Doe"],
-                "year": 2025,
-                "arxiv_id": "2501.00001",
-            },
-            cleaned,
-        )
-
-        self.assertIn("parallel decoding", note["sections"]["Proposal"].lower())
-        self.assertIn("benchmark", note["sections"]["Key Results"].lower())
-        self.assertIn("throughput", note["sections"]["Key Results"].lower())
-        self.assertIn("Equation E1", note["evidence"]["Proposal"])
-        self.assertIn("Table 1", note["evidence"]["Key Results"])
-        self.assertIn("Appendix A Additional Details", note["evidence"]["Discussion"])
-        self.assertIn("4 Discussion", note["evidence"]["Next Steps"])
-        self.assertNotIn("snapshot", " ".join(sum(note["evidence"].values(), [])).lower())
-        self.assertGreaterEqual(note["confidence"], 0.7)
 
     def test_clean_ar5iv_html_supports_drop_appendix(self) -> None:
         cleaned = clean_ar5iv_html(_SAMPLE_AR5IV_HTML, appendix_policy="drop", min_body_chars=300)

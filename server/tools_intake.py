@@ -1,0 +1,209 @@
+"""Intake MCP tools — paper discovery, ingestion, and reading.
+
+Registers:
+    search-papers  — cross-source academic paper search
+    discover       — search + score + save candidates to inbox
+    ingest         — persist approved papers to sources/evidence
+    read-paper     — read paper metadata and/or full text
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from fastmcp import FastMCP
+
+from server.server_runtime import (
+    search_papers as _search_papers,
+    discover_papers as _discover_papers,
+    source_ingest as _source_ingest,
+    resolve_metadata as _resolve_metadata,
+    fetch_pdf_text as _fetch_pdf_text,
+)
+
+_DOI_RE = re.compile(r"^10\.\d{4,9}/")
+_ARXIV_ID_RE = re.compile(r"^\d{4}\.\d{4,5}(?:v\d+)?$")
+
+
+# ------------------------------------------------------------------
+# Tool 3: search-papers
+# ------------------------------------------------------------------
+
+async def search_papers(
+    query: str,
+    sources: list[str] | None = None,
+    max_results: int = 20,
+) -> list[dict[str, Any]]:
+    """Search academic papers across multiple sources.
+
+    Searches arXiv, Semantic Scholar, OpenAlex, DBLP, and Papers with Code
+    in parallel, then deduplicates and merges results.
+
+    Use ``discover`` instead if you also want scoring and inbox staging.
+    Use this tool when you only want raw search results.
+
+    Args:
+        query: Search query string.
+        sources: Subset of sources to search (default: all configured).
+        max_results: Maximum results per source (default 20).
+    """
+    return await _search_papers(query=query, sources=sources, max_results=max_results)
+
+
+# ------------------------------------------------------------------
+# Tool 4: discover
+# ------------------------------------------------------------------
+
+async def discover(
+    query: str | None = None,
+    topic_keys: list[str] | None = None,
+    max_results_per_source: int | None = None,
+    save_to_inbox: bool = True,
+) -> dict[str, Any]:
+    """Discover papers: search, score, and optionally save to inbox.
+
+    Performs multi-source search, weighted scoring (topic fit, recency,
+    novelty, venue tier, etc.), and arXiv binding.  With
+    ``save_to_inbox=True`` (default), writes candidate notes to the
+    inbox for human approval.
+
+    Args:
+        query: Search query (optional; uses configured topics if omitted).
+        topic_keys: Topic keys to search (from settings.json topics).
+        max_results_per_source: Override per-source result cap.
+        save_to_inbox: Write candidates to inbox notes (default True).
+    """
+    return await _discover_papers(
+        query=query,
+        topic_keys=topic_keys,
+        max_results_per_source=max_results_per_source,
+        save_to_inbox=save_to_inbox,
+    )
+
+
+# ------------------------------------------------------------------
+# Tool 5: ingest
+# ------------------------------------------------------------------
+
+async def ingest(
+    mode: str = "approved_inbox",
+    identifier: str = "",
+    status: str = "approved",
+    limit: int = 20,
+    collection_name: str = "",
+    topic_keys: list[str] | None = None,
+) -> dict[str, Any]:
+    """Persist papers into the sources/evidence truth layer.
+
+    Two modes:
+    - ``approved_inbox``: process inbox notes with the given status.
+    - ``direct``: ingest a specific paper by DOI / arXiv ID / URL.
+
+    Args:
+        mode: "approved_inbox" or "direct".
+        identifier: For mode=direct — DOI, arXiv ID, or URL.
+        status: For mode=approved_inbox — filter by status (default "approved").
+        limit: Max items to process (default 20).
+        collection_name: Optional Zotero collection override.
+        topic_keys: Topic keys to tag the ingested paper.
+    """
+    return await _source_ingest(
+        mode=mode,
+        identifier=identifier,
+        status=status,
+        limit=limit,
+        collection_name=collection_name,
+        topic_keys=topic_keys,
+    )
+
+
+# ------------------------------------------------------------------
+# Tool 6: read-paper
+# ------------------------------------------------------------------
+
+async def read_paper(
+    identifier: str,
+    mode: str = "auto",
+    max_pages: int = 10,
+) -> dict[str, Any]:
+    """Read paper metadata and/or full text from a DOI, arXiv ID, or URL.
+
+    Modes:
+    - ``auto`` (default): detects identifier type. DOI → metadata;
+      arXiv ID / URL → full text; DOI with open-access → both.
+    - ``metadata``: resolve metadata via CrossRef + Unpaywall.
+    - ``fulltext``: fetch and extract text (ar5iv HTML or PDF).
+
+    Args:
+        identifier: DOI (e.g. "10.48550/arxiv.2410.24164"),
+                    arXiv ID (e.g. "2410.24164"), or URL.
+        mode: "auto" | "metadata" | "fulltext".
+        max_pages: Max PDF pages to extract (default 10).
+    """
+    identifier = identifier.strip()
+    result: dict[str, Any] = {"identifier": identifier, "mode": mode}
+
+    if mode == "metadata":
+        meta = await _resolve_metadata(identifier)
+        result["metadata"] = meta
+        return result
+
+    if mode == "fulltext":
+        url = _to_fulltext_url(identifier)
+        text = await _fetch_pdf_text(url, max_pages=max_pages)
+        result["fulltext"] = text
+        return result
+
+    # auto mode
+    is_doi = bool(_DOI_RE.match(identifier))
+    is_arxiv_id = bool(_ARXIV_ID_RE.match(identifier))
+
+    if is_doi:
+        meta = await _resolve_metadata(identifier)
+        result["metadata"] = meta
+        # If there's an open-access URL, also fetch text
+        oa_url = meta.get("open_access_url")
+        if oa_url:
+            try:
+                text = await _fetch_pdf_text(oa_url, max_pages=max_pages)
+                result["fulltext"] = text
+            except Exception:
+                result["fulltext_error"] = "Failed to fetch open-access text"
+        return result
+
+    if is_arxiv_id:
+        url = f"https://arxiv.org/abs/{identifier}"
+        text = await _fetch_pdf_text(url, max_pages=max_pages)
+        result["fulltext"] = text
+        # Also try to get metadata via DOI
+        doi = f"10.48550/arxiv.{identifier}"
+        try:
+            meta = await _resolve_metadata(doi)
+            if meta and not meta.get("error"):
+                result["metadata"] = meta
+        except Exception:
+            pass
+        return result
+
+    # Assume URL
+    text = await _fetch_pdf_text(identifier, max_pages=max_pages)
+    result["fulltext"] = text
+    return result
+
+
+def _to_fulltext_url(identifier: str) -> str:
+    """Convert an identifier to a fetchable URL."""
+    if _ARXIV_ID_RE.match(identifier):
+        return f"https://arxiv.org/abs/{identifier}"
+    return identifier
+
+
+# ------------------------------------------------------------------
+# Registration
+# ------------------------------------------------------------------
+
+def register_intake_tools(mcp: FastMCP) -> None:
+    mcp.tool(name="search-papers")(search_papers)
+    mcp.tool(name="discover")(discover)
+    mcp.tool(name="ingest")(ingest)
+    mcp.tool(name="read-paper")(read_paper)

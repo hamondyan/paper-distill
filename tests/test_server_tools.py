@@ -102,19 +102,6 @@ def _fake_source_doc(title: str, abstract: str, capture_fidelity: str = "low") -
     )
 
 
-def _fake_dnl() -> dict:
-    sections = {
-        "Context": "Context",
-        "Related Work": "Related Work",
-        "Gap": "Gap",
-        "Proposal": "Proposal",
-        "Key Results": "Key Results",
-        "Discussion": "Discussion",
-        "Next Steps": "Next Steps",
-    }
-    evidence = {key: ["Recovered Text"] for key in sections}
-    return {"sections": sections, "evidence": evidence, "confidence": 0.72}
-
 
 def _runtime(tmpdir: str, mode: str = "local_first", library_id: str = "", api_key: str = "") -> dict:
     return {
@@ -264,22 +251,21 @@ class ProcessInboxRegressionTest(unittest.TestCase):
                                 )
                             ),
                         ):
-                            with patch("server.server.build_crgp_dnl", return_value=_fake_dnl()):
-                                with patch(
-                                    "server.server._zotero_add",
-                                    new=AsyncMock(
-                                        return_value=[
-                                            {
-                                                "key": "",
-                                                "zotero_uri": "",
-                                                "zotero_mode": "local_first",
-                                                "zotero_status": "local_exported",
-                                                "zotero_import_path": "",
-                                            }
-                                        ]
-                                    ),
-                                ):
-                                    result = asyncio.run(process_inbox())
+                            with patch(
+                                "server.server._zotero_add",
+                                new=AsyncMock(
+                                    return_value=[
+                                        {
+                                            "key": "",
+                                            "zotero_uri": "",
+                                            "zotero_mode": "local_first",
+                                            "zotero_status": "local_exported",
+                                            "zotero_import_path": "",
+                                        }
+                                    ]
+                                ),
+                            ):
+                                result = asyncio.run(process_inbox())
 
             self.assertEqual(len(result["processed"]), 1)
             source_evidence = query_vault_sync(tmpdir, section="source_evidence", detail="full")
@@ -289,7 +275,8 @@ class ProcessInboxRegressionTest(unittest.TestCase):
                 "pdf_text_recovered",
             )
             self.assertIn("knowledge_impact", result)
-            self.assertEqual(len(result["knowledge_impact"]["created_pages"]), 2)
+            # Only source_evidence is created during ingest; wiki page created by /compile
+            self.assertEqual(len(result["knowledge_impact"]["created_pages"]), 1)
             self.assertEqual(len(result["knowledge_impact"]["updated_pages"]), 1)
             log_text = (Path(tmpdir) / "Paper Distill" / "log.md").read_text(encoding="utf-8")
             self.assertIn("source-ingest", log_text)
@@ -325,26 +312,22 @@ class ProcessInboxRegressionTest(unittest.TestCase):
                             ),
                         ):
                             with patch(
-                                "server.server.build_crgp_dnl",
-                                return_value=_load_replay_json("dnl.json"),
+                                "server.server._zotero_add",
+                                new=AsyncMock(
+                                    return_value=[
+                                        {
+                                            "key": "",
+                                            "zotero_uri": "",
+                                            "zotero_mode": "local_first",
+                                            "zotero_status": "local_exported",
+                                            "zotero_import_path": "",
+                                        }
+                                    ]
+                                ),
                             ):
-                                with patch(
-                                    "server.server._zotero_add",
-                                    new=AsyncMock(
-                                        return_value=[
-                                            {
-                                                "key": "",
-                                                "zotero_uri": "",
-                                                "zotero_mode": "local_first",
-                                                "zotero_status": "local_exported",
-                                                "zotero_import_path": "",
-                                            }
-                                        ]
-                                    ),
-                                ):
-                                    result = asyncio.run(
-                                        source_ingest(mode="approved_inbox", limit=1)
-                                    )
+                                result = asyncio.run(
+                                    source_ingest(mode="approved_inbox", limit=1)
+                                )
 
             self.assertEqual(len(result["processed"]), 1)
             processed = result["processed"][0]
@@ -353,20 +336,37 @@ class ProcessInboxRegressionTest(unittest.TestCase):
 
 
 class ToolSurfaceContractTest(unittest.TestCase):
-    def test_wave1_mcp_surface_uses_new_truth_model_names(self) -> None:
+    def test_consolidated_mcp_surface_names(self) -> None:
         tools = asyncio.run(mcp.list_tools())
         names = {tool.name for tool in tools}
 
+        # 12 consolidated tools
         self.assertIn("query-library", names)
-        self.assertIn("source-discover", names)
-        self.assertIn("source-ingest", names)
-        self.assertIn("knowledge-compile-publish", names)
-        self.assertIn("paper-distill-extract", names)
-        self.assertIn("idea-discover", names)
-        self.assertNotIn("discover_papers", names)
-        self.assertNotIn("process_inbox", names)
-        self.assertNotIn("add_paper", names)
-        self.assertNotIn("commit_compile_result", names)
+        self.assertIn("update-preferences", names)
+        self.assertIn("search-papers", names)
+        self.assertIn("discover", names)
+        self.assertIn("ingest", names)
+        self.assertIn("read-paper", names)
+        self.assertIn("compile", names)
+        self.assertIn("write-wiki", names)
+        self.assertIn("concept", names)
+        self.assertIn("maintain", names)
+        self.assertIn("idea-analyze", names)
+        self.assertIn("vault-health", names)
+        self.assertEqual(len(names), 12)
+
+        # Old tool names should NOT be present
+        self.assertNotIn("source-discover", names)
+        self.assertNotIn("source-ingest", names)
+        self.assertNotIn("knowledge-compile-publish", names)
+        self.assertNotIn("paper-distill-extract", names)
+        self.assertNotIn("idea-discover", names)
+        self.assertNotIn("score_papers", names)
+        self.assertNotIn("bootstrap-library", names)
+        self.assertNotIn("export_db_state", names)
+        self.assertNotIn("backfill_registry", names)
+        self.assertNotIn("zotero_add", names)
+        self.assertNotIn("zotero_search", names)
 
     def test_knowledge_compile_publish_surface_reports_status_after_publish(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -449,7 +449,6 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
         paper = _replay_paper()
         source_doc = _replay_source_doc()
         ir = _load_replay_json("compile_ir.json")
-        dnl = _load_replay_json("dnl.json")
         compiled_body = _load_replay_text("compiled_paper.md")
         memory_event = _replay_memory_event()
         idea = _replay_idea()
@@ -481,73 +480,72 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
                                     )
                                 ),
                             ):
-                                with patch("server.server.build_crgp_dnl", return_value=dnl):
-                                    with patch(
-                                        "server.server._zotero_add",
-                                        new=AsyncMock(
-                                            return_value=[
-                                                {
-                                                    "key": "",
-                                                    "zotero_uri": "",
-                                                    "zotero_mode": "local_first",
-                                                    "zotero_status": "local_exported",
-                                                    "zotero_import_path": "",
-                                                }
-                                            ]
-                                        ),
-                                    ):
-                                        ingest = asyncio.run(
-                                            source_ingest(
-                                                mode="direct_identifier",
-                                                identifier=paper["doi"],
-                                                topic_keys=["manipulation"],
-                                            )
-                                        )
-                                        extract = asyncio.run(
-                                            write_compile_ir(ir["citekey"], ir)
-                                        )
-                                        resolve = asyncio.run(
-                                            resolve_compile_ir([ir["citekey"]])
-                                        )
-
-                                        deps = [
+                                with patch(
+                                    "server.server._zotero_add",
+                                    new=AsyncMock(
+                                        return_value=[
                                             {
-                                                "dep_type": ir["candidate_concepts"][index].get("type", "concept"),
-                                                "dep_id": resolution["canonical_id"],
-                                                "dep_version": 1,
+                                                "key": "",
+                                                "zotero_uri": "",
+                                                "zotero_mode": "local_first",
+                                                "zotero_status": "local_exported",
+                                                "zotero_import_path": "",
                                             }
-                                            for index, resolution in enumerate(resolve[0]["resolutions"])
                                         ]
-                                        publish = asyncio.run(
-                                            knowledge_compile_publish(
-                                                page_id=ir["citekey"],
-                                                page_type="paper",
-                                                content=compiled_body,
-                                                frontmatter={
-                                                    "citekey": ir["citekey"],
-                                                    "title": paper["title"],
-                                                    "compile_version": 1,
-                                                    "topics": ["manipulation"],
-                                                },
-                                                ir_path=f"Paper Distill/.state/ir/{ir['citekey']}_resolved.json",
-                                                deps=deps,
-                                            )
+                                    ),
+                                ):
+                                    ingest = asyncio.run(
+                                        source_ingest(
+                                            mode="direct_identifier",
+                                            identifier=paper["doi"],
+                                            topic_keys=["manipulation"],
                                         )
-                                        status = asyncio.run(
-                                            knowledge_compile_status(
-                                                page_id=ir["citekey"],
-                                                page_type="paper",
-                                            )
+                                    )
+                                    extract = asyncio.run(
+                                        write_compile_ir(ir["citekey"], ir)
+                                    )
+                                    resolve = asyncio.run(
+                                        resolve_compile_ir([ir["citekey"]])
+                                    )
+
+                                    deps = [
+                                        {
+                                            "dep_type": ir["candidate_concepts"][index].get("type", "concept"),
+                                            "dep_id": resolution["canonical_id"],
+                                            "dep_version": 1,
+                                        }
+                                        for index, resolution in enumerate(resolve[0]["resolutions"])
+                                    ]
+                                    publish = asyncio.run(
+                                        knowledge_compile_publish(
+                                            page_id=ir["citekey"],
+                                            page_type="paper",
+                                            content=compiled_body,
+                                            frontmatter={
+                                                "citekey": ir["citekey"],
+                                                "title": paper["title"],
+                                                "compile_version": 1,
+                                                "topics": ["manipulation"],
+                                            },
+                                            ir_path=f"Paper Distill/.state/ir/{ir['citekey']}_resolved.json",
+                                            deps=deps,
                                         )
-                                        papers = asyncio.run(
-                                            query_vault(section="papers", detail="full")
+                                    )
+                                    status = asyncio.run(
+                                        knowledge_compile_status(
+                                            page_id=ir["citekey"],
+                                            page_type="paper",
                                         )
-                                        source_evidence = asyncio.run(
-                                            query_vault(section="source_evidence", detail="full")
-                                        )
-                                        signals = asyncio.run(
-                                            query_tension_signals(min_occurrence=1)
-                                        )
+                                    )
+                                    papers = asyncio.run(
+                                        query_vault(section="papers", detail="full")
+                                    )
+                                    source_evidence = asyncio.run(
+                                        query_vault(section="source_evidence", detail="full")
+                                    )
+                                    signals = asyncio.run(
+                                        query_tension_signals(min_occurrence=1)
+                                    )
 
             idea["local_evidence"]["wiki"][0]["ref"] = f"Paper Distill/wiki/papers/{ir['citekey']}.md"
             idea["local_evidence"]["sources"][0]["ref"] = ingest["source_evidence_path"]
@@ -569,7 +567,7 @@ class Wave1ReplaySmokeTest(unittest.TestCase):
             self.assertEqual(resolve[0]["resolved_count"], 1)
             self.assertTrue(publish["written"])
             self.assertEqual(status["page_id"], ir["citekey"])
-            self.assertEqual(status["compile_version"], 2)
+            self.assertEqual(status["compile_version"], 1)
 
             self.assertEqual(papers["stats"]["papers"], 1)
             self.assertEqual(papers["sections"]["papers"][0]["citekey"], ir["citekey"])

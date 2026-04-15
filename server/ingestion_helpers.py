@@ -55,11 +55,11 @@ def _wiki_body_payload(
         "zotero_uri": zotero_uri,
         "zotero_key": zotero_key,
         "capture_fidelity": capture_fidelity,
-        "page_state": "auto",
-        "confidence": dnl_note.get("confidence", 0.5),
-        "why_read": paper.get("tldr") or dnl_note.get("sections", {}).get("Context", "") or "Auto-generated from source evidence.",
+        "page_state": "pending-llm",
+        "confidence": 0.0,
+        "why_read": paper.get("tldr") or paper.get("abstract", "")[:200] or "Pending LLM enrichment.",
         "summary": paper.get("abstract", ""),
-        "insights": dnl_note.get("sections", {}).get("Discussion", ""),
+        "insights": "",
         "connections": "",
     }
     return {

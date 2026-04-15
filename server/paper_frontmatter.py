@@ -153,8 +153,9 @@ def _wiki_frontmatter(
         zotero_import_path=zotero_import_path,
         zotero_uri=zotero_uri,
         zotero_key=zotero_key,
-        confidence=confidence,
+        confidence=0.0,
         capture_fidelity=capture_fidelity,
+        page_state="pending-llm",
     )
 
 
