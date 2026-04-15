@@ -233,6 +233,58 @@ Approved discovery stub.
             self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00007")
             self.assertEqual(result["errors"], [])
 
+    def test_approved_batch_skips_malformed_yaml_and_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault_root = Path(tmpdir)
+            inbox_dir = vault_root / "inbox" / "2026-04-15"
+            inbox_dir.mkdir(parents=True)
+
+            broken_note = inbox_dir / "broken.md"
+            broken_note.write_text(
+                """---
+paper_id: arxiv:2501.00009
+title: "Broken Paper
+source_url: https://arxiv.org/abs/2501.00009
+---
+
+This note is approved even though the frontmatter is malformed.
+#approved
+""",
+                encoding="utf-8",
+            )
+            good_note = inbox_dir / "good.md"
+            good_note.write_text(
+                """---
+paper_id: arxiv:2501.00010
+title: Good Paper
+source_url: https://arxiv.org/abs/2501.00010
+---
+
+This note is approved.
+#approved
+""",
+                encoding="utf-8",
+            )
+
+            captured = _cleaned_doc("Good Paper", "# Good Paper\n\nBody text.")
+
+            async def fake_capture(paper: dict, **_kwargs):
+                self.assertEqual(paper["paper_id"], "arxiv:2501.00010")
+                return captured
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
+                        from server.v3_ingest import ingest_and_read_v3
+
+                        result = asyncio.run(ingest_and_read_v3("approved"))
+
+            self.assertEqual(len(result["items"]), 1)
+            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00010")
+            self.assertEqual(len(result["errors"]), 1)
+            self.assertTrue(result["errors"][0]["note_path"].endswith("broken.md"))
+            self.assertIn("missing source_url", result["errors"][0]["error"])
+
     def test_direct_input_rejects_non_arxiv_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):

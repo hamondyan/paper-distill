@@ -27,7 +27,10 @@ def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
         fm_text, body = remainder.split("\n---\n", 1)
     except ValueError:
         return {}, text.strip()
-    frontmatter = yaml.safe_load(fm_text) or {}
+    try:
+        frontmatter = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError:
+        return {}, body.lstrip()
     if not isinstance(frontmatter, dict):
         frontmatter = {}
     return frontmatter, body.lstrip()
