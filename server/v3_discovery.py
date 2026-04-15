@@ -65,6 +65,35 @@ def _paper_score(paper: dict[str, Any]) -> int:
         return 80
 
 
+def _inbox_note_paper_id(text: str) -> str:
+    if not text.startswith("---\n"):
+        return ""
+    try:
+        frontmatter_text = text.split("---\n", 1)[1].split("\n---\n", 1)[0]
+    except ValueError:
+        return ""
+    for line in frontmatter_text.splitlines():
+        if line.startswith("paper_id:"):
+            return line.split(":", 1)[1].strip().strip("'\"")
+    return ""
+
+
+def _existing_approved_inbox_note(vault_path: Path, paper_id: str) -> Path | None:
+    inbox_path = vault_path / "inbox"
+    if not inbox_path.exists():
+        return None
+    for note_path in sorted(inbox_path.glob("*.md")):
+        try:
+            text = note_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "#approved" not in text:
+            continue
+        if _inbox_note_paper_id(text) == paper_id:
+            return note_path
+    return None
+
+
 def _yaml_quoted(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -121,6 +150,9 @@ async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
         if not pid or not title:
             continue
         if pid in cache:
+            skipped_seen.append(pid)
+            continue
+        if _existing_approved_inbox_note(vault_path, pid):
             skipped_seen.append(pid)
             continue
 
