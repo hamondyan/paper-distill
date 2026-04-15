@@ -97,6 +97,20 @@ def test_lint_vault_flags_balanced_malformed_links_and_split_footer_links(
     assert {"malformed_link", "template_footer_link"} <= codes
 
 
+def test_lint_vault_flags_regex_shaped_malformed_links(tmp_path: Path) -> None:
+    paper_dir = tmp_path / "wiki" / "papers"
+    paper_dir.mkdir(parents=True)
+    paper_dir.joinpath("demo.md").write_text(
+        "# Demo\n\n"
+        "This is balanced but not a valid wikilink: [[Bad[Target]]\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert any(issue["code"] == "malformed_link" for issue in result["issues"])
+
+
 def test_merge_concept_rewrites_links_updates_aliases_and_refreshes_qmd(
     tmp_path: Path,
     monkeypatch,

@@ -86,9 +86,24 @@ def _repeated_link_issues(path: Path, text: str) -> list[dict[str, str]]:
     return issues
 
 
+def _is_well_formed_link(match: re.Match[str]) -> bool:
+    parts = [match.group("target"), match.group("section") or "", match.group("label") or ""]
+    for index, part in enumerate(parts):
+        if not part:
+            continue
+        value = part[1:] if index > 0 else part
+        if not value or value != value.strip() or "[" in value or "]" in value:
+            return False
+    return True
+
+
 def _malformed_link_issues(path: Path, text: str) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
+        for match in _WIKILINK_RE.finditer(line):
+            if not _is_well_formed_link(match):
+                issues.append({"code": "malformed_link", "path": str(path), "line": str(line_no)})
+                break
         unmatched = _WIKILINK_RE.sub("", line)
         if "[[" in unmatched or "]]" in unmatched:
             issues.append({"code": "malformed_link", "path": str(path), "line": str(line_no)})
