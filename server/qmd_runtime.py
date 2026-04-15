@@ -85,23 +85,27 @@ def _find_stable_id_match(vault_path: Path, id_or_path: str) -> Path | None:
     return None
 
 
-def _ensure_collection_for_vault(vault_path: Path, name: str, rel_path: str) -> None:
+def _ensure_collection_for_vault(vault_path: Path, name: str, rel_path: str) -> bool:
     try:
         result = _collection_show(name)
     except (FileNotFoundError, subprocess.CalledProcessError):
         _run_qmd(["collection", "add", str(vault_path / rel_path), "--name", name])
-        return
+        return True
 
     if not _collection_mount_matches(vault_path, rel_path, result.stdout):
         _run_qmd(["collection", "remove", name])
         _run_qmd(["collection", "add", str(vault_path / rel_path), "--name", name])
+        return True
+    return False
 
 
 def ensure_qmd_ready(vault_path: Path) -> dict[str, object]:
     contexts = _run_qmd(["context", "list"]).stdout
 
     for name, (rel_path, context) in COLLECTIONS.items():
-        _ensure_collection_for_vault(vault_path, name, rel_path)
+        remounted = _ensure_collection_for_vault(vault_path, name, rel_path)
+        if remounted:
+            contexts = _run_qmd(["context", "list"]).stdout
         if not _list_contains(contexts, f"qmd://{name}"):
             _run_qmd(["context", "add", f"qmd://{name}", context])
 

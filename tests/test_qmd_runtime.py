@@ -75,7 +75,7 @@ def test_ensure_qmd_ready_bootstraps_missing_collections_and_contexts_idempotent
     assert calls.count(
         ["qmd", "collection", "add", str(tmp_path / "wiki/papers"), "--name", "canon-papers"]
     ) == 1
-    assert calls.count(["qmd", "context", "list"]) == 2
+    assert calls.count(["qmd", "context", "list"]) == 3
     assert calls.count(["qmd", "collection", "show", "canon-papers"]) == 2
 
 
@@ -121,6 +121,54 @@ def test_ensure_qmd_ready_reconciles_wrong_collection_path(
     assert ["qmd", "collection", "remove", "canon-papers"] in calls
     assert ["qmd", "collection", "add", str(tmp_path / "wiki/papers"), "--name", "canon-papers"] in calls
     assert ["qmd", "collection", "show", "canon-papers"] in calls
+
+
+def test_ensure_qmd_ready_refreshes_contexts_after_remount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    context_state = {"qmd://canon-papers"}
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args == ["qmd", "context", "list"]:
+            return Mock(stdout="".join(f"{name}\n" for name in sorted(context_state)))
+        if args == ["qmd", "collection", "list"]:
+            return Mock(stdout="canon-papers\ncanon-concepts\ninsights-conversations\ninsights-ideas\nraw-evidence\n")
+        if args == ["qmd", "collection", "show", "canon-papers"]:
+            return Mock(
+                stdout=(
+                    "Collection: canon-papers\n"
+                    "  Path:     /elsewhere/vault/wiki/papers\n"
+                    "  Pattern:  **/*.md\n"
+                )
+            )
+        if args == ["qmd", "collection", "remove", "canon-papers"]:
+            context_state.discard("qmd://canon-papers")
+            return Mock(stdout="")
+        if args == ["qmd", "collection", "add", str(tmp_path / "wiki/papers"), "--name", "canon-papers"]:
+            return Mock(stdout="")
+        if args == ["qmd", "context", "add", "qmd://canon-papers", "Canonical distilled papers"]:
+            context_state.add("qmd://canon-papers")
+            return Mock(stdout="")
+        if args[:2] == ["qmd", "collection"] and args[2] == "show":
+            rel = qmd_runtime.COLLECTIONS[args[3]][0]
+            return Mock(
+                stdout=(
+                    f"Collection: {args[3]}\n"
+                    f"  Path:     {(tmp_path / rel).resolve()}\n"
+                    "  Pattern:  **/*.md\n"
+                )
+            )
+        return Mock(stdout="")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    result = qmd_runtime.ensure_qmd_ready(tmp_path)
+
+    assert result == {"ready": True, "collections": list(qmd_runtime.COLLECTIONS.keys())}
+    assert calls.count(["qmd", "collection", "remove", "canon-papers"]) == 1
+    assert calls.count(["qmd", "context", "add", "qmd://canon-papers", "Canonical distilled papers"]) == 1
 
 
 def test_qmd_ready_report_returns_not_ready_when_binary_missing(
