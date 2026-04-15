@@ -9,7 +9,6 @@ V3_DIRS = (
     "raw/evidence",
     "wiki/papers",
     "wiki/concepts",
-    "insights/ideas",
     "insights/conversations",
     "exports/presentations",
     ".state",
