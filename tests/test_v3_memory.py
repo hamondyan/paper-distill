@@ -50,4 +50,8 @@ def test_skill_guidance_requires_conversation_memory_tool_writes() -> None:
 
     assert "insights/conversations/" in knowledge_skill
     assert "upsert_wiki_page" in knowledge_skill
+    assert "verbatim transcripts" in knowledge_skill
+    assert "by hand" in knowledge_skill
     assert "insights/conversations/" in intake_skill
+    assert "verbatim transcripts" in intake_skill
+    assert "by hand" in intake_skill
