@@ -57,6 +57,7 @@ from server.search import (
 )
 from server.qmd_runtime import ensure_qmd_ready, qmd_get, qmd_ready_report, qmd_search
 from server.v3_bootstrap import ensure_v3_layout
+from server.v3_ingest import ingest_and_read_v3 as _ingest_and_read_v3
 from server.vault_query import query_vault_sync
 from server.vault_lint import (
     analyze_knowledge_graph_sync,
@@ -1183,7 +1184,16 @@ async def discover_papers(
 
 
 # ---------------------------------------------------------------------------
-# Tool 10: source-ingest
+# Tool 10: ingest_and_read
+# ---------------------------------------------------------------------------
+
+async def ingest_and_read_v3(input_value: str) -> dict:
+    """Ingest approved inbox notes or a direct paper URL into raw/evidence."""
+    return await _ingest_and_read_v3(input_value=input_value)
+
+
+# ---------------------------------------------------------------------------
+# Tool 11: source-ingest
 # ---------------------------------------------------------------------------
 
 async def source_ingest(
