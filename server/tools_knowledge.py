@@ -21,10 +21,12 @@ from server.server_runtime import (
     commit_compile_result as _commit_compile,
     # wiki
     upsert_wiki_article as _upsert_wiki,
+    upsert_wiki_page_v3 as _upsert_wiki_page_v3,
     # concepts
     register_concept_tool as _register_concept,
     resolve_concept_tool as _resolve_concept,
     merge_concepts_tool as _merge_concepts,
+    check_concept_alias_v3 as _check_concept_alias_v3,
     # maintenance
     reconcile_maintenance as _reconcile,
     get_maintenance_queue as _get_queue,
@@ -181,6 +183,20 @@ async def write_wiki(
     )
 
 
+async def upsert_wiki_page(
+    page_type: str,
+    target: str,
+    frontmatter: dict,
+    body: str,
+) -> dict[str, Any]:
+    return await _upsert_wiki_page_v3(
+        page_type=page_type,
+        target=target,
+        frontmatter=frontmatter,
+        body=body,
+    )
+
+
 # ------------------------------------------------------------------
 # Tool 9: concept
 # ------------------------------------------------------------------
@@ -235,6 +251,10 @@ async def concept(
         return await _merge_concepts(from_id=from_id, to_id=to_id, reason=reason)
 
     return {"error": f"Unknown action '{action}'. Expected: register, resolve, merge"}
+
+
+async def check_concept_alias(name: str) -> dict[str, Any]:
+    return await _check_concept_alias_v3(name)
 
 
 # ------------------------------------------------------------------
@@ -313,5 +333,7 @@ async def maintain(
 def register_knowledge_tools(mcp: FastMCP) -> None:
     mcp.tool(name="compile")(compile)
     mcp.tool(name="write-wiki")(write_wiki)
+    mcp.tool(name="upsert-wiki-page")(upsert_wiki_page)
     mcp.tool(name="concept")(concept)
+    mcp.tool(name="check-concept-alias")(check_concept_alias)
     mcp.tool(name="maintain")(maintain)
