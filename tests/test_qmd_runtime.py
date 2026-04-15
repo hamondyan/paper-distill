@@ -234,6 +234,27 @@ def test_qmd_get_constructs_command_for_existing_path(
     assert recorded["args"] == ["qmd", "get", str(doc)]
 
 
+def test_qmd_get_resolves_vault_relative_explicit_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = tmp_path / "wiki" / "concepts" / "transformer.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# transformer\n", encoding="utf-8")
+
+    recorded: dict[str, list[str]] = {}
+
+    def fake_run(args, **kwargs):
+        recorded["args"] = args
+        return Mock(stdout="relative body")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    result = qmd_runtime.qmd_get(tmp_path, "wiki/concepts/transformer.md")
+
+    assert result == {"status": "ok", "path": str(doc), "body": "relative body"}
+    assert recorded["args"] == ["qmd", "get", str(doc)]
+
+
 def test_qmd_get_resolves_stable_identifier_to_canonical_filename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

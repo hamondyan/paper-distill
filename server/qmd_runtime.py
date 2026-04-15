@@ -168,11 +168,20 @@ def qmd_search(vault_path: Path, query: str, scope: str) -> dict[str, object]:
 
 def qmd_get(vault_path: Path, id_or_path: str) -> dict[str, object]:
     candidate = Path(id_or_path)
-    if not candidate.exists():
+    if candidate.is_absolute():
+        explicit_path = candidate if candidate.exists() else None
+    else:
+        explicit_path = vault_path / candidate
+        if not explicit_path.exists():
+            explicit_path = None
+
+    if explicit_path is None:
         match = _find_stable_id_match(vault_path, id_or_path)
         if match is None:
             return {"status": "missing", "error": f"document not found: {id_or_path}"}
         candidate = match
+    else:
+        candidate = explicit_path
 
     result = _run_qmd(["get", str(candidate)])
     return {"status": "ok", "path": str(candidate), "body": result.stdout}
