@@ -88,6 +88,10 @@ Rules:
 3. **Never** call `write-wiki` on a page previously written by `compile` — it silently corrupts content_hash
 4. When unsure, call `query-library(view="compile_status", page_id=...)` first
 
+## Conversation Memory
+
+When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
+
 ## Manual Section Protection
 
 Before calling `compile(step="publish")`:
