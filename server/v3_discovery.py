@@ -25,6 +25,15 @@ async def search_papers(
     )
 
 
+async def score_papers(
+    papers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Local wrapper to avoid a top-level runtime import cycle."""
+    from server.server_runtime import score_papers as runtime_score_papers
+
+    return await runtime_score_papers(papers=papers)
+
+
 def _load_seen_cache(vault_path: Path) -> dict[str, dict[str, Any]]:
     cache_path = vault_path / ".state" / "seen_papers.json"
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -49,7 +58,7 @@ def _paper_source_url(paper: dict[str, Any]) -> str:
 
 
 def _paper_score(paper: dict[str, Any]) -> int:
-    raw_score = paper.get("score", paper.get("_score", 80))
+    raw_score = paper.get("_score", 80)
     try:
         return int(round(float(raw_score)))
     except (TypeError, ValueError):
@@ -78,7 +87,7 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
     body_lines.extend(
         [
             "",
-            "Review this stub in Obsidian and mark it approved by adding the approval marker in the body when ready to ingest.",
+            "Review this stub in Obsidian before ingesting.",
         ]
     )
     return (
@@ -100,12 +109,13 @@ async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
     ensure_v3_layout(vault_path)
     cache = _load_seen_cache(vault_path)
     results = await search_papers(query=query or "", sources=None, max_results=20)
+    scored_results = await score_papers(results)
 
     saved: list[dict[str, Any]] = []
     skipped_seen: list[str] = []
     discovered_on = date.today().isoformat()
 
-    for paper in results:
+    for paper in scored_results:
         pid = str(paper.get("paper_id", "")).strip()
         title = str(paper.get("title", "")).strip()
         if not pid or not title:
