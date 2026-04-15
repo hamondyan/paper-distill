@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import yaml
+
 from server.v3_discovery import discover_papers_v3
 
 
@@ -12,7 +14,7 @@ def test_discover_papers_writes_inbox_stub_and_updates_seen_cache(
     async def fake_search(*args, **kwargs):
         return [
             {
-                "title": "Attention Is All You Need",
+                "title": "Attention: Is All You Need",
                 "paper_id": "arxiv:1706.03762",
                 "source_url": "https://arxiv.org/abs/1706.03762",
             }
@@ -25,7 +27,16 @@ def test_discover_papers_writes_inbox_stub_and_updates_seen_cache(
 
     inbox_files = list((tmp_path / "inbox").glob("*.md"))
     assert len(inbox_files) == 1
-    assert "#approved" not in inbox_files[0].read_text(encoding="utf-8")
+    stub_text = inbox_files[0].read_text(encoding="utf-8")
+    _, remainder = stub_text.split("---\n", 1)
+    frontmatter_text, _body = remainder.split("\n---\n", 1)
+    frontmatter = yaml.safe_load(frontmatter_text)
+
+    assert 'title: "Attention: Is All You Need"' in stub_text
+    assert 'source_url: "https://arxiv.org/abs/1706.03762"' in stub_text
+    assert frontmatter["title"] == "Attention: Is All You Need"
+    assert frontmatter["source_url"] == "https://arxiv.org/abs/1706.03762"
+    assert "#approved" in stub_text
     cache = json.loads(
         (tmp_path / ".state" / "seen_papers.json").read_text(encoding="utf-8")
     )

@@ -56,6 +56,10 @@ def _paper_score(paper: dict[str, Any]) -> int:
         return 80
 
 
+def _yaml_quoted(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
 def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
     title = str(paper.get("title", "")).strip() or "Untitled Paper"
     pid = str(paper.get("paper_id", "")).strip()
@@ -74,15 +78,15 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
     body_lines.extend(
         [
             "",
-            "Review this stub in Obsidian and add the approval tag to the body when ready to ingest.",
+            "Review this stub in Obsidian and add `#approved` to the body when ready to ingest.",
         ]
     )
     return (
         "---\n"
         "type: inbox_stub\n"
-        f"paper_id: {pid}\n"
-        f"title: {title}\n"
-        f"source_url: {source_url}\n"
+        f"paper_id: {_yaml_quoted(pid)}\n"
+        f"title: {_yaml_quoted(title)}\n"
+        f"source_url: {_yaml_quoted(source_url)}\n"
         f'discovered_at: "{date.today().isoformat()}"\n'
         f"score: {score}\n"
         "---\n\n"
