@@ -76,6 +76,8 @@ from server.vault_ops import (
     write_json,
     write_markdown,
 )
+from server.v3_alias import check_concept_alias_v3 as _check_concept_alias_v3
+from server.v3_store import upsert_wiki_page_v3 as _upsert_wiki_page_v3
 from server.zotero import add_papers as _zotero_add, search_papers as _zotero_search
 
 # ---------------------------------------------------------------------------
@@ -1749,6 +1751,22 @@ async def upsert_wiki_article(
 
 
 # ---------------------------------------------------------------------------
+# Tool 16b: upsert_wiki_page (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def upsert_wiki_page_v3(
+    page_type: str,
+    target: str,
+    frontmatter: dict,
+    body: str,
+) -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured.", "warnings": []}
+    return _upsert_wiki_page_v3(Path(vault_path), page_type, target, frontmatter, body)
+
+
+# ---------------------------------------------------------------------------
 # Tool 17: register_concept
 # ---------------------------------------------------------------------------
 
@@ -1829,6 +1847,17 @@ async def merge_concepts_tool(
     return await asyncio.to_thread(
         merge_concepts, vault_path, from_id, to_id, reason,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tool 19b: check_concept_alias (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def check_concept_alias_v3(name: str) -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"exists": False, "canonical": name, "error": "VAULT_PATH not configured."}
+    return _check_concept_alias_v3(Path(vault_path), name)
 
 
 # ---------------------------------------------------------------------------
