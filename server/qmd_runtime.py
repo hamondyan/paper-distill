@@ -183,6 +183,8 @@ def qmd_search(vault_path: Path, query: str, scope: str) -> dict[str, object]:
         result = _run_qmd(args)
     except FileNotFoundError:
         return {"status": "not_ready", "error": "qmd binary not found"}
+    except subprocess.CalledProcessError as exc:
+        return {"status": "error", "error": exc.stderr.strip() or "qmd query failed"}
     try:
         parsed = json.loads(result.stdout or "null")
     except json.JSONDecodeError as exc:
@@ -218,6 +220,8 @@ def qmd_get(vault_path: Path, id_or_path: str) -> dict[str, object]:
         result = _run_qmd(["get", str(candidate)])
     except FileNotFoundError:
         return {"status": "not_ready", "reason": "qmd binary not found"}
+    except subprocess.CalledProcessError as exc:
+        return {"status": "error", "error": exc.stderr.strip() or "qmd get failed"}
     return {"status": "ok", "path": str(candidate), "body": result.stdout}
 
 

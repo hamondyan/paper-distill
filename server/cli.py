@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,7 +34,16 @@ async def _bootstrap(args: argparse.Namespace) -> None:
 
     vault_path = Path(vault_path_raw)
     layout = ensure_v3_layout(vault_path)
-    qmd = ensure_qmd_ready(vault_path)
+    try:
+        qmd = ensure_qmd_ready(vault_path)
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        qmd = {
+            "status": "not_ready",
+            "reason": getattr(exc, "stderr", "").strip() or "qmd init failed",
+        }
+    if qmd.get("status") not in {None, "ready"}:
+        print(json.dumps({"layout": layout, "qmd": qmd}, indent=2, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
     print(json.dumps({"layout": layout, "qmd": qmd}, indent=2, ensure_ascii=False))
 
 

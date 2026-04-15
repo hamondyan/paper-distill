@@ -230,6 +230,25 @@ def test_qmd_search_blocks_when_readiness_is_degraded(
     assert result == {"status": "degraded", "error": "missing qmd collections"}
 
 
+def test_qmd_search_returns_error_when_query_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_ready(_vault_path: Path) -> dict[str, str]:
+        return {"status": "ready"}
+
+    def failing_run(args, **kwargs):
+        if args[:2] == ["qmd", "query"]:
+            raise qmd_runtime.subprocess.CalledProcessError(1, args, stderr="query failed")
+        return Mock(stdout="[]")
+
+    monkeypatch.setattr(qmd_runtime, "qmd_ready_report", fake_ready)
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", failing_run)
+
+    result = qmd_runtime.qmd_search(tmp_path, "graph attention", "canon")
+
+    assert result == {"status": "error", "error": "query failed"}
+
+
 def test_qmd_get_constructs_command_for_existing_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -352,6 +371,23 @@ def test_qmd_get_resolves_doi_style_identifier_to_canonical_filename(
 
     assert result == {"status": "ok", "path": str(doc), "body": "doi body"}
     assert recorded["args"] == ["qmd", "get", str(doc)]
+
+
+def test_qmd_get_returns_error_when_get_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = tmp_path / "wiki" / "papers" / "paper.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# paper\n", encoding="utf-8")
+
+    def failing_run(args, **kwargs):
+        if args == ["qmd", "get", str(doc)]:
+            raise qmd_runtime.subprocess.CalledProcessError(1, args, stderr="get failed")
+        return Mock(stdout="")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", failing_run)
+
+    assert qmd_runtime.qmd_get(tmp_path, str(doc)) == {"status": "error", "error": "get failed"}
 
 
 def test_qmd_get_returns_not_ready_when_binary_missing(
