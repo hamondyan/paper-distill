@@ -44,14 +44,58 @@ def test_write_conversation_memory_creates_insight_asset(
     assert body == "# Transformer tension\n\nA concise saved insight."
 
 
+def test_write_conversation_memory_rejects_transcript_shaped_body(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "server.v3_store.qmd_update",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    result = write_conversation_memory(
+        vault_path=tmp_path,
+        slug="raw-transcript",
+        body="User: What is the key idea?\nAssistant: Here is a long answer.\n",
+        related_concepts=["Transformer"],
+    )
+
+    assert result["ok"] is False
+    assert "distilled insight" in result["error"]
+    assert not (tmp_path / "insights" / "conversations" / "raw-transcript.md").exists()
+
+
+def test_write_conversation_memory_filters_related_concepts_before_topk(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "server.v3_store.qmd_update",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    write_conversation_memory(
+        vault_path=tmp_path,
+        slug="filtered-concepts",
+        body="# Filtered concepts\n\nA concise saved insight.\n",
+        related_concepts=["", "  ", "Transformer", " Tension ", "Attention"],
+    )
+
+    path = tmp_path / "insights" / "conversations" / "filtered-concepts.md"
+    frontmatter, _body = _read_markdown(path)
+    assert frontmatter["related_concepts_topk"] == ["Transformer", "Tension", "Attention"]
+
+
 def test_skill_guidance_requires_conversation_memory_tool_writes() -> None:
     knowledge_skill = Path("skills/knowledge-workbench/SKILL.md").read_text(encoding="utf-8")
     intake_skill = Path("skills/paper-intake/SKILL.md").read_text(encoding="utf-8")
 
     assert "insights/conversations/" in knowledge_skill
     assert "upsert_wiki_page" in knowledge_skill
+    assert "Python conversation-memory writer" in knowledge_skill
     assert "verbatim transcripts" in knowledge_skill
     assert "by hand" in knowledge_skill
     assert "insights/conversations/" in intake_skill
+    assert "Python write path" in intake_skill
     assert "verbatim transcripts" in intake_skill
     assert "by hand" in intake_skill
