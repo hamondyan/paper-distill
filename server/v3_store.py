@@ -94,7 +94,7 @@ def upsert_wiki_page_v3(
     ensure_v3_layout(vault_path)
 
     payload = dict(frontmatter or {})
-    payload.setdefault("type", page_type)
+    payload["type"] = page_type
 
     try:
         _atomic_write_text(path, _render_markdown(payload, body))

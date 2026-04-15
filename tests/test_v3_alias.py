@@ -28,6 +28,25 @@ def test_check_concept_alias_prefers_existing_canonical_name(tmp_path: Path) -> 
     assert result["canonical"] == "Transformer"
 
 
+def test_check_concept_alias_tolerates_ascii_punctuation(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    concept_dir.mkdir(parents=True)
+    concept_dir.joinpath("vision-language-action.md").write_text(
+        "---\n"
+        "type: concept\n"
+        "concept: VLA\n"
+        "aliases: [Vision-Language-Action]\n"
+        "---\n\n"
+        "# VLA\n",
+        encoding="utf-8",
+    )
+
+    result = check_concept_alias_v3(tmp_path, "VLA.")
+
+    assert result["exists"] is True
+    assert result["canonical"] == "VLA"
+
+
 def test_check_concept_alias_skips_malformed_frontmatter(tmp_path: Path) -> None:
     concept_dir = tmp_path / "wiki" / "concepts"
     concept_dir.mkdir(parents=True)
