@@ -284,6 +284,13 @@ def v3_status() -> dict[str, object]:
     return {"layout": layout, "qmd": qmd}
 
 
+async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
+    """Run the v3 discovery flow that stages inbox stubs and updates seen-cache."""
+    from server.v3_discovery import discover_papers_v3 as _discover_papers_v3
+
+    return await _discover_papers_v3(query=query)
+
+
 async def _prepare_ingestion_candidate(
     candidate: dict,
     vault_path: str,

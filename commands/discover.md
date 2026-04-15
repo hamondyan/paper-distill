@@ -1,9 +1,9 @@
 ---
 name: discover
-description: Search and stage candidate papers into inbox
+description: Discover candidate papers and write inbox stubs
 user_invocable: true
 ---
 
-Run the candidate discovery workflow using the `paper-distill:paper-intake` skill.
+Run the v3 discovery flow using the `paper-distill:paper-intake` skill.
 
-This asks the knowledge maintainer to search across paper sources, rank results with venue and author signals, bind candidates to arXiv, and write detailed inbox cards only for arXiv-backed papers.
+This searches paper sources, deduplicates against `.state/seen_papers.json`, writes new inbox stubs into `inbox/`, and reports how many papers were saved versus skipped because they were already seen.
