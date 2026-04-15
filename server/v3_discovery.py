@@ -177,6 +177,9 @@ async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
 
         score = _paper_score(paper)
         inbox_path = vault_path / "inbox" / paper_filename(title, pid)
+        if inbox_path.exists():
+            skipped_seen.append(pid)
+            continue
         inbox_path.write_text(_render_inbox_stub(paper, score), encoding="utf-8")
 
         cache[pid] = {
