@@ -37,6 +37,18 @@ def _approved_body(body: str) -> bool:
     return _APPROVED_MARKER in body
 
 
+def _paper_arxiv_id(paper: dict[str, Any], source_url: str = "") -> str:
+    for value in (
+        paper.get("arxiv_id"),
+        paper.get("paper_id"),
+        source_url,
+    ):
+        arxiv_id = extract_arxiv_id(str(value or "").strip())
+        if arxiv_id:
+            return arxiv_id
+    return ""
+
+
 def _approved_inbox_papers(vault_path: Path) -> list[dict[str, Any]]:
     inbox_root = vault_path / "inbox"
     if not inbox_root.exists():
@@ -63,10 +75,10 @@ def _approved_inbox_papers(vault_path: Path) -> list[dict[str, Any]]:
                 source_url = f"https://arxiv.org/abs/{arxiv_id}"
 
         paper["source_url"] = source_url
-        paper["arxiv_id"] = str(frontmatter.get("arxiv_id") or extract_arxiv_id(source_url) or "").strip()
         paper["paper_id"] = str(frontmatter.get("paper_id") or "").strip()
         if not paper["paper_id"]:
             paper["paper_id"] = paper_id(paper)
+        paper["arxiv_id"] = _paper_arxiv_id(paper, source_url)
         paper["title"] = str(frontmatter.get("title") or paper.get("title") or paper["paper_id"]).strip()
         paper["_note_path"] = str(note_path)
         papers.append(paper)
@@ -87,7 +99,7 @@ def _existing_raw_evidence_path(vault_path: Path, paper_id_value: str) -> Path |
 
 
 async def _capture_raw_evidence(paper: dict[str, Any], source_url: str) -> dict[str, Any]:
-    arxiv_id = str(paper.get("arxiv_id") or extract_arxiv_id(source_url) or "").strip()
+    arxiv_id = _paper_arxiv_id(paper, source_url)
     if not arxiv_id:
         raise ValueError("Direct URL must be an arXiv URL or arXiv DOI")
 
@@ -189,8 +201,16 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
         paper["paper_id"] = paper_id(paper)
     paper["title"] = str(paper.get("title") or f"arXiv {arxiv_id}").strip()
 
-    capture = await _capture_raw_evidence(paper, source_url)
-    raw_path = _write_raw_evidence(vault_path, capture)
+    try:
+        capture = await _capture_raw_evidence(paper, source_url)
+        raw_path = _write_raw_evidence(vault_path, capture)
+    except Exception as exc:
+        return {
+            "error": str(exc),
+            "paper_id": str(paper.get("paper_id") or ""),
+            "title": str(paper.get("title") or ""),
+            "source_url": source_url,
+        }
     return {
         "items": [
             {

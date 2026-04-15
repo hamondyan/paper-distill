@@ -195,6 +195,44 @@ This note is approved, but capture will fail.
             self.assertEqual(result["errors"][0]["paper_id"], "arxiv:2501.00006")
             self.assertIn("unsupported capture path", result["errors"][0]["error"])
 
+    def test_approved_inbox_note_uses_paper_id_for_ar5iv_source_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault_root = Path(tmpdir)
+            inbox_dir = vault_root / "inbox" / "2026-04-15"
+            inbox_dir.mkdir(parents=True)
+
+            note = inbox_dir / "ar5iv.md"
+            note.write_text(
+                """---
+paper_id: arxiv:2501.00007
+title: Ar5iv Paper
+source_url: https://ar5iv.labs.arxiv.org/html/2501.00007
+---
+
+Approved discovery stub.
+#approved
+""",
+                encoding="utf-8",
+            )
+
+            captured = _cleaned_doc("Ar5iv Paper", "# Ar5iv Paper\n\nBody text.")
+
+            async def fake_capture(paper: dict, **_kwargs):
+                self.assertEqual(paper["paper_id"], "arxiv:2501.00007")
+                self.assertEqual(paper["arxiv_id"], "2501.00007")
+                return captured
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
+                        from server.v3_ingest import ingest_and_read_v3
+
+                        result = asyncio.run(ingest_and_read_v3("approved"))
+
+            self.assertEqual(len(result["items"]), 1)
+            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00007")
+            self.assertEqual(result["errors"], [])
+
     def test_direct_input_rejects_non_arxiv_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
@@ -205,6 +243,34 @@ This note is approved, but capture will fail.
 
         self.assertIn("error", result)
         self.assertIn("arXiv", result["error"])
+
+    def test_direct_input_returns_structured_error_when_capture_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch(
+                        "server.v3_ingest.fetch_arxiv_record",
+                        new=AsyncMock(
+                            return_value={
+                                "paper_id": "arxiv:2501.00008",
+                                "title": "Broken Direct Paper",
+                                "arxiv_id": "2501.00008",
+                                "authors": ["Ada Lovelace"],
+                                "year": 2025,
+                            }
+                        ),
+                    ):
+                        with patch(
+                            "server.v3_ingest.capture_arxiv_source",
+                            new=AsyncMock(side_effect=ValueError("capture exploded")),
+                        ):
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(ingest_and_read_v3("https://arxiv.org/abs/2501.00008"))
+
+        self.assertIn("error", result)
+        self.assertIn("capture exploded", result["error"])
+        self.assertEqual(result["paper_id"], "arxiv:2501.00008")
 
     def test_frontmatter_only_approval_marker_does_not_count(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
