@@ -29,6 +29,15 @@ LOOKUP_NAMESPACE_ORDER: tuple[str, ...] = (
     "raw/evidence",
 )
 
+EXPLICIT_PATH_PREFIXES: tuple[str, ...] = (
+    "wiki",
+    "raw",
+    "insights",
+    "inbox",
+    "exports",
+    ".state",
+)
+
 
 def _run_qmd(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -74,6 +83,18 @@ def _stable_id_candidates(id_or_path: str) -> list[str]:
     if sanitized and sanitized not in candidates:
         candidates.append(sanitized)
     return candidates
+
+
+def _looks_like_explicit_path(id_or_path: str) -> bool:
+    raw = id_or_path.strip()
+    if not raw:
+        return False
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return True
+    if raw.endswith(".md"):
+        return True
+    return candidate.parts[:1] and candidate.parts[0] in EXPLICIT_PATH_PREFIXES
 
 
 def _find_stable_id_match(vault_path: Path, id_or_path: str) -> Path | None:
@@ -147,8 +168,8 @@ def qmd_ready_report(vault_path: Path) -> dict[str, object]:
 
 def qmd_search(vault_path: Path, query: str, scope: str) -> dict[str, object]:
     ready = qmd_ready_report(vault_path)
-    if ready["status"] == "not_ready":
-        return {"status": "not_ready", "error": ready["reason"]}
+    if ready["status"] != "ready":
+        return {"status": ready["status"], "error": ready["reason"]}
 
     collections = SCOPE_TO_COLLECTIONS.get(scope)
     if collections is None:
@@ -158,7 +179,10 @@ def qmd_search(vault_path: Path, query: str, scope: str) -> dict[str, object]:
     for collection in collections:
         args.extend(["-c", collection])
 
-    result = _run_qmd(args)
+    try:
+        result = _run_qmd(args)
+    except FileNotFoundError:
+        return {"status": "not_ready", "error": "qmd binary not found"}
     try:
         parsed = json.loads(result.stdout or "null")
     except json.JSONDecodeError as exc:
@@ -168,28 +192,40 @@ def qmd_search(vault_path: Path, query: str, scope: str) -> dict[str, object]:
 
 def qmd_get(vault_path: Path, id_or_path: str) -> dict[str, object]:
     candidate = Path(id_or_path)
-    if candidate.is_absolute():
-        explicit_path = candidate if candidate.exists() else None
-    else:
-        explicit_path = vault_path / candidate
-        if not explicit_path.exists():
-            explicit_path = None
+    if _looks_like_explicit_path(id_or_path):
+        explicit_path = candidate if candidate.is_absolute() else vault_path / candidate
+        resolved_vault = _normalize_path(vault_path)
+        resolved_explicit = _normalize_path(explicit_path)
+        try:
+            resolved_explicit.relative_to(resolved_vault)
+        except ValueError:
+            return {"status": "error", "error": f"path escapes vault: {id_or_path}"}
 
-    if explicit_path is None:
+        if resolved_explicit.exists():
+            candidate = resolved_explicit
+        else:
+            match = _find_stable_id_match(vault_path, id_or_path)
+            if match is None:
+                return {"status": "missing", "error": f"document not found: {id_or_path}"}
+            candidate = match
+    else:
         match = _find_stable_id_match(vault_path, id_or_path)
         if match is None:
             return {"status": "missing", "error": f"document not found: {id_or_path}"}
         candidate = match
-    else:
-        candidate = explicit_path
 
-    result = _run_qmd(["get", str(candidate)])
+    try:
+        result = _run_qmd(["get", str(candidate)])
+    except FileNotFoundError:
+        return {"status": "not_ready", "reason": "qmd binary not found"}
     return {"status": "ok", "path": str(candidate), "body": result.stdout}
 
 
 def qmd_update(vault_path: Path) -> dict[str, object]:
     try:
         result = _run_qmd(["update"])
+    except FileNotFoundError:
+        return {"ok": False, "error": "qmd binary not found"}
     except subprocess.CalledProcessError as exc:
         return {"ok": False, "error": exc.stderr.strip() or "qmd update failed"}
     return {"ok": True, "stdout": result.stdout}
@@ -198,6 +234,8 @@ def qmd_update(vault_path: Path) -> dict[str, object]:
 def qmd_reembed_force(vault_path: Path) -> dict[str, object]:
     try:
         result = _run_qmd(["embed", "-f"])
+    except FileNotFoundError:
+        return {"ok": False, "error": "qmd binary not found"}
     except subprocess.CalledProcessError as exc:
         return {"ok": False, "error": exc.stderr.strip() or "qmd embed failed"}
     return {"ok": True, "stdout": result.stdout}

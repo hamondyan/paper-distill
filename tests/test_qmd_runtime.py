@@ -213,6 +213,23 @@ def test_qmd_search_constructs_query_for_scope(tmp_path: Path, monkeypatch: pyte
     ]
 
 
+def test_qmd_search_blocks_when_readiness_is_degraded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_ready(_vault_path: Path) -> dict[str, object]:
+        return {"status": "degraded", "reason": "missing qmd collections"}
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("query should not run when readiness is degraded")
+
+    monkeypatch.setattr(qmd_runtime, "qmd_ready_report", fake_ready)
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fail_run)
+
+    result = qmd_runtime.qmd_search(tmp_path, "graph attention", "canon")
+
+    assert result == {"status": "degraded", "error": "missing qmd collections"}
+
+
 def test_qmd_get_constructs_command_for_existing_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -253,6 +270,22 @@ def test_qmd_get_resolves_vault_relative_explicit_path(
 
     assert result == {"status": "ok", "path": str(doc), "body": "relative body"}
     assert recorded["args"] == ["qmd", "get", str(doc)]
+
+
+def test_qmd_get_rejects_explicit_path_escape_outside_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# outside\n", encoding="utf-8")
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("qmd should not run for escaping paths")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fail_run)
+
+    result = qmd_runtime.qmd_get(tmp_path, "../outside.md")
+
+    assert result == {"status": "error", "error": "path escapes vault: ../outside.md"}
 
 
 def test_qmd_get_resolves_stable_identifier_to_canonical_filename(
@@ -321,6 +354,24 @@ def test_qmd_get_resolves_doi_style_identifier_to_canonical_filename(
     assert recorded["args"] == ["qmd", "get", str(doc)]
 
 
+def test_qmd_get_returns_not_ready_when_binary_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = tmp_path / "wiki" / "papers" / "paper.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# paper\n", encoding="utf-8")
+
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    assert qmd_runtime.qmd_get(tmp_path, str(doc)) == {
+        "status": "not_ready",
+        "reason": "qmd binary not found",
+    }
+
+
 def test_qmd_update_wraps_success_and_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(args, **kwargs):
         if args == ["qmd", "update"]:
@@ -335,6 +386,17 @@ def test_qmd_update_wraps_success_and_error(tmp_path: Path, monkeypatch: pytest.
 
     monkeypatch.setattr(qmd_runtime.subprocess, "run", failing_run)
     assert qmd_runtime.qmd_update(tmp_path) == {"ok": False, "error": "boom"}
+
+
+def test_qmd_update_returns_not_ready_when_binary_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    assert qmd_runtime.qmd_update(tmp_path) == {"ok": False, "error": "qmd binary not found"}
 
 
 def test_qmd_reembed_force_wraps_success_and_error(
@@ -353,3 +415,14 @@ def test_qmd_reembed_force_wraps_success_and_error(
 
     monkeypatch.setattr(qmd_runtime.subprocess, "run", failing_run)
     assert qmd_runtime.qmd_reembed_force(tmp_path) == {"ok": False, "error": "embed failed"}
+
+
+def test_qmd_reembed_force_returns_not_ready_when_binary_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    assert qmd_runtime.qmd_reembed_force(tmp_path) == {"ok": False, "error": "qmd binary not found"}
