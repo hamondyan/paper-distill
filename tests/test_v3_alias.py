@@ -26,3 +26,29 @@ def test_check_concept_alias_prefers_existing_canonical_name(tmp_path: Path) -> 
 
     assert result["exists"] is True
     assert result["canonical"] == "Transformer"
+
+
+def test_check_concept_alias_skips_malformed_frontmatter(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    concept_dir.mkdir(parents=True)
+    concept_dir.joinpath("broken.md").write_text(
+        "---\n"
+        "aliases: [Broken\n"
+        "---\n\n"
+        "# Broken\n",
+        encoding="utf-8",
+    )
+    concept_dir.joinpath("transformer.md").write_text(
+        "---\n"
+        "type: concept\n"
+        "concept: Transformer\n"
+        "aliases: [变换器]\n"
+        "---\n\n"
+        "# Transformer\n",
+        encoding="utf-8",
+    )
+
+    result = check_concept_alias_v3(tmp_path, "变换器")
+
+    assert result["exists"] is True
+    assert result["canonical"] == "Transformer"

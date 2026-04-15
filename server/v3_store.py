@@ -86,12 +86,12 @@ def upsert_wiki_page_v3(
     if any(sep in target for sep in ("/", "\\", "..")):
         return {"ok": False, "error": "target must not contain path separators", "warnings": []}
 
-    ensure_v3_layout(vault_path)
-
     try:
         path = _target_path(vault_path, page_type, target)
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "warnings": []}
+
+    ensure_v3_layout(vault_path)
 
     payload = dict(frontmatter or {})
     payload.setdefault("type", page_type)
