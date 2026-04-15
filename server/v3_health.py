@@ -68,9 +68,15 @@ def _frontmatter_line_count(text: str) -> int:
 
 def _repeated_link_issues(path: Path, text: str) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
-    for line_no, line in enumerate(text.splitlines(), start=1):
+    block_lines: list[str] = []
+    block_start = 1
+
+    def check_block(lines: list[str], start_line: int) -> None:
+        if not lines:
+            return
+        block = "\n".join(lines)
         seen: set[str] = set()
-        for match in _WIKILINK_RE.finditer(line):
+        for match in _WIKILINK_RE.finditer(block):
             target = match.group("target").strip()
             if target in seen:
                 issues.append(
@@ -78,11 +84,22 @@ def _repeated_link_issues(path: Path, text: str) -> list[dict[str, str]]:
                         "code": "repeated_link",
                         "path": str(path),
                         "target": target,
-                        "line": str(line_no),
+                        "line": str(start_line),
                     }
                 )
                 break
             seen.add(target)
+
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            check_block(block_lines, block_start)
+            block_lines = []
+            block_start = line_no + 1
+            continue
+        if not block_lines:
+            block_start = line_no
+        block_lines.append(line)
+    check_block(block_lines, block_start)
     return issues
 
 
@@ -124,7 +141,7 @@ def _heading(body: str) -> str:
 
 def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[dict[str, str]]]:
     known: set[str] = set()
-    alias_owners: dict[str, list[str]] = {}
+    surface_owners: dict[str, set[str]] = {}
 
     for path in sorted((vault_path / "wiki").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
@@ -133,34 +150,40 @@ def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[d
         except yaml.YAMLError:
             frontmatter, body = {}, text
 
-        for surface in (
+        base_surfaces = (
             path.stem,
             str(frontmatter.get("concept") or ""),
             str(frontmatter.get("title") or ""),
             str(frontmatter.get("name") or ""),
             _heading(body),
-        ):
+        )
+        for surface in base_surfaces:
             key = _surface_key(surface)
             if key:
                 known.add(key)
 
         if path.parent.name == "concepts":
             canonical = str(frontmatter.get("concept") or _heading(body) or path.stem)
+            owner = canonical.strip() or path.stem
+            for surface in base_surfaces:
+                key = _surface_key(surface)
+                if key:
+                    surface_owners.setdefault(key, set()).add(owner)
             for alias in _as_aliases(frontmatter.get("aliases")):
                 key = _surface_key(alias)
                 if not key:
                     continue
                 known.add(key)
-                alias_owners.setdefault(key, []).append(canonical)
+                surface_owners.setdefault(key, set()).add(owner)
 
     issues: list[dict[str, str]] = []
-    for alias_key, owners in sorted(alias_owners.items()):
-        distinct_owners = sorted(set(owners))
+    for surface_key, owners in sorted(surface_owners.items()):
+        distinct_owners = sorted(owners)
         if len(distinct_owners) > 1:
             issues.append(
                 {
                     "code": "alias_ambiguity",
-                    "alias": alias_key,
+                    "surface": surface_key,
                     "owners": ", ".join(distinct_owners),
                 }
             )
@@ -213,11 +236,10 @@ def lint_vault_v3(vault_path: Path) -> dict[str, Any]:
     return {"ok": True, "issues": issues}
 
 
-def _find_concept_path(vault_path: Path, concept: str) -> Path | None:
+def _find_concept_paths(vault_path: Path, concept: str) -> list[Path]:
     concept_dir = vault_path / "wiki" / "concepts"
-    direct_path = concept_dir / f"{concept}.md"
-    if direct_path.exists():
-        return direct_path
+    concept_key = _surface_key(concept)
+    matches: set[Path] = set()
 
     for path in sorted(concept_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
@@ -226,13 +248,10 @@ def _find_concept_path(vault_path: Path, concept: str) -> Path | None:
         except yaml.YAMLError:
             continue
         canonical = str(frontmatter.get("concept") or frontmatter.get("title") or "").strip()
-        heading = next(
-            (line[2:].strip() for line in body.splitlines() if line.startswith("# ")),
-            "",
-        )
-        if concept in {path.stem, canonical, heading}:
-            return path
-    return None
+        for surface in (path.stem, canonical, _heading(body)):
+            if _surface_key(surface) == concept_key:
+                matches.add(path)
+    return sorted(matches)
 
 
 def _rewrite_links(text: str, old: str, new: str) -> tuple[str, int]:
@@ -277,9 +296,17 @@ def merge_concept_v3(vault_path: Path, old: str, new: str) -> dict[str, Any]:
     if not old or not new:
         return {"ok": False, "error": "old and new are required", "warnings": []}
 
-    concept_path = _find_concept_path(vault_path, new)
-    if concept_path is None:
+    concept_paths = _find_concept_paths(vault_path, new)
+    if not concept_paths:
         return {"ok": False, "error": f"target concept not found: {new}", "warnings": []}
+    if len(concept_paths) > 1:
+        return {
+            "ok": False,
+            "error": f"ambiguous target concept: {new}",
+            "candidates": [str(path) for path in concept_paths],
+            "warnings": [],
+        }
+    concept_path = concept_paths[0]
 
     rewritten_files: list[str] = []
     rewritten_links = 0
