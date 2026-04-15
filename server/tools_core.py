@@ -52,4 +52,3 @@ def register_core_tools(mcp: FastMCP) -> None:
     mcp.tool(name="kb_search")(kb_search)
     mcp.tool(name="kb_get")(kb_get)
     mcp.tool(name="status")(status)
-    mcp.tool(name="update-preferences")(update_preferences)

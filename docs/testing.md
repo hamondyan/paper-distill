@@ -28,6 +28,9 @@ async def main():
         "check_concept_alias",
         "upsert_wiki_page",
         "merge_concept",
+        "kb_update_index",
+        "kb_reembed_force",
+        "lint_vault",
     }
     missing = sorted(required - set(names))
     if missing:

@@ -59,4 +59,3 @@ async def vault_health() -> dict[str, Any]:
 
 def register_health_tools(mcp: FastMCP) -> None:
     mcp.tool(name="lint_vault")(lint_vault)
-    mcp.tool(name="vault-health")(vault_health)

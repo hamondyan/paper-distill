@@ -2,9 +2,8 @@
 
 The server entrypoint stays intentionally small: it instantiates FastMCP,
 exposes a few compatibility bindings used by the domain tool modules, and
-registers the current tool groups. The v3 core read surface is provided by
-`server.tools_core` as `kb_search`, `kb_get`, `status`, and
-`update-preferences`.
+registers the current v3 tool groups. The public surface is intentionally
+small; older implementation helpers stay importable but are not MCP tools.
 """
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ from server import server_runtime as _rt
 from server.tools_core import register_core_tools
 from server.tools_intake import register_intake_tools
 from server.tools_knowledge import register_knowledge_tools
-from server.tools_ideas import register_idea_tools
 from server.tools_health import register_health_tools
 
 mcp = FastMCP("paper-distill")
@@ -121,11 +119,10 @@ for _name in _DELEGATED_ASYNC_NAMES:
 _capture_options = _delegate_sync("_capture_options")
 _selected_topics = _delegate_sync("_selected_topics")
 
-# ---- Register consolidated MCP tools (12 total) ----
+# ---- Register pure v3 MCP tools ----
 register_core_tools(mcp)
 register_intake_tools(mcp)
 register_knowledge_tools(mcp)
-register_idea_tools(mcp)
 register_health_tools(mcp)
 
 

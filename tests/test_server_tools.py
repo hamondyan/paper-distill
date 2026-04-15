@@ -340,29 +340,31 @@ class ToolSurfaceContractTest(unittest.TestCase):
         tools = asyncio.run(mcp.list_tools())
         names = {tool.name for tool in tools}
 
-        # v3.0 cutover surface
-        self.assertIn("kb_search", names)
-        self.assertIn("kb_get", names)
-        self.assertIn("status", names)
-        self.assertIn("update-preferences", names)
-        self.assertIn("search-papers", names)
-        self.assertIn("discover_papers", names)
-        self.assertIn("ingest_and_read", names)
-        self.assertIn("read-paper", names)
-        self.assertIn("compile", names)
-        self.assertIn("write-wiki", names)
-        self.assertIn("upsert_wiki_page", names)
-        self.assertIn("concept", names)
-        self.assertIn("check_concept_alias", names)
-        self.assertIn("merge_concept", names)
-        self.assertIn("kb_update_index", names)
-        self.assertIn("kb_reembed_force", names)
-        self.assertIn("maintain", names)
-        self.assertIn("idea-analyze", names)
-        self.assertIn("lint_vault", names)
-        self.assertEqual(len(names), 20)
+        expected = {
+            "status",
+            "kb_search",
+            "kb_get",
+            "discover_papers",
+            "ingest_and_read",
+            "check_concept_alias",
+            "upsert_wiki_page",
+            "merge_concept",
+            "kb_update_index",
+            "kb_reembed_force",
+            "lint_vault",
+        }
+        self.assertEqual(names, expected)
 
         # Old tool names should NOT be present
+        self.assertNotIn("update-preferences", names)
+        self.assertNotIn("search-papers", names)
+        self.assertNotIn("read-paper", names)
+        self.assertNotIn("compile", names)
+        self.assertNotIn("write-wiki", names)
+        self.assertNotIn("concept", names)
+        self.assertNotIn("maintain", names)
+        self.assertNotIn("idea-analyze", names)
+        self.assertNotIn("vault-health", names)
         self.assertNotIn("query-library", names)
         self.assertNotIn("discover", names)
         self.assertNotIn("ingest", names)

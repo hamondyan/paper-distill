@@ -353,12 +353,8 @@ async def maintain(
 # ------------------------------------------------------------------
 
 def register_knowledge_tools(mcp: FastMCP) -> None:
-    mcp.tool(name="compile")(compile)
-    mcp.tool(name="write-wiki")(write_wiki)
     mcp.tool(name="upsert_wiki_page")(upsert_wiki_page)
-    mcp.tool(name="concept")(concept)
     mcp.tool(name="check_concept_alias")(check_concept_alias)
     mcp.tool(name="merge_concept")(merge_concept)
     mcp.tool(name="kb_update_index")(kb_update_index)
     mcp.tool(name="kb_reembed_force")(kb_reembed_force)
-    mcp.tool(name="maintain")(maintain)

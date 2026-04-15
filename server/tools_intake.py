@@ -154,7 +154,5 @@ def _to_fulltext_url(identifier: str) -> str:
 # ------------------------------------------------------------------
 
 def register_intake_tools(mcp: FastMCP) -> None:
-    mcp.tool(name="search-papers")(search_papers)
     mcp.tool(name="discover_papers")(discover_papers)
     mcp.tool(name="ingest_and_read")(ingest_and_read)
-    mcp.tool(name="read-paper")(read_paper)

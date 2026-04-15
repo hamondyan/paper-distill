@@ -6,18 +6,32 @@ from pathlib import Path
 from server.server import mcp
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_COMMANDS = {"discover", "inbox", "ingest", "search", "get", "lint", "status"}
+EXPECTED_MCP_TOOLS = {
+    "status",
+    "kb_search",
+    "kb_get",
+    "discover_papers",
+    "ingest_and_read",
+    "check_concept_alias",
+    "upsert_wiki_page",
+    "merge_concept",
+    "kb_update_index",
+    "kb_reembed_force",
+    "lint_vault",
+}
 
 
 def test_command_inventory_matches_v3_surface() -> None:
-    names = {path.stem for path in Path("commands").glob("*.md")}
+    names = {path.stem for path in (REPO_ROOT / "commands").glob("*.md")}
     assert names == EXPECTED_COMMANDS
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:
-    get_doc = Path("commands/get.md").read_text(encoding="utf-8")
-    search_doc = Path("commands/search.md").read_text(encoding="utf-8")
-    status_doc = Path("commands/status.md").read_text(encoding="utf-8")
+    get_doc = (REPO_ROOT / "commands/get.md").read_text(encoding="utf-8")
+    search_doc = (REPO_ROOT / "commands/search.md").read_text(encoding="utf-8")
+    status_doc = (REPO_ROOT / "commands/status.md").read_text(encoding="utf-8")
 
     assert "kb_get" in get_doc
     assert "kb_search" in search_doc
@@ -28,11 +42,11 @@ def test_public_command_docs_point_to_v3_tools() -> None:
 
 
 def test_public_docs_describe_v3_qmd_cutover() -> None:
-    readme = Path("README.md").read_text(encoding="utf-8")
-    installation = Path("docs/installation.md").read_text(encoding="utf-8")
-    architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
-    commands = Path("docs/commands.md").read_text(encoding="utf-8")
-    testing = Path("docs/testing.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    installation = (REPO_ROOT / "docs/installation.md").read_text(encoding="utf-8")
+    architecture = (REPO_ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    commands = (REPO_ROOT / "docs/commands.md").read_text(encoding="utf-8")
+    testing = (REPO_ROOT / "docs/testing.md").read_text(encoding="utf-8")
 
     assert "`qmd` is a hard dependency in v3.0" in readme
     assert "discover -> approve -> ingest -> search/get -> lint -> status" in readme
@@ -69,17 +83,7 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
 def test_mcp_surface_exposes_v3_tool_names() -> None:
     tools = asyncio.run(mcp.list_tools())
     names = {tool.name for tool in tools}
-    required = {
-        "status",
-        "kb_search",
-        "kb_get",
-        "discover_papers",
-        "ingest_and_read",
-        "check_concept_alias",
-        "upsert_wiki_page",
-        "merge_concept",
-    }
 
-    assert required <= names
+    assert names == EXPECTED_MCP_TOOLS
     assert "check-concept-alias" not in names
     assert "upsert-wiki-page" not in names
