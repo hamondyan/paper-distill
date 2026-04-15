@@ -236,3 +236,7 @@ def get_zotero_local_export_dir(vault_path: str | None = None) -> str:
     if export_path.is_absolute() or not vault_path:
         return str(export_path)
     return str((Path(vault_path).expanduser() / export_path).resolve())
+
+
+def get_qmd_binary() -> str:
+    return get_env("PAPER_DISTILL_QMD_BINARY", "qmd")
