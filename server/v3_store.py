@@ -8,36 +8,15 @@ from typing import Any
 
 import yaml
 
-try:
-    from server.qmd_runtime import qmd_update
-except ImportError:  # pragma: no cover - current tree may not ship the qmd module yet
-    def qmd_update(vault_path: Path) -> dict[str, Any]:
-        return {"ok": False, "error": "qmd runtime unavailable"}
+from server.qmd_runtime import qmd_update
+from server.v3_bootstrap import ensure_v3_layout
 
 
 _PAGE_DIRS: dict[str, tuple[str, ...]] = {
     "paper": ("wiki", "papers"),
     "concept": ("wiki", "concepts"),
-    "method": ("wiki", "methods"),
-    "topic": ("wiki", "topics"),
     "conversation": ("insights", "conversations"),
 }
-
-_V3_LAYOUT_DIRS: tuple[tuple[str, ...], ...] = (
-    ("inbox",),
-    ("raw", "evidence"),
-    ("wiki", "papers"),
-    ("wiki", "concepts"),
-    ("wiki", "methods"),
-    ("wiki", "topics"),
-    ("insights", "conversations"),
-    (".state",),
-)
-
-
-def _ensure_v3_layout(vault_path: Path) -> None:
-    for parts in _V3_LAYOUT_DIRS:
-        (vault_path.joinpath(*parts)).mkdir(parents=True, exist_ok=True)
 
 
 def _target_path(vault_path: Path, page_type: str, target: str) -> Path:
@@ -107,7 +86,7 @@ def upsert_wiki_page_v3(
     if any(sep in target for sep in ("/", "\\", "..")):
         return {"ok": False, "error": "target must not contain path separators", "warnings": []}
 
-    _ensure_v3_layout(vault_path)
+    ensure_v3_layout(vault_path)
 
     try:
         path = _target_path(vault_path, page_type, target)
