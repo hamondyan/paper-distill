@@ -9,6 +9,7 @@ V3_DIRS = (
     "raw/evidence",
     "wiki/papers",
     "wiki/concepts",
+    "insights/ideas",
     "insights/conversations",
     "exports/presentations",
     ".state",
@@ -22,7 +23,7 @@ def _slugify(value: str) -> str:
 
 
 def paper_filename(title: str, paper_id: str) -> str:
-    safe_id = paper_id.replace(":", "-")
+    safe_id = re.sub(r"[:/]+", "-", paper_id)
     return f"{_slugify(title)}--{safe_id}.md"
 
 
