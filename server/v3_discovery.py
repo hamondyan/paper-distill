@@ -112,20 +112,22 @@ def _yaml_quoted(value: str) -> str:
 
 
 def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
-    title = _sanitize_stub_text(str(paper.get("title", "")).strip() or "Untitled Paper")
+    raw_title = str(paper.get("title", "")).strip() or "Untitled Paper"
     pid = str(paper.get("paper_id", "")).strip()
-    source_url = _sanitize_stub_text(_paper_source_url(paper))
-    abstract = _sanitize_stub_text(str(paper.get("abstract", "")).strip())
+    raw_source_url = _paper_source_url(paper)
+    body_title = _sanitize_stub_text(raw_title)
+    body_source_url = _sanitize_stub_text(raw_source_url)
+    body_abstract = _sanitize_stub_text(str(paper.get("abstract", "")).strip())
     body_lines = [
-        f"# {title}",
+        f"# {body_title}",
         "",
         f"- Paper ID: `{pid}`",
         f"- Score: {score}",
     ]
-    if source_url:
-        body_lines.append(f"- Source: {source_url}")
-    if abstract:
-        body_lines.extend(["", abstract])
+    if body_source_url:
+        body_lines.append(f"- Source: {body_source_url}")
+    if body_abstract:
+        body_lines.extend(["", body_abstract])
     body_lines.extend(
         [
             "",
@@ -136,8 +138,8 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
         "---\n"
         "type: inbox_stub\n"
         f"paper_id: {_yaml_quoted(pid)}\n"
-        f"title: {_yaml_quoted(title)}\n"
-        f"source_url: {_yaml_quoted(source_url)}\n"
+        f"title: {_yaml_quoted(raw_title)}\n"
+        f"source_url: {_yaml_quoted(raw_source_url)}\n"
         f'discovered_at: "{date.today().isoformat()}"\n'
         f"score: {score}\n"
         "---\n\n"

@@ -230,6 +230,49 @@ def test_discover_papers_ignores_approved_token_in_frontmatter_only(
     assert result["skipped_seen"] == []
 
 
+def test_discover_papers_preserves_raw_metadata_in_frontmatter(
+    tmp_path, monkeypatch
+) -> None:
+    async def fake_search(*args, **kwargs):
+        return [
+            {
+                "title": "Attention #approved Is All You Need",
+                "paper_id": "arxiv:1706.03762",
+                "source_url": "https://example.com/papers/#approved",
+                "abstract": "Fresh abstract with no approval marker.",
+            }
+        ]
+
+    async def fake_score(*args, **kwargs):
+        return [
+            {
+                "title": "Attention #approved Is All You Need",
+                "paper_id": "arxiv:1706.03762",
+                "source_url": "https://example.com/papers/#approved",
+                "abstract": "Fresh abstract with no approval marker.",
+                "_score": 91,
+            }
+        ]
+
+    monkeypatch.setattr("server.v3_discovery.search_papers", fake_search)
+    monkeypatch.setattr("server.v3_discovery.score_papers", fake_score, raising=False)
+    monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
+
+    asyncio.run(discover_papers_v3(query="transformer"))
+
+    inbox_files = list((tmp_path / "inbox").glob("*.md"))
+    assert len(inbox_files) == 1
+    stub_text = inbox_files[0].read_text(encoding="utf-8")
+    _, remainder = stub_text.split("---\n", 1)
+    frontmatter_text, body_text = remainder.split("\n---\n", 1)
+    frontmatter = yaml.safe_load(frontmatter_text)
+
+    assert frontmatter["title"] == "Attention #approved Is All You Need"
+    assert frontmatter["source_url"] == "https://example.com/papers/#approved"
+    assert "#approved" not in body_text
+    assert "# approved" in body_text
+
+
 def test_discover_papers_skips_seen_ids(tmp_path, monkeypatch) -> None:
     (tmp_path / ".state").mkdir(parents=True)
     (tmp_path / ".state" / "seen_papers.json").write_text(
