@@ -307,6 +307,34 @@ def test_qmd_get_rejects_explicit_path_escape_outside_vault(
     assert result == {"status": "error", "error": "path escapes vault: ../outside.md"}
 
 
+def test_qmd_get_returns_missing_for_absent_explicit_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = tmp_path / "wiki" / "papers" / "missing.md"
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("qmd should not run for missing explicit paths")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fail_run)
+
+    result = qmd_runtime.qmd_get(tmp_path, str(doc))
+
+    assert result == {"status": "missing", "error": f"document not found: {str(doc)}"}
+
+
+def test_qmd_get_returns_missing_for_absent_vault_relative_explicit_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("qmd should not run for missing explicit paths")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fail_run)
+
+    result = qmd_runtime.qmd_get(tmp_path, "wiki/papers/missing.md")
+
+    assert result == {"status": "missing", "error": "document not found: wiki/papers/missing.md"}
+
+
 def test_qmd_get_resolves_stable_identifier_to_canonical_filename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

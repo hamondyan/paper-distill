@@ -206,10 +206,7 @@ def qmd_get(vault_path: Path, id_or_path: str) -> dict[str, object]:
         if resolved_explicit.exists():
             candidate = resolved_explicit
         else:
-            match = _find_stable_id_match(vault_path, id_or_path)
-            if match is None:
-                return {"status": "missing", "error": f"document not found: {id_or_path}"}
-            candidate = match
+            return {"status": "missing", "error": f"document not found: {id_or_path}"}
     else:
         match = _find_stable_id_match(vault_path, id_or_path)
         if match is None:

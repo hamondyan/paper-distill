@@ -32,3 +32,24 @@ def test_bootstrap_reports_clean_error_when_qmd_init_fails(
         "layout": {"created": ["inbox"]},
         "qmd": {"status": "not_ready", "reason": "qmd binary not found"},
     }
+
+
+def test_bootstrap_preserves_binary_not_found_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_layout(_vault_path: Path) -> dict[str, list[str]]:
+        return {"created": ["inbox"]}
+
+    def raising_qmd(_vault_path: Path) -> dict[str, object]:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(cli, "ensure_v3_layout", fake_layout)
+    monkeypatch.setattr(cli, "ensure_qmd_ready", raising_qmd)
+
+    with pytest.raises(SystemExit) as excinfo:
+        asyncio.run(cli._bootstrap(Namespace(vault_path=str(tmp_path))))
+
+    assert excinfo.value.code == 1
+    stderr = capsys.readouterr().err.strip()
+    payload = json.loads(stderr)
+    assert payload["qmd"] == {"status": "not_ready", "reason": "qmd binary not found"}

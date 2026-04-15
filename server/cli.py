@@ -37,9 +37,10 @@ async def _bootstrap(args: argparse.Namespace) -> None:
     try:
         qmd = ensure_qmd_ready(vault_path)
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        reason = "qmd binary not found" if isinstance(exc, FileNotFoundError) else getattr(exc, "stderr", "").strip() or "qmd init failed"
         qmd = {
             "status": "not_ready",
-            "reason": getattr(exc, "stderr", "").strip() or "qmd init failed",
+            "reason": reason,
         }
     if qmd.get("status") not in {None, "ready"}:
         print(json.dumps({"layout": layout, "qmd": qmd}, indent=2, ensure_ascii=False), file=sys.stderr)
