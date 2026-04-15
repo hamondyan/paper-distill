@@ -255,6 +255,30 @@ def test_qmd_get_resolves_stable_identifier_to_canonical_filename(
     assert recorded["args"] == ["qmd", "get", str(doc)]
 
 
+def test_qmd_get_prefers_canonical_paper_namespace_over_raw_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canon_doc = tmp_path / "wiki" / "papers" / "paper--arxiv-1706.03762.md"
+    raw_doc = tmp_path / "raw" / "evidence" / "paper--arxiv-1706.03762.md"
+    canon_doc.parent.mkdir(parents=True)
+    raw_doc.parent.mkdir(parents=True)
+    canon_doc.write_text("# canon\n", encoding="utf-8")
+    raw_doc.write_text("# raw\n", encoding="utf-8")
+
+    recorded: dict[str, list[str]] = {}
+
+    def fake_run(args, **kwargs):
+        recorded["args"] = args
+        return Mock(stdout="canon body")
+
+    monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
+
+    result = qmd_runtime.qmd_get(tmp_path, "arxiv:1706.03762")
+
+    assert result == {"status": "ok", "path": str(canon_doc), "body": "canon body"}
+    assert recorded["args"] == ["qmd", "get", str(canon_doc)]
+
+
 def test_qmd_get_resolves_doi_style_identifier_to_canonical_filename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

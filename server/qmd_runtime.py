@@ -21,6 +21,14 @@ SCOPE_TO_COLLECTIONS: dict[str, tuple[str, ...]] = {
     "raw": ("raw-evidence",),
 }
 
+LOOKUP_NAMESPACE_ORDER: tuple[str, ...] = (
+    "wiki/papers",
+    "wiki/concepts",
+    "insights/conversations",
+    "insights/ideas",
+    "raw/evidence",
+)
+
 
 def _run_qmd(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -71,17 +79,19 @@ def _stable_id_candidates(id_or_path: str) -> list[str]:
 def _find_stable_id_match(vault_path: Path, id_or_path: str) -> Path | None:
     for candidate in _stable_id_candidates(id_or_path):
         suffix = candidate[:-3] if candidate.endswith(".md") else candidate
-        if suffix:
-            for match in sorted(vault_path.rglob(f"*--{suffix}.md")):
+        for rel_dir in LOOKUP_NAMESPACE_ORDER:
+            base = vault_path / rel_dir
+            if suffix:
+                for match in sorted(base.rglob(f"*--{suffix}.md")):
+                    if match.is_file():
+                        return match
+            for match in sorted(base.rglob(candidate)):
                 if match.is_file():
                     return match
-        for match in sorted(vault_path.rglob(candidate)):
-            if match.is_file():
-                return match
-        if not candidate.endswith(".md"):
-            for match in sorted(vault_path.rglob(f"{candidate}.md")):
-                if match.is_file():
-                    return match
+            if not candidate.endswith(".md"):
+                for match in sorted(base.rglob(f"{candidate}.md")):
+                    if match.is_file():
+                        return match
     return None
 
 
