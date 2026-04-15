@@ -1,11 +1,10 @@
-"""Thin Paper Distill MCP entrypoint.
+"""Thin Paper Distill v3 MCP entrypoint.
 
-Registers 12 consolidated MCP tools across 5 domain groups:
-    core:      query-library, update-preferences
-    intake:    search-papers, discover, ingest, read-paper
-    knowledge: compile, write-wiki, concept, maintain
-    ideas:     idea-analyze
-    health:    vault-health
+The server entrypoint stays intentionally small: it instantiates FastMCP,
+exposes a few compatibility bindings used by the domain tool modules, and
+registers the current tool groups. The v3 core read surface is provided by
+`server.tools_core` as `kb_search`, `kb_get`, `status`, and
+`update-preferences`.
 """
 from __future__ import annotations
 

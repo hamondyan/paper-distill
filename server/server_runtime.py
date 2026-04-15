@@ -54,6 +54,8 @@ from server.search import (
     resolve_crossref,
     dedup_merge,
 )
+from server.qmd_runtime import qmd_get, qmd_ready_report, qmd_search
+from server.v3_bootstrap import ensure_v3_layout
 from server.vault_query import query_vault_sync
 from server.vault_lint import (
     analyze_knowledge_graph_sync,
@@ -256,6 +258,25 @@ def _empty_dnl_note(paper: dict) -> dict:
         "evidence": {},
         "confidence": 0.0,
     }
+
+
+def kb_search(query: str, scope: str = "canon") -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    ensure_v3_layout(vault_path)
+    return qmd_search(vault_path=vault_path, query=query, scope=scope)
+
+
+def kb_get(id_or_path: str) -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    ensure_v3_layout(vault_path)
+    return qmd_get(vault_path=vault_path, id_or_path=id_or_path)
+
+
+def v3_status() -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    layout = ensure_v3_layout(vault_path)
+    qmd = qmd_ready_report(vault_path)
+    return {"layout": layout, "qmd": qmd}
 
 
 async def _prepare_ingestion_candidate(
