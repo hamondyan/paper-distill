@@ -67,6 +67,8 @@ _DELEGATED_ASYNC_NAMES = (
     "resolve_compile_ir",
     "commit_compile_result",
     "check_concept_alias_v3",
+    "merge_concept_v3",
+    "lint_vault_v3",
     "query_tension_signals",
     "get_compile_state",
     "_enrich_inbox_candidate",

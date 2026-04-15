@@ -57,6 +57,7 @@ from server.search import (
 )
 from server.qmd_runtime import ensure_qmd_ready, qmd_get, qmd_ready_report, qmd_search
 from server.v3_bootstrap import ensure_v3_layout
+from server.v3_health import lint_vault_v3 as _lint_vault_v3, merge_concept_v3 as _merge_concept_v3
 from server.v3_ingest import ingest_and_read_v3 as _ingest_and_read_v3
 from server.vault_query import query_vault_sync
 from server.vault_lint import (
@@ -1577,6 +1578,17 @@ async def lint_vault() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool 11b: lint_vault (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def lint_vault_v3() -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured.", "issues": []}
+    return await asyncio.to_thread(_lint_vault_v3, Path(vault_path))
+
+
+# ---------------------------------------------------------------------------
 # Tool 12: library-stats
 # ---------------------------------------------------------------------------
 
@@ -1901,6 +1913,17 @@ async def check_concept_alias_v3(name: str) -> dict:
     if not vault_path:
         return {"exists": False, "canonical": name, "error": "VAULT_PATH not configured."}
     return _check_concept_alias_v3(Path(vault_path), name)
+
+
+# ---------------------------------------------------------------------------
+# Tool 19c: merge_concept (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def merge_concept_v3(old: str, new: str) -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured.", "warnings": []}
+    return await asyncio.to_thread(_merge_concept_v3, Path(vault_path), old, new)
 
 
 # ---------------------------------------------------------------------------

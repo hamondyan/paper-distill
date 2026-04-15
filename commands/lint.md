@@ -1,9 +1,8 @@
 ---
 name: lint
-description: Run wiki health check — find orphans, broken links, stale pages, and missing metadata
+description: Run v3 vault health checks
 user_invocable: true
 ---
 
-Run a wiki health check using the `paper-distill:knowledge-workbench` skill in maintenance mode.
-
-This asks the knowledge maintainer to inspect the health of the knowledge graph: orphaned articles, missing concepts, uncompiled source evidence, stale topics, broken backlinks, and concept gaps.
+Run the v3 health checks and report dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
+Do not rewrite files from this command.

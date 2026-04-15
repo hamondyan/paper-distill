@@ -8,10 +8,13 @@ Registers:
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
+from server.config import get_vault_path
+from server.qmd_runtime import qmd_reembed_force as _qmd_reembed_force, qmd_update as _qmd_update
 from server.server_runtime import (
     # compile pipeline
     prepare_crgp_context as _prepare_crgp,
@@ -27,6 +30,7 @@ from server.server_runtime import (
     resolve_concept_tool as _resolve_concept,
     merge_concepts_tool as _merge_concepts,
     check_concept_alias_v3 as _check_concept_alias_v3,
+    merge_concept_v3 as _merge_concept_v3,
     # maintenance
     reconcile_maintenance as _reconcile,
     get_maintenance_queue as _get_queue,
@@ -257,6 +261,24 @@ async def check_concept_alias(name: str) -> dict[str, Any]:
     return await _check_concept_alias_v3(name)
 
 
+async def merge_concept(old: str, new: str) -> dict[str, Any]:
+    return await _merge_concept_v3(old=old, new=new)
+
+
+async def kb_update_index() -> dict[str, Any]:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured."}
+    return _qmd_update(Path(vault_path))
+
+
+async def kb_reembed_force() -> dict[str, Any]:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured."}
+    return _qmd_reembed_force(Path(vault_path))
+
+
 # ------------------------------------------------------------------
 # Tool 10: maintain
 # ------------------------------------------------------------------
@@ -336,4 +358,7 @@ def register_knowledge_tools(mcp: FastMCP) -> None:
     mcp.tool(name="upsert-wiki-page")(upsert_wiki_page)
     mcp.tool(name="concept")(concept)
     mcp.tool(name="check-concept-alias")(check_concept_alias)
+    mcp.tool(name="merge_concept")(merge_concept)
+    mcp.tool(name="kb_update_index")(kb_update_index)
+    mcp.tool(name="kb_reembed_force")(kb_reembed_force)
     mcp.tool(name="maintain")(maintain)
