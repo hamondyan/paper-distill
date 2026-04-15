@@ -96,22 +96,23 @@ This note is still pending review.
             self.assertIn("content_hash", frontmatter)
             self.assertNotIn("#approved", raw_path.read_text(encoding="utf-8"))
 
-    def test_direct_url_reingest_overwrites_same_raw_path(self) -> None:
+    def test_direct_url_reingest_with_title_change_overwrites_same_raw_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             vault_root = Path(tmpdir)
             vault_root.mkdir(parents=True, exist_ok=True)
 
             first_doc = _cleaned_doc("Direct Paper", "# First capture")
-            second_doc = _cleaned_doc("Direct Paper", "# Second capture")
+            second_doc = _cleaned_doc("Renamed Paper", "# Second capture")
             url = "https://arxiv.org/abs/2501.00003"
 
+            capture_count = 0
+
             async def fake_capture(paper: dict, **_kwargs):
-                if paper["title"] == "Direct Paper":
-                    if not Path(tmpdir, "seen_once").exists():
-                        Path(tmpdir, "seen_once").write_text("1", encoding="utf-8")
-                        return first_doc
-                    return second_doc
-                raise AssertionError("unexpected paper")
+                nonlocal capture_count
+                capture_count += 1
+                if capture_count == 1:
+                    return first_doc
+                return second_doc
 
             with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
                 with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):

@@ -74,6 +74,18 @@ def _approved_inbox_papers(vault_path: Path) -> list[dict[str, Any]]:
     return papers
 
 
+def _existing_raw_evidence_path(vault_path: Path, paper_id_value: str) -> Path | None:
+    raw_root = vault_path / "raw" / "evidence"
+    if not raw_root.exists():
+        return None
+
+    for raw_path in sorted(raw_root.rglob("*.md")):
+        frontmatter, _ = _read_markdown_note(raw_path)
+        if str(frontmatter.get("paper_id") or "").strip() == paper_id_value:
+            return raw_path
+    return None
+
+
 async def _capture_raw_evidence(paper: dict[str, Any], source_url: str) -> dict[str, Any]:
     arxiv_id = str(paper.get("arxiv_id") or extract_arxiv_id(source_url) or "").strip()
     if not arxiv_id:
@@ -100,13 +112,16 @@ async def _capture_raw_evidence(paper: dict[str, Any], source_url: str) -> dict[
 
 
 def _write_raw_evidence(vault_path: Path, capture: dict[str, Any]) -> Path:
-    raw_path = vault_path / "raw" / "evidence" / paper_filename(
-        str(capture["title"]),
-        str(capture["paper_id"]),
-    )
+    paper_id_value = str(capture["paper_id"])
+    raw_path = _existing_raw_evidence_path(vault_path, paper_id_value)
+    if raw_path is None:
+        raw_path = vault_path / "raw" / "evidence" / paper_filename(
+            str(capture["title"]),
+            paper_id_value,
+        )
     frontmatter = {
         "type": "raw_evidence",
-        "paper_id": capture["paper_id"],
+        "paper_id": paper_id_value,
         "title": capture["title"],
         "source_url": capture["source_url"],
         "captured_at": capture["captured_at"],
