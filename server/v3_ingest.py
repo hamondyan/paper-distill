@@ -131,6 +131,15 @@ def _write_raw_evidence(vault_path: Path, capture: dict[str, Any]) -> Path:
     return raw_path
 
 
+def _approved_error(paper: dict[str, Any], exc: Exception) -> dict[str, str]:
+    return {
+        "paper_id": str(paper.get("paper_id") or ""),
+        "title": str(paper.get("title") or ""),
+        "note_path": str(paper.get("_note_path") or ""),
+        "error": str(exc),
+    }
+
+
 async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
     input_value = input_value.strip()
     if not input_value:
@@ -145,12 +154,18 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
 
     if input_value == "approved":
         items: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
         for paper in _approved_inbox_papers(vault_path):
             source_url = str(paper.get("source_url") or "").strip()
             if not source_url:
+                errors.append(_approved_error(paper, ValueError("missing source_url")))
                 continue
-            capture = await _capture_raw_evidence(paper, source_url)
-            raw_path = _write_raw_evidence(vault_path, capture)
+            try:
+                capture = await _capture_raw_evidence(paper, source_url)
+                raw_path = _write_raw_evidence(vault_path, capture)
+            except Exception as exc:
+                errors.append(_approved_error(paper, exc))
+                continue
             items.append(
                 {
                     "paper_id": capture["paper_id"],
@@ -160,7 +175,7 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
                     "source_url": capture["source_url"],
                 }
             )
-        return {"items": items}
+        return {"items": items, "errors": errors}
 
     source_url = input_value
     arxiv_id = extract_arxiv_id(source_url)
