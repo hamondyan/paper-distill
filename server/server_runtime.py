@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,7 @@ from server.search import (
     resolve_crossref,
     dedup_merge,
 )
-from server.qmd_runtime import qmd_get, qmd_ready_report, qmd_search
+from server.qmd_runtime import ensure_qmd_ready, qmd_get, qmd_ready_report, qmd_search
 from server.v3_bootstrap import ensure_v3_layout
 from server.vault_query import query_vault_sync
 from server.vault_lint import (
@@ -275,6 +276,10 @@ def kb_get(id_or_path: str) -> dict[str, object]:
 def v3_status() -> dict[str, object]:
     vault_path = Path(get_vault_path())
     layout = ensure_v3_layout(vault_path)
+    try:
+        ensure_qmd_ready(vault_path)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
     qmd = qmd_ready_report(vault_path)
     return {"layout": layout, "qmd": qmd}
 

@@ -73,3 +73,39 @@ def test_kb_get_returns_current_file_truth_from_real_runtime_path(
         "path": str(doc),
         "body": "# Attention Is All You Need\n",
     }
+
+
+def test_status_attempts_qmd_bootstrap_before_reporting_readiness(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(server_runtime, "get_vault_path", lambda: str(tmp_path))
+
+    def fake_ensure_v3_layout(vault_path: Path) -> dict[str, object]:
+        calls.append(("layout", vault_path))
+        return {"created": ["wiki/papers"]}
+
+    def fake_ensure_qmd_ready(vault_path: Path) -> dict[str, object]:
+        calls.append(("qmd_bootstrap", vault_path))
+        raise FileNotFoundError("qmd")
+
+    def fake_qmd_ready_report(vault_path: Path) -> dict[str, object]:
+        calls.append(("qmd_report", vault_path))
+        return {"status": "not_ready", "reason": "qmd binary not found"}
+
+    monkeypatch.setattr(server_runtime, "ensure_v3_layout", fake_ensure_v3_layout)
+    monkeypatch.setattr(server_runtime, "ensure_qmd_ready", fake_ensure_qmd_ready)
+    monkeypatch.setattr(server_runtime, "qmd_ready_report", fake_qmd_ready_report)
+
+    result = asyncio.run(mcp.call_tool("status"))
+
+    assert calls == [
+        ("layout", tmp_path),
+        ("qmd_bootstrap", tmp_path),
+        ("qmd_report", tmp_path),
+    ]
+    assert result.structured_content == {
+        "layout": {"created": ["wiki/papers"]},
+        "qmd": {"status": "not_ready", "reason": "qmd binary not found"},
+    }
