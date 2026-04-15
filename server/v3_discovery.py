@@ -65,6 +65,10 @@ def _paper_score(paper: dict[str, Any]) -> int:
         return 80
 
 
+def _sanitize_stub_text(value: str) -> str:
+    return value.replace("#approved", "# approved")
+
+
 def _inbox_note_paper_id(text: str) -> str:
     if not text.startswith("---\n"):
         return ""
@@ -78,6 +82,15 @@ def _inbox_note_paper_id(text: str) -> str:
     return ""
 
 
+def _inbox_note_body(text: str) -> str:
+    if "\n---\n\n" not in text:
+        return ""
+    try:
+        return text.split("\n---\n\n", 1)[1]
+    except IndexError:
+        return ""
+
+
 def _existing_approved_inbox_note(vault_path: Path, paper_id: str) -> Path | None:
     inbox_path = vault_path / "inbox"
     if not inbox_path.exists():
@@ -87,7 +100,7 @@ def _existing_approved_inbox_note(vault_path: Path, paper_id: str) -> Path | Non
             text = note_path.read_text(encoding="utf-8")
         except OSError:
             continue
-        if "#approved" not in text:
+        if "#approved" not in _inbox_note_body(text):
             continue
         if _inbox_note_paper_id(text) == paper_id:
             return note_path
@@ -99,10 +112,10 @@ def _yaml_quoted(value: str) -> str:
 
 
 def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
-    title = str(paper.get("title", "")).strip() or "Untitled Paper"
+    title = _sanitize_stub_text(str(paper.get("title", "")).strip() or "Untitled Paper")
     pid = str(paper.get("paper_id", "")).strip()
-    source_url = _paper_source_url(paper)
-    abstract = str(paper.get("abstract", "")).strip().replace("#approved", "# approved")
+    source_url = _sanitize_stub_text(_paper_source_url(paper))
+    abstract = _sanitize_stub_text(str(paper.get("abstract", "")).strip())
     body_lines = [
         f"# {title}",
         "",
