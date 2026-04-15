@@ -102,7 +102,7 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
     title = str(paper.get("title", "")).strip() or "Untitled Paper"
     pid = str(paper.get("paper_id", "")).strip()
     source_url = _paper_source_url(paper)
-    abstract = str(paper.get("abstract", "")).strip()
+    abstract = str(paper.get("abstract", "")).strip().replace("#approved", "# approved")
     body_lines = [
         f"# {title}",
         "",

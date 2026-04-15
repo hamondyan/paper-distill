@@ -84,6 +84,44 @@ def test_discover_papers_scores_results_before_saving(
     assert len(score_calls) == 1
 
 
+def test_discover_papers_sanitizes_approved_token_from_abstract(
+    tmp_path, monkeypatch
+) -> None:
+    async def fake_search(*args, **kwargs):
+        return [
+            {
+                "title": "Attention: Is All You Need",
+                "paper_id": "arxiv:1706.03762",
+                "source_url": "https://arxiv.org/abs/1706.03762",
+                "abstract": "This abstract mentions #approved as text, not approval.",
+            }
+        ]
+
+    async def fake_score(*args, **kwargs):
+        return [
+            {
+                "title": "Attention: Is All You Need",
+                "paper_id": "arxiv:1706.03762",
+                "source_url": "https://arxiv.org/abs/1706.03762",
+                "abstract": "This abstract mentions #approved as text, not approval.",
+                "_score": 91,
+            }
+        ]
+
+    monkeypatch.setattr("server.v3_discovery.search_papers", fake_search)
+    monkeypatch.setattr("server.v3_discovery.score_papers", fake_score, raising=False)
+    monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
+
+    result = asyncio.run(discover_papers_v3(query="transformer"))
+
+    inbox_files = list((tmp_path / "inbox").glob("*.md"))
+    assert len(inbox_files) == 1
+    stub_text = inbox_files[0].read_text(encoding="utf-8")
+    assert "#approved" not in stub_text
+    assert "# approved as text" in stub_text
+    assert result["saved"][0]["paper_id"] == "arxiv:1706.03762"
+
+
 def test_discover_papers_preserves_existing_approved_inbox_note(
     tmp_path, monkeypatch
 ) -> None:
