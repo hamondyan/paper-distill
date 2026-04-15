@@ -78,7 +78,7 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
     body_lines.extend(
         [
             "",
-            "Review this stub in Obsidian and add `#approved` to the body when ready to ingest.",
+            "Review this stub in Obsidian and mark it approved by adding the approval marker in the body when ready to ingest.",
         ]
     )
     return (

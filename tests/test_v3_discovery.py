@@ -36,7 +36,7 @@ def test_discover_papers_writes_inbox_stub_and_updates_seen_cache(
     assert 'source_url: "https://arxiv.org/abs/1706.03762"' in stub_text
     assert frontmatter["title"] == "Attention: Is All You Need"
     assert frontmatter["source_url"] == "https://arxiv.org/abs/1706.03762"
-    assert "#approved" in stub_text
+    assert "#approved" not in stub_text
     cache = json.loads(
         (tmp_path / ".state" / "seen_papers.json").read_text(encoding="utf-8")
     )
