@@ -1,14 +1,11 @@
 # Testing
 
-## Full Test Suite
+## v3 Verification
+
+Run:
 
 ```bash
 uv run pytest -q
-```
-
-## Import And Syntax Check
-
-```bash
 uv run python -m compileall -q server tests
 ```
 
@@ -23,12 +20,14 @@ async def main():
     tools = await mcp.list_tools()
     names = sorted(tool.name for tool in tools)
     required = {
-        "query-library",
-        "source-discover",
-        "source-ingest",
-        "knowledge-compile-publish",
-        "paper-distill-extract",
-        "idea-discover",
+        "status",
+        "kb_search",
+        "kb_get",
+        "discover_papers",
+        "ingest_and_read",
+        "check_concept_alias",
+        "upsert_wiki_page",
+        "merge_concept",
     }
     missing = sorted(required - set(names))
     if missing:
@@ -38,18 +37,3 @@ async def main():
 asyncio.run(main())
 PY
 ```
-
-## Package Build
-
-```bash
-uv build
-```
-
-## Current Verification Baseline
-
-The repository has been verified with:
-
-- `uv run pytest -q`
-- `uv run python -m compileall -q server tests`
-- MCP tool surface smoke check
-- `uv build`
