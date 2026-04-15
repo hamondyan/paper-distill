@@ -273,6 +273,31 @@ def test_discover_papers_preserves_raw_metadata_in_frontmatter(
     assert "# approved" in body_text
 
 
+def test_discover_papers_errors_when_vault_path_is_empty(
+    monkeypatch,
+) -> None:
+    layout_calls = []
+    search_calls = []
+
+    async def fake_search(*args, **kwargs):
+        search_calls.append((args, kwargs))
+        return []
+
+    def fake_layout(*args, **kwargs):
+        layout_calls.append((args, kwargs))
+        return {"created": []}
+
+    monkeypatch.setattr("server.v3_discovery.search_papers", fake_search)
+    monkeypatch.setattr("server.v3_discovery.ensure_v3_layout", fake_layout)
+    monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: "")
+
+    result = asyncio.run(discover_papers_v3(query="transformer"))
+
+    assert result == {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
+    assert layout_calls == []
+    assert search_calls == []
+
+
 def test_discover_papers_skips_seen_ids(tmp_path, monkeypatch) -> None:
     (tmp_path / ".state").mkdir(parents=True)
     (tmp_path / ".state" / "seen_papers.json").write_text(
