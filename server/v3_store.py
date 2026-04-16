@@ -3,9 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from server.qmd_runtime import qmd_update
 from server.v3_bootstrap import ensure_v3_layout
 from server.v3_markdown import atomic_write_text, render_markdown
+
+
+FOLLOW_UP: list[str] = [
+    "Run qmd update after all writes in this round finish.",
+    "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+]
 
 
 _PAGE_DIRS: dict[str, tuple[str, ...]] = {
@@ -54,14 +59,4 @@ def upsert_wiki_page_v3(
     except Exception as exc:  # pragma: no cover - defensive path
         return {"ok": False, "error": str(exc), "warnings": []}
 
-    warnings: list[str] = []
-    try:
-        update_result = qmd_update(vault_path)
-    except Exception as exc:  # pragma: no cover - defensive path
-        update_result = {"ok": False, "error": str(exc)}
-
-    if not update_result.get("ok", False):
-        warning = str(update_result.get("error") or "qmd update failed")
-        warnings.append(warning)
-
-    return {"ok": True, "path": str(path), "warnings": warnings}
+    return {"ok": True, "path": str(path), "follow_up": FOLLOW_UP}

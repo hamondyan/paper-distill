@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from server.qmd_runtime import qmd_reembed_force, qmd_update
 from server.v3_markdown import render_markdown, split_frontmatter
 from server.v3_names import slugify, surface_key
 
@@ -13,6 +12,10 @@ _WIKILINK_RE = re.compile(
     r"\[\[(?P<target>[^\]|#]+)(?P<section>#[^\]|]+)?(?P<label>\|[^\]]+)?\]\]"
 )
 _FOOTER_CUES = ("related:", "see also:", "links:", "references:")
+FOLLOW_UP: list[str] = [
+    "Run qmd update after all writes in this round finish.",
+    "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+]
 
 
 def _surface_key(value: str) -> str:
@@ -285,13 +288,6 @@ def merge_concept_v3(vault_path: Path, old: str, new: str) -> dict[str, Any]:
 
     alias_added = _add_alias_to_concept(concept_path, old)
 
-    warnings: list[str] = []
-    update_result = qmd_update(vault_path)
-    reembed_result = qmd_reembed_force(vault_path)
-    for label, result in (("qmd update", update_result), ("qmd reembed", reembed_result)):
-        if not result.get("ok", False):
-            warnings.append(f"{label} failed: {result.get('error') or 'unknown error'}")
-
     return {
         "ok": True,
         "old": old,
@@ -300,7 +296,5 @@ def merge_concept_v3(vault_path: Path, old: str, new: str) -> dict[str, Any]:
         "rewritten_files": rewritten_files,
         "rewritten_links": rewritten_links,
         "alias_added": alias_added,
-        "update": update_result,
-        "reembed": reembed_result,
-        "warnings": warnings,
+        "follow_up": FOLLOW_UP,
     }

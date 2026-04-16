@@ -156,7 +156,7 @@ def test_lint_vault_flags_regex_shaped_malformed_links(tmp_path: Path) -> None:
     assert any(issue["code"] == "malformed_link" for issue in result["issues"])
 
 
-def test_merge_concept_rewrites_links_updates_aliases_and_refreshes_qmd(
+def test_merge_concept_rewrites_links_updates_aliases_and_returns_follow_up(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -180,21 +180,15 @@ def test_merge_concept_rewrites_links_updates_aliases_and_refreshes_qmd(
     )
     paper_dir.joinpath("demo.md").write_text("[[大型语言模型]]\n", encoding="utf-8")
 
-    qmd_calls: list[str] = []
-    monkeypatch.setattr(
-        "server.v3_health.qmd_update",
-        lambda *_args, **_kwargs: qmd_calls.append("update") or {"ok": True},
-    )
-    monkeypatch.setattr(
-        "server.v3_health.qmd_reembed_force",
-        lambda *_args, **_kwargs: qmd_calls.append("reembed") or {"ok": True},
-    )
-
     result = merge_concept_v3(tmp_path, "大型语言模型", "llm")
 
     assert result["ok"] is True
-    assert result["warnings"] == []
-    assert qmd_calls == ["update", "reembed"]
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
+    assert "update" not in result
+    assert "reembed" not in result
     assert paper_dir.joinpath("demo.md").read_text(encoding="utf-8") == "[[llm]]\n"
     frontmatter = _read_frontmatter(concept_dir / "llm.md")
     assert "大型语言模型" in frontmatter["aliases"]
@@ -218,8 +212,6 @@ def test_merge_concept_fails_closed_when_target_resolution_is_ambiguous(
     )
     paper_path = paper_dir / "demo.md"
     paper_path.write_text("[[Old Concept]]\n", encoding="utf-8")
-    monkeypatch.setattr("server.v3_health.qmd_update", lambda *_args, **_kwargs: {"ok": True})
-    monkeypatch.setattr("server.v3_health.qmd_reembed_force", lambda *_args, **_kwargs: {"ok": True})
 
     result = merge_concept_v3(tmp_path, "Old Concept", "Shared")
 
@@ -228,7 +220,7 @@ def test_merge_concept_fails_closed_when_target_resolution_is_ambiguous(
     assert paper_path.read_text(encoding="utf-8") == "[[Old Concept]]\n"
 
 
-def test_merge_concept_returns_warnings_when_qmd_refresh_fails(
+def test_merge_concept_returns_follow_up_guidance_on_success(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -241,22 +233,21 @@ def test_merge_concept_returns_warnings_when_qmd_refresh_fails(
         encoding="utf-8",
     )
     paper_dir.joinpath("demo.md").write_text("[[大型语言模型]]\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "server.v3_health.qmd_update",
-        lambda *_args, **_kwargs: {"ok": False, "error": "update failed"},
-    )
-    monkeypatch.setattr(
-        "server.v3_health.qmd_reembed_force",
-        lambda *_args, **_kwargs: {"ok": False, "error": "embed failed"},
-    )
 
     result = merge_concept_v3(tmp_path, "大型语言模型", "llm")
 
     assert result["ok"] is True
-    assert result["warnings"] == [
-        "qmd update failed: update failed",
-        "qmd reembed failed: embed failed",
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
     ]
+
+
+def test_v3_health_does_not_expose_qmd_side_effect_helpers() -> None:
+    from server import v3_health
+
+    assert not hasattr(v3_health, "qmd_update")
+    assert not hasattr(v3_health, "qmd_reembed_force")
 
 
 def test_mcp_lists_v3_health_surface_names() -> None:

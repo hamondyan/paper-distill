@@ -17,15 +17,10 @@ def _read_markdown(path: Path) -> tuple[dict, str]:
     return yaml.safe_load(fm_text) or {}, body.strip()
 
 
-def test_upsert_wiki_page_writes_markdown_and_returns_warning_when_qmd_update_fails(
+def test_upsert_wiki_page_writes_markdown_and_returns_follow_up_guidance(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": False, "error": "qmd update failed"},
-    )
-
     result = upsert_wiki_page_v3(
         vault_path=tmp_path,
         page_type="paper",
@@ -43,7 +38,11 @@ def test_upsert_wiki_page_writes_markdown_and_returns_warning_when_qmd_update_fa
 
     path = tmp_path / "wiki" / "papers" / "attention-is-all-you-need--arxiv-1706.03762.md"
     assert result["ok"] is True
-    assert result["warnings"] == ["qmd update failed"]
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
+    assert "warnings" not in result
     assert path.exists()
     frontmatter, body = _read_markdown(path)
     assert frontmatter["paper_id"] == "arxiv:1706.03762"
@@ -51,11 +50,6 @@ def test_upsert_wiki_page_writes_markdown_and_returns_warning_when_qmd_update_fa
 
 
 def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = upsert_wiki_page_v3(
         vault_path=tmp_path,
         page_type="conversation",
@@ -66,7 +60,10 @@ def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkey
 
     path = tmp_path / "insights" / "conversations" / "transformer-tension-note.md"
     assert result["ok"] is True
-    assert result["warnings"] == []
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
     assert path.exists()
     frontmatter, body = _read_markdown(path)
     assert frontmatter["type"] == "conversation"
@@ -74,11 +71,6 @@ def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkey
 
 
 def test_upsert_wiki_page_supports_idea_page_type(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = upsert_wiki_page_v3(
         vault_path=tmp_path,
         page_type="idea",
@@ -89,7 +81,10 @@ def test_upsert_wiki_page_supports_idea_page_type(tmp_path: Path, monkeypatch) -
 
     path = tmp_path / "insights" / "ideas" / "active-robot-policy-idea.md"
     assert result["ok"] is True
-    assert result["warnings"] == []
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
     assert path.exists()
     frontmatter, body = _read_markdown(path)
     assert frontmatter["type"] == "idea"
@@ -97,11 +92,6 @@ def test_upsert_wiki_page_supports_idea_page_type(tmp_path: Path, monkeypatch) -
 
 
 def test_upsert_wiki_page_enforces_requested_page_type(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = upsert_wiki_page_v3(
         vault_path=tmp_path,
         page_type="paper",
@@ -114,17 +104,16 @@ def test_upsert_wiki_page_enforces_requested_page_type(tmp_path: Path, monkeypat
     assert result["ok"] is True
     frontmatter, _body = _read_markdown(path)
     assert frontmatter["type"] == "paper"
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
 
 
 def test_upsert_wiki_page_rejects_unknown_type_without_creating_layout(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = upsert_wiki_page_v3(
         vault_path=tmp_path,
         page_type="method",
@@ -136,6 +125,12 @@ def test_upsert_wiki_page_rejects_unknown_type_without_creating_layout(
     assert result["ok"] is False
     assert "unsupported page_type" in result["error"]
     assert not (tmp_path / "inbox").exists()
+
+
+def test_v3_store_does_not_expose_qmd_update() -> None:
+    from server import v3_store
+
+    assert not hasattr(v3_store, "qmd_update")
 
 
 def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() -> None:
