@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -62,6 +63,11 @@ LEGACY_TEST_FILES = [
     "tests/test_writer_boundaries.py",
     "tests/test_zotero_client.py",
 ]
+LEGACY_ASSET_PREFIXES = [
+    "templates/",
+    "tests/fixtures/wave1_replay/",
+    "server/zotero/",
+]
 
 
 def _tracked_paths() -> set[str]:
@@ -85,3 +91,30 @@ def test_tracked_cache_artifacts_are_removed() -> None:
     tracked = _tracked_paths()
     offenders = [path for path in tracked if "__pycache__" in path or path.endswith(".pyc")]
     assert offenders == []
+
+
+def test_orphaned_templates_and_wave1_fixtures_are_gone() -> None:
+    tracked = _tracked_paths()
+    offenders = [
+        path
+        for path in tracked
+        if any(path.startswith(prefix) for prefix in LEGACY_ASSET_PREFIXES[:2])
+    ]
+    assert offenders == []
+
+
+def test_v3_config_example_has_no_legacy_sections() -> None:
+    config_text = (REPO_ROOT / "server" / "config.py").read_text(encoding="utf-8")
+    example = json.loads((REPO_ROOT / "settings.example.json").read_text(encoding="utf-8"))
+    paper_distill = example.get("paper_distill", {})
+
+    assert "compile" not in config_text
+    assert "concept_registry" not in config_text
+    assert "zotero" not in config_text
+    assert "compile" not in paper_distill
+    assert "concept_registry" not in paper_distill
+    assert "zotero" not in paper_distill
+
+
+def test_server_zotero_package_residue_is_absent() -> None:
+    assert not (REPO_ROOT / "server" / "zotero").exists()

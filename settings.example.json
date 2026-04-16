@@ -41,6 +41,9 @@
       "max_tables": 12,
       "max_equations": 24
     },
+    "venue": {
+      "authority_order": ["dblp", "crossref", "openalex", "arxiv"]
+    },
     "scoring": {
       "weights": {
         "topic_fit": 0.4,
@@ -72,48 +75,6 @@
         ],
         "tier_a": []
       }
-    },
-    "compile": {
-      "auto_after_ingest": false,
-      "deep_compile_threshold": 5,
-      "source_policy": "evidence_first"
-    },
-    "venue": {
-      "authority_order": ["dblp", "crossref", "openalex", "arxiv"]
-    },
-    "concept_registry": {
-      "abbreviation_whitelist": {
-        "vla": "vision-language-action",
-        "vlm": "vision-language-model",
-        "llm": "large-language-model",
-        "llms": "large-language-models",
-        "rl": "reinforcement-learning",
-        "il": "imitation-learning",
-        "bc": "behavioral-cloning",
-        "vit": "vision-transformer",
-        "cnn": "convolutional-neural-network",
-        "gan": "generative-adversarial-network",
-        "nerf": "neural-radiance-field",
-        "slam": "simultaneous-localization-and-mapping",
-        "mpc": "model-predictive-control",
-        "ppo": "proximal-policy-optimization",
-        "dpo": "direct-preference-optimization",
-        "sac": "soft-actor-critic",
-        "ddpm": "denoising-diffusion-probabilistic-model",
-        "dit": "diffusion-transformer",
-        "moe": "mixture-of-experts",
-        "lora": "low-rank-adaptation",
-        "rag": "retrieval-augmented-generation",
-        "rt": "robotics-transformer"
-      }
-    },
-    "zotero": {
-      "enabled": true,
-      "mode": "local_first",
-      "auto_collect": false,
-      "collection_name": "Paper Distill",
-      "local_export_dir": "Paper Distill/zotero/imports",
-      "local_export_format": "csl_json"
     },
     "research_profile": {
       "direction": "Embodied AI with vision-language-action policies for robot manipulation",

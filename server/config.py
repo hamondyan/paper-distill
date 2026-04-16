@@ -19,11 +19,6 @@ _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
         "max_per_topic": 20,
         "max_daily": 10,
     },
-    "compile": {
-        "auto_after_ingest": False,
-        "deep_compile_threshold": 5,
-        "source_policy": "evidence_first",
-    },
     "workflow": {
         "detailed_inbox_cards": True,
         "max_candidates_per_topic": 5,
