@@ -16,13 +16,7 @@ def _read_markdown(path: Path) -> tuple[dict, str]:
 
 def test_write_conversation_insight_creates_insight_asset(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = write_conversation_insight(
         vault_path=tmp_path,
         slug="transformer-tension-note",
@@ -33,7 +27,10 @@ def test_write_conversation_insight_creates_insight_asset(
 
     path = tmp_path / "insights" / "conversations" / "transformer-tension-note.md"
     assert result["ok"] is True
-    assert result["warnings"] == []
+    assert result["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
     assert path.exists()
     frontmatter, body = _read_markdown(path)
     assert frontmatter["type"] == "conversation"
@@ -46,13 +43,7 @@ def test_write_conversation_insight_creates_insight_asset(
 
 def test_write_conversation_insight_rejects_transcript_shaped_body(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     result = write_conversation_insight(
         vault_path=tmp_path,
         slug="raw-transcript",
@@ -67,13 +58,7 @@ def test_write_conversation_insight_rejects_transcript_shaped_body(
 
 def test_write_conversation_insight_filters_related_concepts_before_topk(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        "server.v3_store.qmd_update",
-        lambda *_args, **_kwargs: {"ok": True},
-    )
-
     write_conversation_insight(
         vault_path=tmp_path,
         slug="filtered-concepts",
@@ -84,6 +69,30 @@ def test_write_conversation_insight_filters_related_concepts_before_topk(
     path = tmp_path / "insights" / "conversations" / "filtered-concepts.md"
     frontmatter, _body = _read_markdown(path)
     assert frontmatter["related_concepts_topk"] == ["Transformer", "Tension", "Attention"]
+
+
+def test_write_conversation_insight_returns_a_fresh_follow_up_list_each_time(
+    tmp_path: Path,
+) -> None:
+    first = write_conversation_insight(
+        vault_path=tmp_path,
+        slug="fresh-follow-up",
+        body="# Fresh follow up\n\nA concise saved insight.\n",
+        related_concepts=["Transformer"],
+    )
+    first["follow_up"].append("mutated")
+
+    second = write_conversation_insight(
+        vault_path=tmp_path,
+        slug="fresh-follow-up-2",
+        body="# Fresh follow up 2\n\nA concise saved insight.\n",
+        related_concepts=["Transformer"],
+    )
+
+    assert second["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
 
 
 def test_skill_guidance_requires_conversation_insight_tool_writes() -> None:
