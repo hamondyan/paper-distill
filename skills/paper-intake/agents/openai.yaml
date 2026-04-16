@@ -1,4 +1,4 @@
 interface:
   display_name: "Paper Intake"
-  short_description: "Discover, approve, ingest, and distill papers"
-  default_prompt: "Use $paper-intake to discover, ingest, or distill papers for my research vault."
+  short_description: "Discover, approve, ingest, and distill papers with QMD read follow-up"
+  default_prompt: "Use $paper-intake to discover or ingest papers, then read local results through the Paper Distill QMD CLI workflow."

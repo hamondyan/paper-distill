@@ -1,8 +1,8 @@
 # v3.0 Architecture
 
 Markdown files are the only source of truth.
-`qmd` owns formal search.
-Python tools own deterministic writes, validation, and index scheduling.
+QMD CLI is the only read/index path.
+Paper Distill business MCP owns deterministic writes, validation, and business workflows.
 
 ## Storage Layers
 
@@ -16,27 +16,28 @@ Python tools own deterministic writes, validation, and index scheduling.
 - `.state/` holds operational state such as the seen-paper cache.
 - `vault-log.md` records vault actions.
 
-## Read Surface
+## Read And Index Surface
 
-- `kb_search(query, scope)` performs qmd-backed search. Supported scopes are `canon`, `insights`, and `raw`. `degraded` is a search readiness status for missing qmd collections or collections mounted to another vault.
-- `kb_get(id_or_path)` fetches a specific document and does not use `degraded` collection readiness semantics. It returns `ok`, `missing`, `error`, or `not_ready` based on the direct qmd get result.
-- `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
-- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd binary is missing or unavailable, the read path reports `not_ready`.
+- QMD CLI is the only read/index path.
+- Use `qmd query` for normal retrieval, `qmd get` for direct document fetches, and `qmd ls` to inspect indexed files.
+- Use `qmd status`, `qmd collection ...`, and `qmd context ...` to inspect collection and context health.
+- Use `qmd update` and `qmd embed -f` as explicit follow-up steps after write-heavy work.
+- Treat [qmd-cli.md](qmd-cli.md) as the repo guide and runtime `qmd --help` as the authority for command details.
 
-## Write Surface
+## Business MCP Surface
 
 - `discover_papers(query=None)` writes inbox stubs and updates `.state/seen_papers.json`.
 - `ingest_and_read(input_value)` captures approved inbox notes or one direct arXiv URL or arXiv DOI into `raw/evidence/`.
+- `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
 - `upsert_wiki_page(page_type, target, frontmatter, body)` writes `paper`, `concept`, `idea`, or `conversation` pages through Python validation.
-- `merge_concept(old, new)` rewrites concept links, adds the old surface as an alias on the target concept, and refreshes qmd.
-- `kb_update_index()` refreshes qmd metadata.
-- `kb_reembed_force()` rebuilds qmd embeddings.
+- `merge_concept(old, new)` rewrites concept links and adds the old surface as an alias on the target concept.
 - `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
+- Business MCP does not wrap `qmd query`, `qmd get`, `qmd status`, `qmd update`, or `qmd embed -f`.
 
 ## First-Release Flow
 
 ```text
-discover -> approve with #approved -> ingest -> search/get -> canonical write -> lint -> status
+discover -> approve with #approved -> ingest -> qmd query/get -> canonical write -> lint
 ```
 
 Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest.
@@ -44,8 +45,7 @@ Approval is file-native. Only a plain `#approved` tag in the inbox note body all
 ## Failure Semantics
 
 - Missing `VAULT_PATH` returns an explicit configuration error.
-- Missing or unavailable qmd returns `not_ready` for retrieval.
-- The missing qmd collections state returns `degraded` for search until `status` reconciles the expected collection mounts.
+- Missing or unavailable qmd blocks the QMD CLI read/index path until QMD is installed and configured.
 - Raw evidence capture may rewrite an existing `raw/evidence/` file for the same paper ID as capture repair.
 - If concept compounding fails during ingest, the paper still enters the vault and the failure is reported.
-- Index failure after a successful Python file write is returned as a warning, not as write failure.
+- Index refresh is a separate explicit QMD step after successful business writes.

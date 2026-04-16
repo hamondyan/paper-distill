@@ -39,11 +39,17 @@ export VAULT_PATH="/absolute/path/to/your/vault"
 
 ## Empty Vault Bootstrap
 
-Run `/status` first. The v3 status path creates the required layout and checks qmd readiness.
+Run the bootstrap helper:
 
-## QMD Bootstrap
+```bash
+uv run paper-distill-admin bootstrap
+```
 
-After installing `qmd`, initialize Paper Distill's collections once the vault layout exists:
+`paper-distill-admin bootstrap` creates the vault layout and initializes the QMD collections and contexts used by Paper Distill.
+
+## QMD Collections And Contexts
+
+The bootstrap path is responsible for these repo mappings:
 
 ```bash
 qmd collection add <vault>/wiki/papers --name canon-papers
@@ -58,7 +64,7 @@ qmd context add qmd://insights-ideas "Idea drafts and later validation assets"
 qmd context add qmd://raw-evidence "Raw captured evidence and source markdown"
 ```
 
-The server also reconciles the expected qmd collections during `status`.
+After bootstrap, use [docs/qmd-cli.md](qmd-cli.md) for day-to-day read/index work.
 
 ## Start The MCP Server
 

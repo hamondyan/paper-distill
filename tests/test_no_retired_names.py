@@ -3,6 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _public_learning_paths(repo_root: Path) -> list[Path]:
+    docs_root = repo_root / "docs"
+    return [
+        repo_root / "README.md",
+        *sorted(docs_root.glob("*.md")),
+        *(sorted((repo_root / "commands").glob("*.md"))),
+        *(sorted((repo_root / "skills").glob("*/SKILL.md"))),
+        *(sorted((repo_root / "skills").glob("*/agents/openai.yaml"))),
+        repo_root / "hooks" / "session-start",
+    ]
+
+
 def test_retired_system_names_are_not_present() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     checked_roots = [
@@ -115,22 +127,41 @@ def test_skills_route_through_v3_tools_only() -> None:
     assert "ingest_and_read" in skill_docs["paper-intake"]
     assert "#approved" in skill_docs["paper-intake"]
     assert "raw/evidence" in skill_docs["paper-intake"]
+    assert "docs/qmd-cli.md" in skill_docs["paper-intake"]
+    assert "qmd --help" in skill_docs["paper-intake"]
 
-    assert "kb_search" in skill_docs["knowledge-workbench"]
-    assert "kb_get" in skill_docs["knowledge-workbench"]
+    assert "qmd query" in skill_docs["knowledge-workbench"]
+    assert "qmd get" in skill_docs["knowledge-workbench"]
+    assert "qmd status" in skill_docs["knowledge-workbench"]
+    assert "qmd update" in skill_docs["knowledge-workbench"]
+    assert "qmd embed -f" in skill_docs["knowledge-workbench"]
     assert "upsert_wiki_page" in skill_docs["knowledge-workbench"]
     assert "check_concept_alias" in skill_docs["knowledge-workbench"]
     assert "merge_concept" in skill_docs["knowledge-workbench"]
     assert "lint_vault" in skill_docs["knowledge-workbench"]
-    assert "kb_update_index" in skill_docs["knowledge-workbench"]
-    assert "kb_reembed_force" in skill_docs["knowledge-workbench"]
-    assert "status" in skill_docs["knowledge-workbench"]
+    assert "docs/qmd-cli.md" in skill_docs["knowledge-workbench"]
+    assert "qmd --help" in skill_docs["knowledge-workbench"]
 
-    assert "kb_search" in skill_docs["idea-workbench"]
-    assert "kb_get" in skill_docs["idea-workbench"]
+    assert "qmd query" in skill_docs["idea-workbench"]
+    assert "qmd get" in skill_docs["idea-workbench"]
     assert "upsert_wiki_page" in skill_docs["idea-workbench"]
     assert 'page_type="idea"' in skill_docs["idea-workbench"]
     assert 'page_type="conversation"' in skill_docs["idea-workbench"]
+    assert "docs/qmd-cli.md" in skill_docs["idea-workbench"]
+    assert "qmd --help" in skill_docs["idea-workbench"]
+
+    retired_wrappers = [
+        "kb_search",
+        "kb_get",
+        "kb_update_index",
+        "kb_reembed_force",
+    ]
+    offenders = [
+        name
+        for name in retired_wrappers
+        if any(name in doc for doc in skill_docs.values()) or name in agent_prompts
+    ]
+    assert offenders == []
 
     retired = [
         "query" + "-" + "library",
@@ -146,6 +177,43 @@ def test_skills_route_through_v3_tools_only() -> None:
     ]
     combined = "\n".join(skill_docs.values()) + "\n" + agent_prompts
     offenders = [term for term in retired if term in combined]
+    assert offenders == []
+
+
+def test_public_learning_surface_teaches_qmd_cli_directly() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    texts = [
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in _public_learning_paths(repo_root)
+        if path.exists()
+    ]
+
+    combined = "\n".join(texts)
+    assert (repo_root / "docs/qmd-cli.md").exists()
+    assert "docs/qmd-cli.md" in combined
+    assert "qmd --help" in combined
+    assert "qmd query" in combined
+    assert "qmd get" in combined
+
+
+def test_retired_wrapper_names_are_absent_from_public_learning_surface() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    banned = [
+        "kb_search",
+        "kb_get",
+        "kb_update_index",
+        "kb_reembed_force",
+    ]
+
+    offenders: list[str] = []
+    for path in _public_learning_paths(repo_root):
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for term in banned:
+            if term in text:
+                offenders.append(f"{path.relative_to(repo_root)}: {term}")
+
     assert offenders == []
 
 

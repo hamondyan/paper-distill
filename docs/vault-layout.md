@@ -35,4 +35,4 @@ Paper Distill writes inside the configured vault root.
 - `.state/seen_papers.json`: discovery deduplication cache.
 - `vault-log.md`: vault operation log.
 
-Knowledge retrieval goes through qmd-backed `kb_search` and `kb_get`; `_index.md` files are not required for lookup.
+Knowledge retrieval goes through QMD CLI, typically with `qmd query`, `qmd get`, and `qmd ls`; `_index.md` files are not required for lookup.

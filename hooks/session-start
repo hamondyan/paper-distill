@@ -15,7 +15,7 @@ escape_for_json() {
     printf '%s' "$s"
 }
 
-context_text="You have Paper Distill v3 installed. Use the medium-grained workflow skills when relevant: paper-distill:paper-intake for discover, inbox, ingest, and distill workflows; paper-distill:knowledge-workbench for kb_search, kb_get, upsert, merge, lint, status, and index workflows; paper-distill:idea-workbench for insights, ideas, and conversations."
+context_text="You have Paper Distill v3 installed. Use the medium-grained workflow skills when relevant: paper-distill:paper-intake for discover, inbox, ingest, and distill workflows; paper-distill:knowledge-workbench for QMD CLI read/index work plus upsert, merge, and lint workflows; paper-distill:idea-workbench for insights, ideas, and conversations. For read/index details, check docs/qmd-cli.md and runtime qmd --help."
 context=$(escape_for_json "$(printf '<IMPORTANT>\n%s\n</IMPORTANT>' "$context_text")")
 
 # Output for Claude Code

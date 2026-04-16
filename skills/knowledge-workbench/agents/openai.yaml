@@ -1,4 +1,4 @@
 interface:
   display_name: "Knowledge Workbench"
-  short_description: "Search, write, and maintain the research wiki"
-  default_prompt: "Use $knowledge-workbench to search, synthesize, or maintain my Paper Distill wiki."
+  short_description: "Read with QMD CLI and maintain the research wiki"
+  default_prompt: "Use $knowledge-workbench to read with QMD CLI, synthesize evidence, and maintain my Paper Distill wiki."

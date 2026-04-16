@@ -1,23 +1,20 @@
 # Commands
 
-Paper Distill v3.0 exposes a small command surface.
+Paper Distill v3.0 keeps slash commands for business actions only.
 
 - `/discover` writes inbox stubs.
 - `/inbox` summarizes pending and approved candidates.
 - `/ingest approved` or `/ingest <url>` captures raw evidence.
-- `/search` uses `kb_search`.
-- `/get` uses `kb_get`.
 - `/lint` runs v3 health checks.
-- `/status` reports readiness and qmd state.
+
+Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd query`, `qmd get`, `qmd status`, `qmd update`, `qmd embed -f`, collection/context checks, and `qmd ls`.
 
 ## Tool Mapping
 
 - `/discover` -> `discover_papers`
+- `/inbox` -> no tool; it is a read-only summary and approval reminder
 - `/ingest` -> `ingest_and_read`
-- `/search` -> `kb_search`
-- `/get` -> `kb_get`
 - `/lint` -> `lint_vault`
-- `/status` -> `status`
 
 ## Command Details
 
@@ -41,18 +38,6 @@ Examples:
 /ingest 10.48550/arxiv.2410.24164
 ```
 
-### `/search`
-
-Uses `kb_search` and qmd. The default scope is `canon`; use `insights` or `raw` only when the user explicitly asks for those layers.
-
-### `/get`
-
-Uses `kb_get` when the user already knows the paper ID, stable filename, or vault-relative Markdown path.
-
 ### `/lint`
 
 Runs `lint_vault` and reports structural issues without rewriting files.
-
-### `/status`
-
-Runs layout bootstrap and qmd readiness checks. The qmd state is `ready`, `degraded`, or `not_ready`.

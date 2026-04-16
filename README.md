@@ -1,19 +1,19 @@
 # Paper Distill
 
-Paper Distill v3.0 is a Markdown-first research knowledge system for paper discovery, approved ingestion, qmd-backed retrieval, and agent-safe knowledge writes.
+Paper Distill v3.0 is a Markdown-first research knowledge system for paper discovery, approved ingestion, QMD-backed retrieval, and agent-safe knowledge writes.
 
 ## v3.0 Rules
 
 - `qmd` is a hard dependency in v3.0.
-- Formal read paths are `kb_search` and `kb_get`.
-- Python tools own deterministic writes, validation, and index scheduling.
+- Use qmd as the read/index path.
+- Paper Distill business MCP tools own discovery, approved ingest, deterministic writes, and linting.
 - Markdown files are the source of truth.
-- The first-release workflow is `discover -> approve -> ingest -> search/get -> lint -> status`.
+- The normal workflow is `discover -> approve -> ingest -> qmd query/get -> write -> lint`.
 
 ## Core Flow
 
 ```text
-/discover -> add #approved in inbox note -> /ingest approved -> /search or /get -> /lint -> /status
+/discover -> add #approved in inbox note -> /ingest approved -> qmd query or qmd get -> write -> /lint
 ```
 
 Direct ingestion is also available for supported arXiv URLs and arXiv DOI values:
@@ -43,14 +43,14 @@ vault/
 - `/discover` writes inbox stubs.
 - `/inbox` summarizes pending and approved candidates.
 - `/ingest approved` or `/ingest <url>` captures raw evidence.
-- `/search` uses `kb_search`.
-- `/get` uses `kb_get`.
 - `/lint` runs v3 health checks.
-- `/status` reports readiness and qmd state.
+
+For QMD read/index work, use [docs/qmd-cli.md](docs/qmd-cli.md).
 
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [QMD CLI Guide](docs/qmd-cli.md)
 - [Commands](docs/commands.md)
 - [Architecture](docs/architecture.md)
 - [Testing](docs/testing.md)

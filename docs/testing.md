@@ -14,10 +14,10 @@ uv run python -m compileall -q server tests
 Run:
 
 ```bash
-uv run pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py -q
+uv run pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
 ```
 
-## MCP Surface Smoke Check
+## Business MCP Smoke Check
 
 ```bash
 uv run python - <<'PY'
@@ -28,16 +28,11 @@ async def main():
     tools = await mcp.list_tools()
     names = sorted(tool.name for tool in tools)
     required = {
-        "status",
-        "kb_search",
-        "kb_get",
         "discover_papers",
         "ingest_and_read",
         "check_concept_alias",
         "upsert_wiki_page",
         "merge_concept",
-        "kb_update_index",
-        "kb_reembed_force",
         "lint_vault",
     }
     missing = sorted(required - set(names))
@@ -47,4 +42,17 @@ async def main():
 
 asyncio.run(main())
 PY
+```
+
+This smoke check should stay on the six-tool business surface only.
+
+## CLI-Native QMD Checks
+
+Use runtime help as the command authority:
+
+```bash
+qmd --help
+qmd query "test"
+qmd get path/to/file.md
+qmd status
 ```
