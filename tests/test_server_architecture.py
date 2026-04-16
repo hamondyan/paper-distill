@@ -9,9 +9,9 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
-    top_level_defs = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
     import_specs: list[tuple[str | None, tuple[str, ...]]] = []
     call_names: list[str] = []
+    function_names: list[str] = []
     for node in tree.body:
         if isinstance(node, ast.ImportFrom):
             import_specs.append((node.module, tuple(alias.name for alias in node.names)))
@@ -19,6 +19,8 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
             func = node.value.func
             if isinstance(func, ast.Name):
                 call_names.append(func.id)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function_names.append(node.name)
     forbidden_names = {
         "server_runtime",
         "_DELEGATED_ASYNC_NAMES",
@@ -48,4 +50,4 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
         "register_health_tools",
     }
     assert not any(name in source for name in forbidden_names)
-    assert len(top_level_defs) <= 1
+    assert function_names == ["main"]
