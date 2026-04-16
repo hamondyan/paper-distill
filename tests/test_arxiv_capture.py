@@ -142,7 +142,7 @@ class ArxivCaptureTest(unittest.TestCase):
 
         async def run() -> tuple[str, str]:
             with patch(
-                "server.arxiv_capture.fetch_arxiv_html_with_fallback",
+                "server.arxiv_capture.fetch_arxiv_html",
                 new=AsyncMock(return_value=(_SAMPLE_AR5IV_HTML, "arxiv_native_html")),
             ):
                 cleaned = await capture_arxiv_source(paper, min_body_chars=300)

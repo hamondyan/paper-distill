@@ -6,6 +6,11 @@ from pathlib import Path
 def test_retired_system_names_are_not_present() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     checked_roots = [
+        repo_root / "agents",
+        repo_root / ".codex-plugin",
+        repo_root / ".claude-plugin",
+        repo_root / ".mcp.json",
+        repo_root / "hooks",
         repo_root / "docs",
         repo_root / "commands",
         repo_root / "skills",
@@ -61,10 +66,20 @@ def test_retired_system_names_are_not_present() -> None:
         "memory" + "/",
         "conversation" + "-" + "memory",
         "conversation" + " memory",
+        "Zo" + "tero",
+        "ZO" + "TERO",
+        "2" + ".1" + ".0",
+        "CR" + "GP" + "-DNL",
+        "search" + "_" + "papers",
+        "raw" + "/" + "_index.md",
+        "compiled" + ": true",
+        "wiki" + " compilation",
     ]
 
     offenders: list[str] = []
     for root in checked_roots:
+        if not root.exists():
+            continue
         paths = [root] if root.is_file() else [p for p in root.rglob("*") if p.is_file()]
         for path in paths:
             if path in ignored:
@@ -77,6 +92,11 @@ def test_retired_system_names_are_not_present() -> None:
                     offenders.append(f"{path.relative_to(repo_root)}: {term}")
 
     assert offenders == []
+
+
+def test_top_level_agents_surface_is_removed() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    assert not (repo_root / "agents").exists()
 
 
 def test_skills_route_through_v3_tools_only() -> None:

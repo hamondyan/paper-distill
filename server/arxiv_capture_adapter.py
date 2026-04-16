@@ -1,4 +1,4 @@
-"""Compatibility adapter for the cleaned arXiv capture contract."""
+"""Data contract helpers for cleaned v3 arXiv captures."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

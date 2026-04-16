@@ -1,4 +1,4 @@
-"""Helpers for fetching arXiv HTML with a native->ar5iv fallback."""
+"""Helpers for sequencing arXiv HTML capture sources."""
 from __future__ import annotations
 
 import httpx
@@ -22,17 +22,17 @@ async def _fetch_html(url: str, timeout: float = 30.0) -> str:
         return response.text
 
 
-def _should_fallback_to_ar5iv(exc: Exception) -> bool:
+def _should_try_ar5iv(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(marker in message for marker in _NATIVE_NO_HTML_MARKERS)
 
 
-async def fetch_arxiv_html_with_fallback(arxiv_id: str, timeout: float = 30.0) -> tuple[str, str]:
+async def fetch_arxiv_html(arxiv_id: str, timeout: float = 30.0) -> tuple[str, str]:
     native_url = f"https://arxiv.org/html/{arxiv_id}"
     ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
     try:
         return await _fetch_html(native_url, timeout=timeout), "arxiv_native_html"
     except Exception as exc:
-        if not _should_fallback_to_ar5iv(exc):
+        if not _should_try_ar5iv(exc):
             raise
     return await _fetch_html(ar5iv_url, timeout=timeout), "ar5iv_html"

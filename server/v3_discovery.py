@@ -8,7 +8,7 @@ from typing import Any
 from server.config import get_vault_path
 from server.paper_utils import canonical_item_url
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
-from server.v3_scoring import score_papers_v3, search_papers_v3
+from server.v3_scoring import query_paper_sources_v3, score_papers_v3
 
 
 def _load_seen_cache(vault_path: Path) -> dict[str, dict[str, Any]]:
@@ -133,7 +133,7 @@ async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
     vault_path = Path(vault_path_value)
     ensure_v3_layout(vault_path)
     cache = _load_seen_cache(vault_path)
-    results = await search_papers_v3(query=query or "", sources=None, max_results=20)
+    results = await query_paper_sources_v3(query=query or "", sources=None, max_results=20)
     scored_results = await score_papers_v3(results)
 
     saved: list[dict[str, Any]] = []

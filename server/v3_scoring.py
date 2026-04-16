@@ -21,7 +21,7 @@ from server.search import (
     search_arxiv,
     search_dblp,
     search_openalex,
-    search_papers_with_code,
+    query_papers_with_code,
     search_semantic_scholar,
 )
 
@@ -32,7 +32,7 @@ _SEARCH_SOURCES = {
     "s2": search_semantic_scholar,
     "openalex": search_openalex,
     "dblp": search_dblp,
-    "pwc": search_papers_with_code,
+    "pwc": query_papers_with_code,
 }
 _SOURCE_TIMEOUT = 15
 
@@ -106,7 +106,7 @@ async def _search_with_timeout(fn, query: str, max_results: int, name: str):
         return []
 
 
-async def search_papers_v3(
+async def query_paper_sources_v3(
     query: str,
     sources: list[str] | None = None,
     max_results: int = 20,

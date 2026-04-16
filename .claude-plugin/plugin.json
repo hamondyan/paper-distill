@@ -1,7 +1,7 @@
 {
   "name": "paper-distill",
-  "description": "Human-approved academic knowledge base with arXiv capture, local-first Zotero handoff, and Obsidian wiki compilation",
-  "version": "2.1.0",
+  "description": "Pure v3 research vault with qmd-backed retrieval, approved arXiv capture, and Python-tool writes.",
+  "version": "3.0.0",
   "author": {
     "name": "Huang",
     "email": ""
@@ -16,6 +16,7 @@
     "obsidian",
     "wiki",
     "arxiv",
-    "research"
+    "research",
+    "qmd"
   ]
 }

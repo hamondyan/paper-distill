@@ -21,7 +21,7 @@ def test_discover_papers_writes_inbox_stub_and_updates_seen_cache(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
     result = asyncio.run(discover_papers_v3(query="transformer"))
@@ -71,7 +71,7 @@ def test_discover_papers_scores_results_before_saving(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -108,7 +108,7 @@ def test_discover_papers_sanitizes_approved_token_from_abstract(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -163,7 +163,7 @@ def test_discover_papers_preserves_existing_approved_inbox_note(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -201,7 +201,7 @@ def test_discover_papers_preserves_nested_approved_inbox_note(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
     result = asyncio.run(discover_papers_v3(query="transformer"))
@@ -251,7 +251,7 @@ def test_discover_papers_ignores_approved_token_in_frontmatter_only(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -316,7 +316,7 @@ def test_discover_papers_preserves_existing_unapproved_inbox_note(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -351,7 +351,7 @@ def test_discover_papers_preserves_raw_metadata_in_frontmatter(
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
@@ -384,7 +384,7 @@ def test_discover_papers_errors_when_vault_path_is_empty(
         layout_calls.append((args, kwargs))
         return {"created": []}
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.ensure_v3_layout", fake_layout)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: "")
 
@@ -411,7 +411,7 @@ def test_discover_papers_skips_seen_ids(tmp_path, monkeypatch) -> None:
             }
         ]
 
-    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
 
     result = asyncio.run(discover_papers_v3(query="transformer"))

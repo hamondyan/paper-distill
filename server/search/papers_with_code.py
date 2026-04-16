@@ -79,7 +79,7 @@ def _normalise_search_result(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-async def search_papers_with_code(query: str, max_results: int = 20) -> list[dict]:
+async def query_papers_with_code(query: str, max_results: int = 20) -> list[dict]:
     """Search Papers With Code for papers matching *query*."""
     params = {
         "q": query,

@@ -15,7 +15,7 @@ escape_for_json() {
     printf '%s' "$s"
 }
 
-context_text="You have Paper Distill installed. Use the medium-grained workflow skills when relevant: paper-distill:paper-intake for discovery, summaries, ingest, and Zotero; paper-distill:knowledge-workbench for query, compile, lint, and maintenance; paper-distill:idea-workbench for research ideas and gap analysis."
+context_text="You have Paper Distill v3 installed. Use the medium-grained workflow skills when relevant: paper-distill:paper-intake for discover, inbox, ingest, and distill workflows; paper-distill:knowledge-workbench for kb_search, kb_get, upsert, merge, lint, status, and index workflows; paper-distill:idea-workbench for insights, ideas, and conversations."
 context=$(escape_for_json "$(printf '<IMPORTANT>\n%s\n</IMPORTANT>' "$context_text")")
 
 # Output for Claude Code

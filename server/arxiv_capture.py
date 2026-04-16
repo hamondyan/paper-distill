@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup, Tag
 from rapidfuzz import fuzz
 
 from server.arxiv_capture_adapter import CleanedArxivDocument, build_cleaned_document
-from server.arxiv_html_fetch import fetch_arxiv_html_with_fallback
+from server.arxiv_html_fetch import fetch_arxiv_html
 from server.arxiv_html_parser import parse_arxiv_html_document
 from server.arxiv_markdown import (
     extract_math_text,
@@ -783,11 +783,11 @@ async def capture_arxiv_source(
     remove_inline_citations: bool = False,
     remove_internal_links: bool = True,
 ) -> CleanedArxivDocument:
-    """Fetch and clean ar5iv HTML for a bound paper."""
+    """Fetch and clean arXiv-family HTML for a bound paper."""
     arxiv_id = paper_arxiv_id(paper)
     if not arxiv_id:
         raise ValueError("paper is not bound to arXiv")
-    html, fetch_source = await fetch_arxiv_html_with_fallback(arxiv_id)
+    html, fetch_source = await fetch_arxiv_html(arxiv_id)
     source_doc = await asyncio.to_thread(
         clean_ar5iv_html,
         html,
@@ -806,5 +806,4 @@ async def capture_arxiv_source(
     source_doc.capture_source = fetch_source
     source_doc.capture_method = _capture_method_for_fetch_source(fetch_source)
     return source_doc
-
 
