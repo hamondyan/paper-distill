@@ -11,31 +11,6 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_SETTINGS_PATH = _REPO_ROOT / "settings.json"
 
-_DEFAULT_CONCEPT_ABBREVIATION_WHITELIST: dict[str, str] = {
-    "vla": "vision-language-action",
-    "vlm": "vision-language-model",
-    "llm": "large-language-model",
-    "llms": "large-language-models",
-    "rl": "reinforcement-learning",
-    "il": "imitation-learning",
-    "bc": "behavioral-cloning",
-    "vit": "vision-transformer",
-    "cnn": "convolutional-neural-network",
-    "gan": "generative-adversarial-network",
-    "nerf": "neural-radiance-field",
-    "slam": "simultaneous-localization-and-mapping",
-    "mpc": "model-predictive-control",
-    "ppo": "proximal-policy-optimization",
-    "dpo": "direct-preference-optimization",
-    "sac": "soft-actor-critic",
-    "ddpm": "denoising-diffusion-probabilistic-model",
-    "dit": "diffusion-transformer",
-    "moe": "mixture-of-experts",
-    "lora": "low-rank-adaptation",
-    "rag": "retrieval-augmented-generation",
-    "rt": "robotics-transformer",
-}
-
 _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
     "vault_path": "",
     "topics": {},
@@ -74,17 +49,6 @@ _DEFAULT_PAPER_DISTILL_SETTINGS: dict[str, Any] = {
     },
     "venue": {
         "authority_order": ["dblp", "crossref", "openalex", "arxiv"],
-    },
-    "concept_registry": {
-        "abbreviation_whitelist": dict(_DEFAULT_CONCEPT_ABBREVIATION_WHITELIST),
-    },
-    "zotero": {
-        "enabled": True,
-        "mode": "local_first",
-        "auto_collect": False,
-        "collection_name": "Paper Distill v2",
-        "local_export_dir": "Paper Distill/zotero/imports",
-        "local_export_format": "csl_json",
     },
     "scoring": {
         "weights": {
@@ -192,50 +156,6 @@ def get_topics() -> dict[str, Any]:
 def get_scoring_settings() -> dict[str, Any]:
     scoring = get_paper_distill_settings().get("scoring", {})
     return scoring if isinstance(scoring, dict) else {}
-
-
-def get_zotero_settings() -> dict[str, Any]:
-    zotero = get_paper_distill_settings().get("zotero", {})
-    return zotero if isinstance(zotero, dict) else {}
-
-
-def _normalize_mode(raw: str) -> str:
-    mode = raw.strip().lower().replace("-", "_")
-    if mode in {"local", "localfirst"}:
-        return "local_first"
-    if mode in {"cloud", "web", "webapi"}:
-        return "web_api"
-    if mode in {"off", "none"}:
-        return "disabled"
-    return mode or "local_first"
-
-
-def get_zotero_mode() -> str:
-    env_mode = get_env("ZOTERO_MODE", "").strip()
-    if env_mode:
-        return _normalize_mode(env_mode)
-    return _normalize_mode(str(get_zotero_settings().get("mode", "local_first")))
-
-
-def get_zotero_collection_name() -> str:
-    env_name = get_env("ZOTERO_COLLECTION_NAME", "").strip()
-    if env_name:
-        return env_name
-    return str(get_zotero_settings().get("collection_name", "Paper Distill v2")).strip()
-
-
-def get_zotero_local_export_dir(vault_path: str | None = None) -> str:
-    raw = (
-        get_env("ZOTERO_LOCAL_EXPORT_DIR", "").strip()
-        or str(get_zotero_settings().get("local_export_dir", "")).strip()
-    )
-    if not raw:
-        raw = "Paper Distill/zotero/imports"
-
-    export_path = Path(raw).expanduser()
-    if export_path.is_absolute() or not vault_path:
-        return str(export_path)
-    return str((Path(vault_path).expanduser() / export_path).resolve())
 
 
 def get_qmd_binary() -> str:

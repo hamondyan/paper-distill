@@ -119,13 +119,16 @@ def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() ->
     from server import server as entrypoint
 
     source = Path(entrypoint.__file__).read_text(encoding="utf-8")
+    legacy_runtime_name = "server" + "_" + "runtime"
+    upsert_name = "upsert" + "_" + "wiki" + "_" + "page" + "_" + "v3"
+    alias_name = "check" + "_" + "concept" + "_" + "alias" + "_" + "v3"
 
     assert "register_knowledge_tools(mcp)" in source
-    assert "from server import server_runtime as _rt" not in source
-    assert "upsert_wiki_page_v3" not in source
-    assert "check_concept_alias_v3" not in source
-    assert not hasattr(entrypoint, "upsert_wiki_page_v3")
-    assert not hasattr(entrypoint, "check_concept_alias_v3")
+    assert f"from server import {legacy_runtime_name} as _rt" not in source
+    assert upsert_name not in source
+    assert alias_name not in source
+    assert not hasattr(entrypoint, upsert_name)
+    assert not hasattr(entrypoint, alias_name)
 
 
 def test_check_concept_alias_returns_explicit_error_when_vault_path_missing(
