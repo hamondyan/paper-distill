@@ -1,54 +1,38 @@
 # Vault Layout
 
-Paper Distill writes inside your Obsidian vault under `Paper Distill/`.
+Paper Distill writes inside the configured vault root.
 
 ```text
-Paper Distill/
+<vault>/
 ├── inbox/
-├── sources/
+├── raw/
 │   └── evidence/
 ├── wiki/
 │   ├── papers/
-│   ├── concepts/
-│   ├── methods/
-│   └── topics/
+│   └── concepts/
 ├── insights/
-│   ├── queries/
 │   ├── ideas/
-│   ├── dialogues/
-│   ├── digests/
-│   └── memory-promotions/
-├── memory/
-├── zotero/
-│   └── imports/
+│   └── conversations/
+├── exports/
+│   └── presentations/
 ├── .state/
-│   ├── ir/
-│   └── memory/
-├── index.md
-└── log.md
+├── vault-log.md
+└── settings.json
 ```
 
-## Visible User Layers
+## User-Visible Layers
 
-- `inbox/`: candidate papers awaiting approval.
-- `sources/evidence/`: stable captured source evidence and sidecars.
-- `wiki/papers/`: canonical per-paper work pages.
-- `wiki/concepts/`: concept encyclopedia pages.
-- `wiki/methods/`: method comparison pages.
-- `wiki/topics/`: topic landscape pages.
-- `insights/queries/`: saved query answers, comparisons, and reports.
-- `insights/ideas/`: editable idea notes.
-- `memory/`: current advisory memory views.
-- `zotero/imports/`: local-first Zotero import packs.
+- `inbox/`: candidate papers awaiting body-level `#approved`.
+- `raw/evidence/`: captured source Markdown for approved or direct ingests.
+- `wiki/papers/`: canonical paper pages, written by agents through Python tools.
+- `wiki/concepts/`: canonical concept pages for core concepts only.
+- `insights/ideas/`: idea notes written through Python tools.
+- `insights/conversations/`: distilled conversation insights written through Python tools.
+- `exports/presentations/`: direct-written presentation deliverables.
 
-## Hidden Machine State
+## Operational State
 
-- `.state/ir/`: extract and resolved IR JSON.
-- `.state/memory/`: memory event state.
-- `.state/paper-distill.db`: SQLite authority state.
+- `.state/seen_papers.json`: discovery deduplication cache.
+- `vault-log.md`: vault operation log.
 
-## Navigation
-
-- `index.md`: short human landing note.
-- `log.md`: append-only knowledge-maintenance timeline.
-- `_index.md`: minimal directory landing files only; they are not dashboards or backend source of truth.
+Knowledge retrieval goes through qmd-backed `kb_search` and `kb_get`; `_index.md` files are not required for lookup.

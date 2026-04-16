@@ -9,6 +9,14 @@ uv run pytest -q
 uv run python -m compileall -q server tests
 ```
 
+## Focused Documentation Checks
+
+Run:
+
+```bash
+uv run pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py -q
+```
+
 ## MCP Surface Smoke Check
 
 ```bash

@@ -1,25 +1,23 @@
 # Paper Distill Docs
 
-Paper Distill is an Obsidian-first, human-approved research knowledge system.
+Paper Distill is an Obsidian-friendly v3 research knowledge system for discovering papers, approving capture, searching with qmd, and maintaining canonical Markdown notes.
 
 ## Start Here
 
-- [Installation](installation.md): install dependencies and start the MCP server.
-- [Configuration](configuration.md): configure vault path, topics, search, capture, Zotero, and Obsidian CLI querying.
-- [Commands](commands.md): user-facing slash commands and the MCP tools they map to.
-- [Workflows](workflows.md): discovery, ingestion, compile, query, idea, memory, and maintenance flows.
-- [Vault Layout](vault-layout.md): files and directories written inside the Obsidian vault.
-- [Architecture](architecture.md): code structure, runtime boundaries, data contracts, and state layers.
-- [Testing](testing.md): verification commands used for this repository.
-- [Obsidian CLI Validation](obsidian-cli-validation.md): real-environment CLI and Bases validation.
-- [TODO Status](todo.md): completion audit for the refactor checklist.
+- [Installation](installation.md): install dependencies, configure the vault, and initialize qmd collections.
+- [Commands](commands.md): user-facing slash commands and their MCP tools.
+- [Architecture](architecture.md): storage layers, read/write surfaces, and readiness rules.
+- [Configuration](configuration.md): settings and environment variables.
+- [Vault Layout](vault-layout.md): directories created inside the vault.
+- [Frontmatter Reference](frontmatter-reference.md): fields used by each managed note type.
+- [Testing](testing.md): repository verification commands.
 
-## Current Model
+## Core Model
 
-The visible knowledge path is:
+Markdown files are the durable knowledge layer. Python tools own deterministic writes, path safety, vault checks, qmd index updates, and capture repair.
 
 ```text
-inbox -> sources/evidence -> wiki/papers -> wiki/concepts|methods|topics
+discover -> approve -> ingest -> search/get -> write -> lint -> status
 ```
 
-Generated or intermediate machine state belongs under `.state/`. User-facing idea assets belong under `insights/ideas/`. Query and report assets belong under `insights/queries/`.
+The canonical wiki has two agent-owned areas: `wiki/papers/` and `wiki/concepts/`. Research ideas and distilled conversation notes are knowledge assets under `insights/ideas/` and `insights/conversations/`, and they are written through Python tools.

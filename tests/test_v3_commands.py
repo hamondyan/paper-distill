@@ -21,11 +21,32 @@ EXPECTED_MCP_TOOLS = {
     "kb_reembed_force",
     "lint_vault",
 }
+EXPECTED_ROOT_DOCS = {
+    "README.md",
+    "architecture.md",
+    "commands.md",
+    "configuration.md",
+    "frontmatter-reference.md",
+    "installation.md",
+    "testing.md",
+    "vault-layout.md",
+}
 
 
 def test_command_inventory_matches_v3_surface() -> None:
     names = {path.stem for path in (REPO_ROOT / "commands").glob("*.md")}
     assert names == EXPECTED_COMMANDS
+
+
+def test_root_docs_inventory_matches_v3_public_docs() -> None:
+    docs_root = REPO_ROOT / "docs"
+    names = {path.name for path in docs_root.glob("*.md")}
+    assert names == EXPECTED_ROOT_DOCS
+
+
+def test_superpowers_process_artifacts_are_absent_from_docs() -> None:
+    superpowers_root = REPO_ROOT / "docs" / "superpowers"
+    assert not superpowers_root.exists()
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:

@@ -12,25 +12,39 @@ Python tools own deterministic writes, validation, and index scheduling.
 - `wiki/concepts/` holds agent-owned canonical concept pages.
 - `insights/ideas/` holds idea assets written through Python tools.
 - `insights/conversations/` holds distilled conversation insights written through Python tools.
-- `exports/presentations/` is the direct-write delivery exception.
+- `exports/presentations/` is the direct-written delivery area.
+- `.state/` holds operational state such as the seen-paper cache.
+- `vault-log.md` records vault actions.
 
 ## Read Surface
 
-- `kb_search(query, scope)` performs qmd-backed semantic search. Supported first-release scopes are `canon`, `insights`, and `raw`.
-- `kb_get(id_or_path)` fetches the current file truth for one asset.
-- `check_concept_alias(name)` performs deterministic concept alias lookup from concept pages.
+- `kb_search(query, scope)` performs qmd-backed search. Supported scopes are `canon`, `insights`, and `raw`.
+- `kb_get(id_or_path)` fetches the current Markdown truth for one asset.
+- `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
+- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd is missing or unready, the read path reports `not_ready`.
 
 ## Write Surface
 
-- `upsert_wiki_page(page_type, target, frontmatter, body)` performs entire-page replacement for formal knowledge assets.
-- `merge_concept(old, new)` rewrites concept links, updates aliases, and triggers qmd maintenance.
-- `kb_update_index` refreshes qmd metadata.
-- `kb_reembed_force` rebuilds embeddings.
+- `discover_papers(query=None)` writes inbox stubs and updates `.state/seen_papers.json`.
+- `ingest_and_read(input_value)` captures approved inbox notes or one direct arXiv URL or arXiv DOI into `raw/evidence/`.
+- `upsert_wiki_page(page_type, target, frontmatter, body)` writes `paper`, `concept`, `idea`, or `conversation` pages through Python validation.
+- `merge_concept(old, new)` rewrites concept links, adds the old surface as an alias on the target concept, and refreshes qmd.
+- `kb_update_index()` refreshes qmd metadata.
+- `kb_reembed_force()` rebuilds qmd embeddings.
+- `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
 
 ## First-Release Flow
 
 ```text
-discover -> approve with #approved -> ingest -> search/get -> lint -> status
+discover -> approve with #approved -> ingest -> search/get -> canonical write -> lint -> status
 ```
 
-No filesystem search fallback is allowed for knowledge retrieval. If qmd is missing or unready, the system reports `not_ready`.
+Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest.
+
+## Failure Semantics
+
+- Missing `VAULT_PATH` returns an explicit configuration error.
+- Missing or unready qmd returns `not_ready` for retrieval.
+- Raw evidence capture may rewrite an existing `raw/evidence/` file for the same paper ID as capture repair.
+- If concept compounding fails during ingest, the paper still enters the vault and the failure is reported.
+- Index failure after a successful Python file write is returned as a warning, not as write failure.

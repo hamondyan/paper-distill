@@ -73,6 +73,29 @@ def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkey
     assert body == "# Transformer tension\n\nA concise saved insight."
 
 
+def test_upsert_wiki_page_supports_idea_page_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "server.v3_store.qmd_update",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="idea",
+        target="active-robot-policy-idea",
+        frontmatter={"type": "idea", "idea_state": "active"},
+        body="# Active robot policy idea\n\nA grounded research note.",
+    )
+
+    path = tmp_path / "insights" / "ideas" / "active-robot-policy-idea.md"
+    assert result["ok"] is True
+    assert result["warnings"] == []
+    assert path.exists()
+    frontmatter, body = _read_markdown(path)
+    assert frontmatter["type"] == "idea"
+    assert body == "# Active robot policy idea\n\nA grounded research note."
+
+
 def test_upsert_wiki_page_enforces_requested_page_type(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "server.v3_store.qmd_update",

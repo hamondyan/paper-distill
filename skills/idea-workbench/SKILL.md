@@ -1,48 +1,51 @@
 ---
 name: idea-workbench
-description: Use when the user asks for research ideas, gap analysis, open problems, novel angles, what to work on, /ideas, or wants to curate idea notes from local paper evidence.
+description: Use when the user asks for research ideas, gap analysis, open problems, novel angles, what to work on, or wants to curate idea notes from local paper evidence.
 ---
 
 # Idea Workbench
 
 ## Overview
 
-Turn local evidence into editable research idea notes. Ideas are first-class Markdown assets under `insights/ideas/`, not transient chat or sidecar artifacts.
+Turn local evidence into editable research idea notes. Ideas and distilled conversation notes are knowledge assets, so writes go through Python tools rather than direct hand edits.
 
 ## Available Tools
 
 | Tool | Purpose |
 |------|---------|
-| `idea-analyze` | One-shot analysis: returns gaps, tension signals, and trigger candidates |
-| `query-library` | Read vault sections for follow-up paper reads |
+| `status` | Confirm qmd readiness before retrieval |
+| `kb_search` | Search canonical, insight, or raw scopes through qmd |
+| `kb_get` | Fetch individual evidence pages |
+| `upsert_wiki_page` | Write idea and conversation assets |
+| `check_concept_alias` | Normalize concept references before writing |
 
-## Generate
+## Generate Ideas
 
-1. Read `settings.json -> paper_distill.research_profile` for direction and preferences.
-2. Call `idea-analyze(user_topics=..., min_occurrence=2)` — returns a combined analysis with:
-   - **gaps**: methodology mismatches, combination opportunities, recurring problems, scaling questions
-   - **tension_signals**: recurring limitations, assumptions, open question clusters, negative results
-   - **trigger_candidates**: contradiction candidates, limitation spikes, cross-cluster bridges, benchmark evaluation splits
-3. Read 2-3 referenced papers or concepts for each promising gap before drafting.
+1. Read the user's research direction from the conversation and `settings.json` when available.
+2. Use `kb_search(query=..., scope="canon")` to find relevant papers and concepts.
+3. Use `kb_get` to inspect the strongest local evidence.
+4. Search `scope="insights"` to avoid duplicating existing idea or conversation assets.
+5. Draft fewer, stronger ideas grounded in explicit local evidence.
 
 ## Write Idea Notes
 
-Create or update `insights/ideas/{idea-id}.md` with frontmatter:
+Create or update `insights/ideas/{slug}.md` with:
 
-```yaml
-type: idea-note
-idea_state: active
-date: YYYY-MM-DD
-topics: []
-related_papers: []
-related_concepts: []
-decision_reason: ""
-decision_at: ""
-superseded_by: ""
-status: saved
+```python
+upsert_wiki_page(
+    page_type="idea",
+    target=slug,
+    frontmatter={
+        "idea_state": "active",
+        "topics": topics,
+        "related_papers": related_papers,
+        "related_concepts": related_concepts,
+    },
+    body=body,
+)
 ```
 
-Use these sections:
+Recommended sections:
 
 - `Summary`
 - `Local Evidence`
@@ -50,34 +53,41 @@ Use these sections:
 - `Kill Criteria`
 - `Next Step`
 
-## Curate
+## Write Conversation Notes
 
-- Before creating a new note, run the cheap similar-idea check through the existing idea workflow and update related rejected, parked, or active notes when appropriate.
-- If an idea is rejected or parked, update `idea_state`, `decision_reason`, `decision_at`, `superseded_by`, and the note body; keep the decision in the note itself instead of creating sidecar records.
+When the useful asset is a distilled conversation takeaway rather than a research idea, write:
+
+```python
+upsert_wiki_page(
+    page_type="conversation",
+    target=slug,
+    frontmatter={
+        "source_layer": "insights",
+        "related_concepts_topk": related_concepts[:3],
+    },
+    body=body,
+)
+```
+
+Do not store verbatim transcripts.
+
+## Curate Ideas
+
+- Use `kb_search(scope="insights")` before creating a new idea.
+- If an idea is rejected, parked, or superseded, update `idea_state`, `decision_reason`, `decision_at`, and `superseded_by` in the note.
+- Keep negative knowledge in the idea note itself.
 - Rank ideas by local evidence, novelty, feasibility, and kill criteria clarity.
-- Offer targeted follow-ups: search related papers, promote a topic/concept tension, or queue a maintenance task after explicit adjudication.
+- Offer targeted follow-ups: search related papers, create a core concept page, or capture a conversation insight.
 
 ## Rules
 
-- Ground every idea in local paper/concept evidence.
+- Ground every idea in local paper or concept evidence.
 - State assumptions and conflicts explicitly.
-- Prefer fewer stronger ideas over broad speculative lists.
-- Keep negative knowledge in the idea note itself.
+- Prefer specific testable ideas over broad speculation.
+- Use Python tools for all `insights/ideas/` and `insights/conversations/` writes.
 
 ## Skill / Tool Contract
 
-**This Skill is responsible (prompt layer):**
-- Parse user intent and route to the correct tool
-- Enforce editorial rules (similar-idea check before creating new notes)
-- Present results in readable form and suggest follow-up actions
+This skill is responsible for research judgment, evidence selection, concise idea framing, and curation decisions.
 
-**MCP Tool is responsible (Python layer):**
-- Perform deterministic I/O (vault read/write, IR graph traversal)
-- Validate schema and path safety
-- Return structured tension data, graph clusters, and trigger candidates
-- Report facts and errors; never make editorial decisions
-
-**Neither layer does:**
-- Tools do not decide which ideas are worth pursuing — that is the researcher's judgment
-- This Skill does not write idea note files directly — all file writes go through tools
-- Tools do not read user intent — they only execute the parameters they receive
+Python tools are responsible for deterministic writes, path safety, qmd indexing, and structured errors.

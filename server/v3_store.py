@@ -11,6 +11,7 @@ from server.v3_markdown import atomic_write_text, render_markdown
 _PAGE_DIRS: dict[str, tuple[str, ...]] = {
     "paper": ("wiki", "papers"),
     "concept": ("wiki", "concepts"),
+    "idea": ("insights", "ideas"),
     "conversation": ("insights", "conversations"),
 }
 

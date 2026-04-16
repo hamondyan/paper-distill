@@ -1,4 +1,4 @@
 interface:
   display_name: "Knowledge Workbench"
-  short_description: "Query, compile, and maintain the research wiki"
-  default_prompt: "Use $knowledge-workbench to query, compile, or maintain my Paper Distill wiki."
+  short_description: "Search, write, and maintain the research wiki"
+  default_prompt: "Use $knowledge-workbench to search, synthesize, or maintain my Paper Distill wiki."

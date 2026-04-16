@@ -1,129 +1,67 @@
 ---
 name: knowledge-workbench
-description: Use when the user asks research questions against the approved vault, wants wiki synthesis saved, requests compile/update wiki, asks for canonical paper page refresh, runs /query, /compile, /lint, or wants wiki health and maintenance work.
+description: Use when the user asks research questions against the vault, wants canonical wiki synthesis saved, asks for concept maintenance, runs search/get/lint/status flows, or wants qmd index maintenance.
 ---
 
 # Knowledge Workbench
 
 ## Overview
 
-Use approved evidence and hidden IR to answer, compile, and maintain the Obsidian wiki. Read machine data through `query-library`; never treat `_index.md` files as backend truth.
+Use qmd-backed retrieval and Python write tools to answer research questions, maintain canonical pages, and keep the vault healthy. Markdown is the source of truth; `kb_search` and `kb_get` are the read path.
 
 ## Available Tools
 
 | Tool | Purpose |
 |------|---------|
-| `query-library` | Unified read-only query (sections, stats, lint, compile_status, concepts) |
-| `compile` | Unified compile pipeline (prepare → save for CRGP; or extract_ir → resolve_ir → publish for EDC) |
-| `write-wiki` | One-off wiki writes outside compile (concept stubs, method pages) |
-| `concept` | Concept registry: register / resolve / merge |
-| `maintain` | Maintenance task lifecycle: reconcile / queue / confirm / reject / execute / enqueue |
-| `vault-health` | Combined lint + stats health report |
+| `status` | Check vault layout and qmd readiness |
+| `kb_search` | Search `canon`, `insights`, or `raw` scopes through qmd |
+| `kb_get` | Fetch one Markdown asset by ID or path through qmd |
+| `upsert_wiki_page` | Write `paper`, `concept`, `idea`, or `conversation` pages |
+| `check_concept_alias` | Resolve candidate concept surfaces |
+| `merge_concept` | Merge concept aliases and rewrite links |
+| `lint_vault` | Report link, alias, footer, and frontmatter issues |
+| `kb_update_index` | Refresh qmd metadata |
+| `kb_reembed_force` | Rebuild qmd embeddings |
 
-## Query
+## Query Workflow
 
-1. Classify the question: factual, comparative, landscape, cross-cutting, or coverage gap.
-2. Call `query-library(view="sections", section=...)` for relevant sections; prefer `wiki/papers`, concepts, methods, topics, and `sources/evidence`.
-3. Read the relevant pages, follow backlinks, and state gaps explicitly instead of inventing coverage.
-4. Save substantive answers to `insights/queries/{slug}.md` with frontmatter for question, source pages, referenced papers/concepts/topics, derived actions, and promotion targets.
-5. Report what was answered, what asset was created, and what could be compiled or searched next.
+1. Run `status` when readiness is uncertain. If qmd is `not_ready`, report that retrieval is unavailable.
+2. Classify the question: factual, comparative, landscape, synthesis, or gap-finding.
+3. Call `kb_search(query=..., scope="canon")` first for paper and concept evidence.
+4. Use `scope="insights"` for idea or conversation assets only when the user asks for those layers.
+5. Use `scope="raw"` when the user asks to inspect captured evidence.
+6. Fetch decisive pages with `kb_get`.
+7. State evidence gaps plainly instead of inventing coverage.
 
-## Compile
+## Write Workflow
 
-Use the unified `compile` tool in **two steps**:
+- Use `upsert_wiki_page(page_type="paper", ...)` for canonical paper pages.
+- Use `upsert_wiki_page(page_type="concept", ...)` only for core concepts.
+- Use `upsert_wiki_page(page_type="idea", ...)` for idea assets.
+- Use `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer for distilled conversation insights.
+- If qmd indexing fails after a successful file write, report the warning as an index warning, not as write failure.
+- Do not edit `wiki/papers/`, `wiki/concepts/`, `insights/ideas/`, or `insights/conversations/` by hand.
 
-1. **Prepare:** call `compile(citekey, step="prepare")` — loads source evidence, paper metadata, and any existing sections.
-2. **Generate + Save:** while reading the paper, generate both 7 CRGP sections **and** the structured `metadata` dict; then call `compile(citekey, step="save", sections={...}, metadata={...})`.
+## Concept Rules
 
-The `save` step handles everything atomically: renders the wiki markdown, writes the IR to `.state/ir/`, auto-registers and links concepts, and updates SQLite `compile_state` (including `ir_path`).
+- Only core concepts create `wiki/concepts/` pages.
+- Use `check_concept_alias` before creating a concept when the canonical surface is uncertain.
+- Call `merge_concept` directly when you are confident two surfaces refer to the same concept.
+- After a merge, report rewritten files, alias changes, and any qmd warnings.
 
-**`metadata` schema** (submit alongside `sections` in the same `save` call):
-
-```yaml
-candidate_concepts:
-  - name: "Vision-Language-Action Models"
-    type: method          # concept | method | topic
-    aliases: ["VLA"]      # optional
-tension_fields:
-  limitations:      [str | {claim, source_ref?}]   # required
-  assumptions:      [str | {claim, source_ref?}]   # required
-  open_questions:   [str | {question, source_ref?}] # required
-  negative_results: [str | {claim, source_ref?}]   # required
-  failure_modes:    [str | {claim, source_ref?}]   # optional
-  transfer_constraints: [str | {claim, source_ref?}] # optional
-benchmark_scope: "..."   # optional
-claimed_novelty: "..."   # optional
-topics: [...]            # optional
-```
-
-`metadata` is **always recommended** — omitting it leaves `compile_state.ir_path` null, which silently prevents this paper's limitations and assumptions from appearing in `idea-analyze` gap analysis.
-
-For lightweight prose refresh only (no re-analysis), `step="save"` without `metadata` is acceptable.
-
-> **Internal note**: `extract_ir / resolve_ir / publish` steps remain available for programmatic pipelines but are not part of the standard user workflow.
-
-For lightweight refresh after intake, update canonical `wiki/papers` from evidence + hidden IR, add backlinks, and create concept stubs only when a concept is referenced by at least two papers.
-
-## Maintain
-
-1. Run `vault-health()` for combined structural checks and coverage stats.
-2. Use `maintain(action="reconcile", auto_confirm=true|false)` to generate maintenance tasks.
-3. View tasks with `maintain(action="queue")`.
-4. Execute confirmed tasks with `maintain(action="execute", task_id=...)`.
-5. For manual work, use `maintain(action="enqueue", task_type=..., payload=...)` first, then execute only after adjudication.
-6. Present a maintainer report: broken links, missing metadata, uncompiled evidence, stale topics, orphaned articles, confirmed tasks, and likely knowledge impact.
-
-## Write Path Rules
-
-Two tools can write wiki pages — **never mix them for the same page**:
-
-| Tool | Purpose | Updates `compile_state`? |
-|------|---------|--------------------------|
-| `compile(step="save")` | Compile pipeline — records content_hash, deps, version, ir_path | **Yes** |
-| `write-wiki` | One-off writes outside compile (concept stubs, method pages) | **No** |
-
-Rules:
-1. Any paper wiki page that goes through compile **must** use the `compile` tool
-2. Concept/method stubs created outside compile use `write-wiki`
-3. **Never** call `write-wiki` on a page previously written by `compile` — it silently corrupts content_hash
-4. When unsure, call `query-library(view="compile_status", page_id=...)` first
-
-## Conversation Memory
+## Conversation Insights
 
 When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
 
-## Manual Section Protection
+## Health And Index Maintenance
 
-Before calling `compile(step="publish")`:
-1. Read the existing file and check for sections marked `## My Notes`, `## Personal Takeaways`, `## Action Items`, or `## Follow-up`
-2. If present: append those sections **verbatim** after the generated content block before passing to the tool
-3. The tool itself does not merge — merging is the caller's (your) responsibility
-4. If the tool returns `manual_edit_conflict: true`, **stop immediately**, report the conflict to the user, and do not overwrite
-
-## Concept Registration Rules
-
-Tool behavior and editorial rules are intentionally separate:
-- `compile(step="resolve_ir")` auto-registers on first reference (the registry entry is needed for the Resolve phase)
-- **The "two-paper rule" is an editorial rule**: only create a `wiki/concepts/{slug}.md` stub page after `query-library(view="concepts", min_paper_count=2)` confirms the concept appears in two or more papers
-- Registry entry exists ≠ wiki page exists
-
-## Rules
-
-- `wiki/papers` is the canonical paper workspace; `sources/evidence` is the evidence layer.
-- Frontmatter quality drives Obsidian CLI/Bases, backlinks, and future queries.
-- Preserve human-authored sections; if managed blocks conflict, report the conflict instead of overwriting.
-- Use Obsidian for visible reading and navigation, but keep hidden IR under `.state/`.
+- Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
+- Use `kb_update_index` after external file changes.
+- Use `kb_reembed_force` when embeddings must be rebuilt.
+- Use `status` to confirm whether qmd is `ready`, `degraded`, or `not_ready`.
 
 ## Skill / Tool Contract
 
-**This Skill is responsible (prompt layer):**
-- Parse user intent and route to the correct tool and mode
-- Enforce editorial rules (two-paper rule, conflict checks, manual section preservation)
-- Merge manual sections into generated content before calling write tools
-- Present results in readable form and suggest follow-up actions
+This skill is responsible for intent routing, evidence-grounded synthesis, concept judgment, and clear reporting.
 
-**MCP Tool is responsible (Python layer):**
-- Perform deterministic I/O (vault read/write, API calls)
-- Validate schema and path safety
-- Update machine state (compile_state, concept_registry, maintenance_queue)
-- Report facts and errors; never make editorial decisions
+Python tools are responsible for deterministic I/O, path safety, qmd operations, link rewrites, and structured errors.

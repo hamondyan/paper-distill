@@ -58,7 +58,7 @@ qmd context add qmd://insights-ideas "Idea drafts and later validation assets"
 qmd context add qmd://raw-evidence "Raw captured evidence and source markdown"
 ```
 
-The server also attempts to reconcile the expected qmd collections during `status`.
+The server also reconciles the expected qmd collections during `status`.
 
 ## Start The MCP Server
 
