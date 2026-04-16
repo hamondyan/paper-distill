@@ -25,7 +25,7 @@ Use qmd-backed retrieval and Python write tools to answer research questions, ma
 
 ## Query Workflow
 
-1. Run `status` when readiness is uncertain. If qmd is `not_ready`, report that retrieval is unavailable.
+1. Run `status` when readiness is uncertain. If qmd is `not_ready`, report that the qmd binary is missing or unavailable; if it is `degraded`, report the missing collection state before retrieval.
 2. Classify the question: factual, comparative, landscape, synthesis, or gap-finding.
 3. Call `kb_search(query=..., scope="canon")` first for paper and concept evidence.
 4. Use `scope="insights"` for idea or conversation assets only when the user asks for those layers.
@@ -38,7 +38,7 @@ Use qmd-backed retrieval and Python write tools to answer research questions, ma
 - Use `upsert_wiki_page(page_type="paper", ...)` for canonical paper pages.
 - Use `upsert_wiki_page(page_type="concept", ...)` only for core concepts.
 - Use `upsert_wiki_page(page_type="idea", ...)` for idea assets.
-- Use `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer for distilled conversation insights.
+- Use `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer for distilled conversation insights.
 - If qmd indexing fails after a successful file write, report the warning as an index warning, not as write failure.
 - Do not edit `wiki/papers/`, `wiki/concepts/`, `insights/ideas/`, or `insights/conversations/` by hand.
 
@@ -51,7 +51,7 @@ Use qmd-backed retrieval and Python write tools to answer research questions, ma
 
 ## Conversation Insights
 
-When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
+When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
 
 ## Health And Index Maintenance
 

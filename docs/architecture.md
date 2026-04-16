@@ -21,7 +21,7 @@ Python tools own deterministic writes, validation, and index scheduling.
 - `kb_search(query, scope)` performs qmd-backed search. Supported scopes are `canon`, `insights`, and `raw`.
 - `kb_get(id_or_path)` fetches the current Markdown truth for one asset.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
-- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd is missing or unready, the read path reports `not_ready`.
+- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd binary is missing or unavailable, the read path reports `not_ready`; if required collections are missing or mounted to another vault, it reports `degraded`.
 
 ## Write Surface
 
@@ -44,7 +44,8 @@ Approval is file-native. Only a plain `#approved` tag in the inbox note body all
 ## Failure Semantics
 
 - Missing `VAULT_PATH` returns an explicit configuration error.
-- Missing or unready qmd returns `not_ready` for retrieval.
+- Missing or unavailable qmd returns `not_ready` for retrieval.
+- The missing qmd collections state returns `degraded` until `status` reconciles the expected collection mounts.
 - Raw evidence capture may rewrite an existing `raw/evidence/` file for the same paper ID as capture repair.
 - If concept compounding fails during ingest, the paper still enters the vault and the failure is reported.
 - Index failure after a successful Python file write is returned as a warning, not as write failure.

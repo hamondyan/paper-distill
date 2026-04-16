@@ -36,6 +36,20 @@ def _cleaned_doc(title: str, markdown: str, capture_source: str = "arxiv_native_
 
 
 class V3IngestTest(unittest.TestCase):
+    def test_approved_body_accepts_only_plain_body_tags(self) -> None:
+        from server.v3_ingest import _approved_body
+
+        self.assertTrue(_approved_body("#approved"))
+        self.assertTrue(_approved_body("  #approved  "))
+        self.assertTrue(_approved_body("#approved #robotics"))
+        self.assertTrue(_approved_body("Intro text.\n\n#approved #robotics\n"))
+
+        self.assertFalse(_approved_body("not #approved yet"))
+        self.assertFalse(_approved_body("> #approved"))
+        self.assertFalse(_approved_body("`#approved`"))
+        self.assertFalse(_approved_body("```\n#approved\n```"))
+        self.assertFalse(_approved_body("```markdown\n#approved\n```\n# pending"))
+
     def test_approved_inbox_mode_only_ingests_body_marked_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             vault_root = Path(tmpdir)

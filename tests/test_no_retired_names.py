@@ -59,6 +59,8 @@ def test_retired_system_names_are_not_present() -> None:
         "wiki" + "/" + "topics",
         "insights" + "/" + "queries",
         "memory" + "/",
+        "conversation" + "-" + "memory",
+        "conversation" + " memory",
     ]
 
     offenders: list[str] = []
@@ -124,4 +126,38 @@ def test_skills_route_through_v3_tools_only() -> None:
     ]
     combined = "\n".join(skill_docs.values()) + "\n" + agent_prompts
     offenders = [term for term in retired if term in combined]
+    assert offenders == []
+
+
+def test_conversation_insight_wording_has_no_memory_terms() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    checked_roots = [
+        repo_root / "README.md",
+        repo_root / "docs",
+        repo_root / "commands",
+        repo_root / "skills",
+        repo_root / "server",
+        repo_root / "tests",
+    ]
+    ignored = {Path(__file__).resolve()}
+    banned = [
+        "conversation" + "-" + "memory",
+        "conversation" + " memory",
+        "v3" + "_" + "memory",
+        "write" + "_" + "conversation" + "_" + "memory",
+    ]
+
+    offenders: list[str] = []
+    for root in checked_roots:
+        paths = [root] if root.is_file() else [p for p in root.rglob("*") if p.is_file()]
+        for path in paths:
+            if path in ignored:
+                continue
+            if any(part in {".git", ".venv", ".pytest_cache", ".ruff_cache", "__pycache__"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for term in banned:
+                if term in text:
+                    offenders.append(f"{path.relative_to(repo_root)}: {term}")
+
     assert offenders == []

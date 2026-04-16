@@ -81,7 +81,7 @@ Negative knowledge stays in the idea note itself.
 
 ## Conversation Page
 
-Written through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation-memory writer under `insights/conversations/`.
+Written through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer under `insights/conversations/`.
 
 | Field | Type | Description |
 |-------|------|-------------|

@@ -31,7 +31,7 @@ def _related_concepts_topk(related_concepts: list[str]) -> list[str]:
     return cleaned[:3]
 
 
-def write_conversation_memory(
+def write_conversation_insight(
     vault_path: Path,
     slug: str,
     body: str,
@@ -41,7 +41,7 @@ def write_conversation_memory(
     if _looks_like_transcript(body):
         return {
             "ok": False,
-            "error": "conversation memory must be a distilled insight, not a verbatim transcript",
+            "error": "conversation insight must be distilled, not a verbatim transcript",
             "warnings": [],
         }
 

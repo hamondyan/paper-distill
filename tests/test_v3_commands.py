@@ -95,6 +95,9 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
         in installation
     )
     assert "`qmd` owns formal search" in architecture
+    assert "degraded" in architecture
+    assert "missing qmd collections" in architecture
+    assert "qmd binary is missing or unavailable" in architecture
     assert "/get" in commands
     assert "uv run pytest -q" in testing
     assert "uv run python -m compileall -q server tests" in testing

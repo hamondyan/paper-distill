@@ -25,7 +25,30 @@ def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def _approved_body(body: str) -> bool:
-    return _APPROVED_MARKER in body
+    in_fence = False
+    fence_marker = ""
+
+    for line in body.splitlines():
+        stripped = line.strip()
+
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+            elif marker == fence_marker:
+                in_fence = False
+                fence_marker = ""
+            continue
+
+        if in_fence or not stripped or stripped.startswith(">"):
+            continue
+
+        tokens = stripped.split()
+        if _APPROVED_MARKER in tokens and all(token.startswith("#") and len(token) > 1 for token in tokens):
+            return True
+
+    return False
 
 
 def _paper_arxiv_id(paper: dict[str, Any], source_url: str = "") -> str:
