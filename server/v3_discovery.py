@@ -72,7 +72,7 @@ def _existing_approved_inbox_note(vault_path: Path, paper_id: str) -> Path | Non
     inbox_path = vault_path / "inbox"
     if not inbox_path.exists():
         return None
-    for note_path in sorted(inbox_path.glob("*.md")):
+    for note_path in sorted(inbox_path.rglob("*.md")):
         try:
             text = note_path.read_text(encoding="utf-8")
         except OSError:

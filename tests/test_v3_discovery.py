@@ -174,6 +174,44 @@ def test_discover_papers_preserves_existing_approved_inbox_note(
     assert result["skipped_seen"] == ["arxiv:1706.03762"]
 
 
+def test_discover_papers_preserves_nested_approved_inbox_note(
+    tmp_path, monkeypatch
+) -> None:
+    inbox_dir = tmp_path / "inbox" / "2026-04-16"
+    inbox_dir.mkdir(parents=True)
+    approved_path = inbox_dir / "approved.md"
+    approved_text = (
+        "---\n"
+        'paper_id: "arxiv:1706.03762"\n'
+        'title: "Attention: Is All You Need"\n'
+        "---\n\n"
+        "# Attention: Is All You Need\n\n"
+        "- Paper ID: `arxiv:1706.03762`\n\n"
+        "Already reviewed.\n\n"
+        "#approved\n"
+    )
+    approved_path.write_text(approved_text, encoding="utf-8")
+
+    async def fake_search(*args, **kwargs):
+        return [
+            {
+                "title": "Attention: Is All You Need",
+                "paper_id": "arxiv:1706.03762",
+                "source_url": "https://arxiv.org/abs/1706.03762",
+            }
+        ]
+
+    monkeypatch.setattr("server.v3_discovery.search_papers_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: str(tmp_path))
+
+    result = asyncio.run(discover_papers_v3(query="transformer"))
+
+    assert approved_path.read_text(encoding="utf-8") == approved_text
+    assert result["saved"] == []
+    assert result["skipped_seen"] == ["arxiv:1706.03762"]
+    assert not (tmp_path / "inbox" / "attention-is-all-you-need--arxiv-1706.03762.md").exists()
+
+
 def test_discover_papers_ignores_approved_token_in_frontmatter_only(
     tmp_path, monkeypatch
 ) -> None:
