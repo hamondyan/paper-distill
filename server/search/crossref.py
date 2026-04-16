@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any
 
 import httpx
+
+from server.config import get_search_settings
 
 LOG = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ async def resolve_crossref(doi: str) -> dict[str, Any]:
     if not doi:
         return {}
 
-    email = os.getenv("OPENALEX_EMAIL", "")
+    email = get_search_settings()["contact_email"]
     headers: dict[str, str] = {}
     if email:
         headers["User-Agent"] = f"paper-distill/2.0 (mailto:{email})"

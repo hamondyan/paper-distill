@@ -1,6 +1,6 @@
 ---
 name: paper-intake
-description: Use when the user wants to discover papers, summarize a candidate, ingest approved papers, directly add an arXiv URL or DOI, or process inbox approvals.
+description: Use when the user wants to discover papers, summarize a candidate, ingest approved papers, directly add an arXiv URL or arXiv DOI, or process inbox approvals.
 ---
 
 # Paper Intake
@@ -17,6 +17,7 @@ For read/index work, consult `docs/qmd-cli.md` and runtime `qmd --help`.
 | `discover_papers` | Search, score, deduplicate, and write inbox stubs |
 | `ingest_and_read` | Capture approved inbox notes or one direct arXiv URL / DOI |
 | `upsert_wiki_page` | Create canonical paper pages after reading and distilling |
+| `check_concept_alias` | Resolve uncertain concept names before creating core concept pages |
 
 ## Routing Decision
 

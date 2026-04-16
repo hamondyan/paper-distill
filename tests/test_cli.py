@@ -22,6 +22,22 @@ def test_admin_cli_rejects_retired_export_and_backfill_commands(
     assert "invalid choice" in capsys.readouterr().err
 
 
+def test_admin_cli_rejects_vault_path_override_argument(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["paper-distill-admin", "bootstrap", "--vault-path", "/tmp/demo-vault"],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main()
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --vault-path /tmp/demo-vault" in capsys.readouterr().err
+
+
 def test_bootstrap_reports_clean_error_when_qmd_init_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -33,6 +49,7 @@ def test_bootstrap_reports_clean_error_when_qmd_init_fails(
 
     monkeypatch.setattr(cli, "ensure_v3_layout", fake_layout)
     monkeypatch.setattr(cli, "ensure_qmd_ready", failing_qmd)
+    monkeypatch.setattr(cli, "get_vault_path", lambda: str(tmp_path))
 
     with pytest.raises(SystemExit) as excinfo:
         asyncio.run(cli._bootstrap(type("Args", (), {"vault_path": str(tmp_path)})()))
@@ -57,6 +74,7 @@ def test_bootstrap_reports_layout_and_qmd_payload_on_success(
 
     monkeypatch.setattr(cli, "ensure_v3_layout", fake_layout)
     monkeypatch.setattr(cli, "ensure_qmd_ready", ready_qmd)
+    monkeypatch.setattr(cli, "get_vault_path", lambda: str(tmp_path))
 
     asyncio.run(cli._bootstrap(type("Args", (), {"vault_path": str(tmp_path)})()))
 

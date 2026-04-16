@@ -8,15 +8,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from server.config import get_vault_path
+from server.config import ConfigError, get_vault_path
 from server.qmd_runtime import ensure_qmd_ready
 from server.v3_bootstrap import ensure_v3_layout
 
 
 async def _bootstrap(args: argparse.Namespace) -> None:
-    vault_path_raw = args.vault_path or get_vault_path()
-    if not vault_path_raw:
-        print("Error: VAULT_PATH not configured. Set it in settings.json or env.", file=sys.stderr)
+    try:
+        vault_path_raw = get_vault_path()
+    except ConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
     vault_path = Path(vault_path_raw)
@@ -43,7 +44,6 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_boot = sub.add_parser("bootstrap", help="Initialize vault directory structure")
-    p_boot.add_argument("--vault-path", default=None, help="Override vault path")
     p_boot.set_defaults(func=_bootstrap)
 
     args = parser.parse_args()

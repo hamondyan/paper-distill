@@ -8,7 +8,7 @@ Paper Distill is an Obsidian-friendly v3 research knowledge system for discoveri
 - [QMD CLI](qmd-cli.md): canonical guide for read/index workflows in Paper Distill.
 - [Commands](commands.md): business slash commands and their MCP tools.
 - [Architecture](architecture.md): storage layers and the QMD CLI versus business MCP boundary.
-- [Configuration](configuration.md): settings and environment variables.
+- [Configuration](configuration.md): the required `settings.json` schema and field meanings.
 - [Vault Layout](vault-layout.md): directories created inside the vault.
 - [Frontmatter Reference](frontmatter-reference.md): fields used by each managed note type.
 - [Testing](testing.md): repository verification commands.

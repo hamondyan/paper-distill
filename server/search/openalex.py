@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
+
+from server.config import get_search_settings
 
 LOG = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def _normalise(work: dict[str, Any]) -> dict[str, Any]:
 
 async def search_openalex(query: str, max_results: int = 20) -> list[dict]:
     """Search OpenAlex for papers matching *query*."""
-    email = os.getenv("OPENALEX_EMAIL", "")
+    email = get_search_settings()["contact_email"]
     params: dict[str, Any] = {
         "search": query,
         "per_page": min(max_results, 50),

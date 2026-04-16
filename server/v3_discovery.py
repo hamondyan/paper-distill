@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from server.config import get_vault_path
+from server.config import ConfigError, get_vault_path
 from server.paper_utils import canonical_item_url
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
 from server.v3_scoring import query_paper_sources_v3, score_papers_v3
@@ -126,11 +126,10 @@ def _render_inbox_stub(paper: dict[str, Any], score: int) -> str:
 
 
 async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
-    vault_path_value = str(get_vault_path()).strip()
-    if not vault_path_value:
-        return {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
-
-    vault_path = Path(vault_path_value)
+    try:
+        vault_path = Path(get_vault_path())
+    except ConfigError as exc:
+        return {"error": str(exc)}
     ensure_v3_layout(vault_path)
     cache = _load_seen_cache(vault_path)
     results = await query_paper_sources_v3(query=query or "", sources=None, max_results=20)

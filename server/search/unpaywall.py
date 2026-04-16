@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
+
+from server.config import get_search_settings
 
 LOG = logging.getLogger(__name__)
 
@@ -19,9 +20,13 @@ async def lookup_unpaywall(doi: str) -> dict[str, Any]:
         doi, is_oa, best_oa_url, oa_status, journal, publisher
     Returns an empty dict on failure.
     """
-    email = os.getenv("UNPAYWALL_EMAIL") or os.getenv("OPENALEX_EMAIL", "")
+    search_settings = get_search_settings()
+    email = search_settings["unpaywall_email"] or search_settings["contact_email"]
     if not email:
-        LOG.warning("No email set for Unpaywall (set UNPAYWALL_EMAIL or OPENALEX_EMAIL)")
+        LOG.warning(
+            "No email configured for Unpaywall in settings.json "
+            "(paper_distill.search.unpaywall_email or paper_distill.search.contact_email)"
+        )
         return {}
 
     doi = doi.strip()

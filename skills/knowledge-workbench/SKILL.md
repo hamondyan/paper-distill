@@ -25,7 +25,7 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 3. Call `qmd query` first for paper and concept evidence.
 4. Use collection filters or path targets when the user explicitly wants `insights` or `raw` layers.
 5. Fetch decisive pages with `qmd get`.
-7. State evidence gaps plainly instead of inventing coverage.
+6. State evidence gaps plainly instead of inventing coverage.
 
 ## Write Workflow
 

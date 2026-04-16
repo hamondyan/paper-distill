@@ -386,11 +386,18 @@ def test_discover_papers_errors_when_vault_path_is_empty(
 
     monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
     monkeypatch.setattr("server.v3_discovery.ensure_v3_layout", fake_layout)
-    monkeypatch.setattr("server.v3_discovery.get_vault_path", lambda: "")
+    error_type = discover_papers_v3.__globals__["ConfigError"]
+
+    def missing_vault_path() -> str:
+        raise error_type("Invalid configuration at paper_distill.vault_path: expected non-empty string")
+
+    monkeypatch.setattr("server.v3_discovery.get_vault_path", missing_vault_path)
 
     result = asyncio.run(discover_papers_v3(query="transformer"))
 
-    assert result == {"error": "VAULT_PATH not configured. Set it in settings.json or env."}
+    assert result == {
+        "error": "Invalid configuration at paper_distill.vault_path: expected non-empty string"
+    }
     assert layout_calls == []
     assert search_calls == []
 

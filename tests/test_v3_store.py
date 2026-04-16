@@ -176,13 +176,18 @@ def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() ->
 def test_check_concept_alias_returns_explicit_error_when_vault_path_missing(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(tools_knowledge, "get_vault_path", lambda: "")
+    def missing_vault_path() -> str:
+        raise tools_knowledge.ConfigError(
+            "Invalid configuration at paper_distill.vault_path: expected non-empty string"
+        )
+
+    monkeypatch.setattr(tools_knowledge, "get_vault_path", missing_vault_path)
 
     result = asyncio.run(tools_knowledge.check_concept_alias("Transformer"))
 
     assert result == {
         "ok": False,
-        "error": "VAULT_PATH not configured.",
+        "error": "Invalid configuration at paper_distill.vault_path: expected non-empty string",
         "exists": False,
         "canonical": "Transformer",
     }

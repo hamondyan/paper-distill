@@ -31,11 +31,7 @@ Set the absolute vault path:
 }
 ```
 
-You can also use:
-
-```bash
-export VAULT_PATH="/absolute/path/to/your/vault"
-```
+`settings.json` is the only runtime configuration source. Environment-variable overrides are not supported.
 
 ## Empty Vault Bootstrap
 

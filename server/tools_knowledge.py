@@ -7,17 +7,18 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from server.config import get_vault_path
+from server.config import ConfigError, get_vault_path
 from server.v3_alias import check_concept_alias_v3
 from server.v3_health import merge_concept_v3
 from server.v3_store import upsert_wiki_page_v3
 
 
 def _vault_path_or_error() -> tuple[Path | None, dict[str, Any] | None]:
-    vault_path = str(get_vault_path()).strip()
-    if not vault_path:
-        return None, {"ok": False, "error": "VAULT_PATH not configured."}
-    return Path(vault_path), None
+    try:
+        vault_path = Path(get_vault_path())
+    except ConfigError as exc:
+        return None, {"ok": False, "error": str(exc)}
+    return vault_path, None
 
 
 async def upsert_wiki_page(
@@ -44,7 +45,7 @@ async def check_concept_alias(name: str) -> dict[str, Any]:
     if error is not None:
         return {
             "ok": False,
-            "error": "VAULT_PATH not configured.",
+            "error": error["error"],
             "exists": False,
             "canonical": name,
         }
@@ -54,7 +55,7 @@ async def check_concept_alias(name: str) -> dict[str, Any]:
 async def merge_concept(old: str, new: str) -> dict[str, Any]:
     vault_path, error = _vault_path_or_error()
     if error is not None:
-        return {"ok": False, "error": "VAULT_PATH not configured.", "warnings": []}
+        return {"ok": False, "error": error["error"], "warnings": []}
     return await asyncio.to_thread(merge_concept_v3, vault_path, old, new)
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from server.arxiv_capture import capture_arxiv_source
-from server.config import get_vault_path
+from server.config import ConfigError, get_vault_path
 from server.paper_utils import extract_arxiv_id, paper_id
 from server.search import fetch_arxiv_record
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
@@ -171,10 +171,10 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
     if not input_value:
         return {"error": "input_value is required"}
 
-    vault_path_str = get_vault_path()
-    if not vault_path_str:
-        return {"error": "VAULT_PATH not configured."}
-
+    try:
+        vault_path_str = get_vault_path()
+    except ConfigError as exc:
+        return {"error": str(exc)}
     vault_path = Path(vault_path_str)
     ensure_v3_layout(vault_path)
 

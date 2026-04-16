@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
+
+from server.config import get_search_settings
 
 LOG = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def _normalise(paper: dict[str, Any]) -> dict[str, Any]:
 
 async def search_semantic_scholar(query: str, max_results: int = 20) -> list[dict]:
     """Search Semantic Scholar for papers matching *query*."""
-    api_key = os.getenv("S2_API_KEY", "")
+    api_key = get_search_settings()["semantic_scholar_api_key"]
     headers: dict[str, str] = {}
     if api_key:
         headers["x-api-key"] = api_key

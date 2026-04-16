@@ -44,7 +44,7 @@ Approval is file-native. Only a plain `#approved` tag in the inbox note body all
 
 ## Failure Semantics
 
-- Missing `VAULT_PATH` returns an explicit configuration error.
+- Missing or invalid `settings.json` returns an explicit configuration error.
 - Missing or unavailable qmd blocks the QMD CLI read/index path until QMD is installed and configured.
 - Raw evidence capture may rewrite an existing `raw/evidence/` file for the same paper ID as capture repair.
 - If concept compounding fails during ingest, the paper still enters the vault and the failure is reported.
