@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "paper-distill-server"
-version = "2.1.0"
+version = "3.0.0"
 description = "Thin MCP API gateway for Paper Distill — academic paper search, arXiv capture, and local-first Zotero handoff"
 license = "MIT"
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "pyyaml>=6.0",
     "jinja2>=3.1.0",
+    "ruamel.yaml>=0.18.0",
 ]
 
 [project.scripts]

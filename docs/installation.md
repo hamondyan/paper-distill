@@ -4,18 +4,16 @@
 
 - Python 3.10 or newer.
 - `uv` for dependency and command execution.
-- An Obsidian vault path.
-- Optional: Zotero credentials if using Zotero Web API mode.
+- `qmd` installed on the machine.
+- A configured vault path.
 
 ## Install Dependencies
-
-From the repository root:
 
 ```bash
 uv sync
 ```
 
-## Configure Your Vault
+## Configure The Vault Path
 
 Copy the example settings file:
 
@@ -23,50 +21,47 @@ Copy the example settings file:
 cp settings.example.json settings.json
 ```
 
-Edit `settings.json` and set:
+Set the absolute vault path:
 
 ```json
 {
   "paper_distill": {
-    "vault_path": "/absolute/path/to/your/obsidian/vault"
+    "vault_path": "/absolute/path/to/your/vault"
   }
 }
 ```
 
-You can also use an environment variable:
+You can also use:
 
 ```bash
-export VAULT_PATH="/absolute/path/to/your/obsidian/vault"
+export VAULT_PATH="/absolute/path/to/your/vault"
 ```
+
+## Empty Vault Bootstrap
+
+Run `/status` first. The v3 status path creates the required layout and checks qmd readiness.
+
+## QMD Bootstrap
+
+After installing `qmd`, initialize Paper Distill's collections once the vault layout exists:
+
+```bash
+qmd collection add <vault>/wiki/papers --name canon-papers
+qmd collection add <vault>/wiki/concepts --name canon-concepts
+qmd collection add <vault>/insights/conversations --name insights-conversations
+qmd collection add <vault>/insights/ideas --name insights-ideas
+qmd collection add <vault>/raw/evidence --name raw-evidence
+qmd context add qmd://canon-papers "Canonical distilled papers"
+qmd context add qmd://canon-concepts "Canonical concept pages"
+qmd context add qmd://insights-conversations "Conversation-derived research insights"
+qmd context add qmd://insights-ideas "Idea drafts and later validation assets"
+qmd context add qmd://raw-evidence "Raw captured evidence and source markdown"
+```
+
+The server also attempts to reconcile the expected qmd collections during `status`.
 
 ## Start The MCP Server
 
 ```bash
 uv run paper-distill-server
 ```
-
-The bundled launcher uses the same entrypoint:
-
-```bash
-./scripts/run-mcp.sh
-```
-
-## Client Setup
-
-Use the repository `.mcp.json` as the MCP client entry. Codex, Claude, and OpenClaw-style clients can launch the same server command.
-
-If a client cannot resolve the repo path automatically, configure it to run:
-
-```bash
-uv --directory /absolute/path/to/paper-distill-v2 run paper-distill-server
-```
-
-## First Check
-
-After setup, ask your agent to run:
-
-```text
-/status
-```
-
-If the vault has not been initialized yet, run a discovery or ingestion workflow. Paper Distill will create the `Paper Distill/` structure inside the configured vault.

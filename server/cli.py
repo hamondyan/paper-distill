@@ -13,21 +13,39 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import subprocess
 import sys
+from pathlib import Path
 
+from server.config import get_vault_path
+from server.qmd_runtime import ensure_qmd_ready
+from server.v3_bootstrap import ensure_v3_layout
 from server.server_runtime import (
-    bootstrap_vault,
     export_db_state,
     backfill_registry,
 )
 
 
 async def _bootstrap(args: argparse.Namespace) -> None:
-    result = await bootstrap_vault(vault_path=args.vault_path)
-    if result.get("error"):
-        print(f"Error: {result['error']}", file=sys.stderr)
+    vault_path_raw = args.vault_path or get_vault_path()
+    if not vault_path_raw:
+        print("Error: VAULT_PATH not configured. Set it in settings.json or env.", file=sys.stderr)
         sys.exit(1)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    vault_path = Path(vault_path_raw)
+    layout = ensure_v3_layout(vault_path)
+    try:
+        qmd = ensure_qmd_ready(vault_path)
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        reason = "qmd binary not found" if isinstance(exc, FileNotFoundError) else getattr(exc, "stderr", "").strip() or "qmd init failed"
+        qmd = {
+            "status": "not_ready",
+            "reason": reason,
+        }
+    if qmd.get("status") not in {None, "ready"}:
+        print(json.dumps({"layout": layout, "qmd": qmd}, indent=2, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps({"layout": layout, "qmd": qmd}, indent=2, ensure_ascii=False))
 
 
 async def _export_db(args: argparse.Namespace) -> None:

@@ -1,11 +1,9 @@
-"""Thin Paper Distill MCP entrypoint.
+"""Thin Paper Distill v3 MCP entrypoint.
 
-Registers 12 consolidated MCP tools across 5 domain groups:
-    core:      query-library, update-preferences
-    intake:    search-papers, discover, ingest, read-paper
-    knowledge: compile, write-wiki, concept, maintain
-    ideas:     idea-analyze
-    health:    vault-health
+The server entrypoint stays intentionally small: it instantiates FastMCP,
+exposes a few compatibility bindings used by the domain tool modules, and
+registers the current v3 tool groups. The public surface is intentionally
+small; older implementation helpers stay importable but are not MCP tools.
 """
 from __future__ import annotations
 
@@ -15,7 +13,6 @@ from server import server_runtime as _rt
 from server.tools_core import register_core_tools
 from server.tools_intake import register_intake_tools
 from server.tools_knowledge import register_knowledge_tools
-from server.tools_ideas import register_idea_tools
 from server.tools_health import register_health_tools
 
 mcp = FastMCP("paper-distill")
@@ -63,9 +60,13 @@ _DELEGATED_ASYNC_NAMES = (
     "analyze_knowledge_graph",
     "update_learned_preferences",
     "upsert_wiki_article",
+    "upsert_wiki_page_v3",
     "write_compile_ir",
     "resolve_compile_ir",
     "commit_compile_result",
+    "check_concept_alias_v3",
+    "merge_concept_v3",
+    "lint_vault_v3",
     "query_tension_signals",
     "get_compile_state",
     "_enrich_inbox_candidate",
@@ -118,11 +119,10 @@ for _name in _DELEGATED_ASYNC_NAMES:
 _capture_options = _delegate_sync("_capture_options")
 _selected_topics = _delegate_sync("_selected_topics")
 
-# ---- Register consolidated MCP tools (12 total) ----
+# ---- Register pure v3 MCP tools ----
 register_core_tools(mcp)
 register_intake_tools(mcp)
 register_knowledge_tools(mcp)
-register_idea_tools(mcp)
 register_health_tools(mcp)
 
 

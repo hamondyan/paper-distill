@@ -24,8 +24,6 @@ def test_retired_system_names_are_not_present() -> None:
         "publish" + "_" + "journal",
         "daily" + "-" + "log",
         "Paper Distill" + "/" + "raw",
-        '"' + "raw" + '"',
-        "'" + "raw" + "'",
         "mutation" + "_" + "id",
         "memory" + "_" + "mutation" + "_" + "id",
         "payload" + "_" + "json",

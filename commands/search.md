@@ -1,13 +1,9 @@
 ---
 name: search
-description: Alias for candidate discovery across CS/AI sources
+description: Search the v3 knowledge base through qmd
 user_invocable: true
 ---
 
-Search for academic papers using the query provided as argument.
-
-Use the `paper-distill:paper-intake` skill with the user's search query. Search across arXiv, Semantic Scholar, OpenAlex, DBLP, and Papers with Code.
-
-The argument to this command is the search query. Example: `/search vision language action model`
-
-After showing results, tell the user to approve or reject the generated inbox cards in Obsidian.
+Use `kb_search` with default scope `canon`.
+Only widen to `insights` or `raw` when the user explicitly asks for those layers.
+If qmd is unavailable, report `not_ready` instead of falling back to filesystem search.

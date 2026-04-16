@@ -68,3 +68,52 @@ def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkey
     frontmatter, body = _read_markdown(path)
     assert frontmatter["type"] == "conversation"
     assert body == "# Transformer tension\n\nA concise saved insight."
+
+
+def test_upsert_wiki_page_enforces_requested_page_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "server.v3_store.qmd_update",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="paper",
+        target="attention-is-all-you-need--arxiv-1706.03762",
+        frontmatter={"type": "concept", "paper_id": "arxiv:1706.03762"},
+        body="# Attention\n",
+    )
+
+    path = tmp_path / "wiki" / "papers" / "attention-is-all-you-need--arxiv-1706.03762.md"
+    assert result["ok"] is True
+    frontmatter, _body = _read_markdown(path)
+    assert frontmatter["type"] == "paper"
+
+
+def test_upsert_wiki_page_rejects_unknown_type_without_creating_layout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "server.v3_store.qmd_update",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="method",
+        target="demo",
+        frontmatter={"type": "method"},
+        body="# Demo",
+    )
+
+    assert result["ok"] is False
+    assert "unsupported page_type" in result["error"]
+    assert not (tmp_path / "inbox").exists()
+
+
+def test_server_entrypoint_exposes_v3_knowledge_delegates() -> None:
+    from server import server as entrypoint
+
+    assert callable(entrypoint.upsert_wiki_page_v3)
+    assert callable(entrypoint.check_concept_alias_v3)

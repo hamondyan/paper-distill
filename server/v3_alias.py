@@ -6,12 +6,16 @@ from typing import Any
 
 import yaml
 
+from server.concept_registry import slugify
 
-_SPACE_RE = re.compile(r"[\s_-]+")
+_NON_WORD_RE = re.compile(r"[\W_]+", re.UNICODE)
 
 
 def _normalize(value: str) -> str:
-    return _SPACE_RE.sub(" ", value).casefold().strip()
+    normalized = value.casefold().strip()
+    if normalized.isascii():
+        return slugify(normalized)
+    return _NON_WORD_RE.sub("", normalized)
 
 
 def _read_concept_page(path: Path) -> tuple[dict[str, Any], str]:
@@ -23,7 +27,10 @@ def _read_concept_page(path: Path) -> tuple[dict[str, Any], str]:
         fm_text, body = remainder.split("\n---\n", 1)
     except ValueError:
         return {}, text
-    frontmatter = yaml.safe_load(fm_text) or {}
+    try:
+        frontmatter = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError:
+        return {}, body
     if not isinstance(frontmatter, dict):
         frontmatter = {}
     return frontmatter, body

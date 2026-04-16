@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,10 @@ from server.search import (
     resolve_crossref,
     dedup_merge,
 )
+from server.qmd_runtime import ensure_qmd_ready, qmd_get, qmd_ready_report, qmd_search
+from server.v3_bootstrap import ensure_v3_layout
+from server.v3_health import lint_vault_v3 as _lint_vault_v3, merge_concept_v3 as _merge_concept_v3
+from server.v3_ingest import ingest_and_read_v3 as _ingest_and_read_v3
 from server.vault_query import query_vault_sync
 from server.vault_lint import (
     analyze_knowledge_graph_sync,
@@ -258,6 +263,36 @@ def _empty_dnl_note(paper: dict) -> dict:
         "evidence": {},
         "confidence": 0.0,
     }
+
+
+def kb_search(query: str, scope: str = "canon") -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    ensure_v3_layout(vault_path)
+    return qmd_search(vault_path=vault_path, query=query, scope=scope)
+
+
+def kb_get(id_or_path: str) -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    ensure_v3_layout(vault_path)
+    return qmd_get(vault_path=vault_path, id_or_path=id_or_path)
+
+
+def v3_status() -> dict[str, object]:
+    vault_path = Path(get_vault_path())
+    layout = ensure_v3_layout(vault_path)
+    try:
+        ensure_qmd_ready(vault_path)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    qmd = qmd_ready_report(vault_path)
+    return {"layout": layout, "qmd": qmd}
+
+
+async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
+    """Run the v3 discovery flow that stages inbox stubs and updates seen-cache."""
+    from server.v3_discovery import discover_papers_v3 as _discover_papers_v3
+
+    return await _discover_papers_v3(query=query)
 
 
 async def _prepare_ingestion_candidate(
@@ -1152,7 +1187,16 @@ async def discover_papers(
 
 
 # ---------------------------------------------------------------------------
-# Tool 10: source-ingest
+# Tool 10: ingest_and_read
+# ---------------------------------------------------------------------------
+
+async def ingest_and_read_v3(input_value: str) -> dict:
+    """Ingest approved inbox notes or a direct paper URL into raw/evidence."""
+    return await _ingest_and_read_v3(input_value=input_value)
+
+
+# ---------------------------------------------------------------------------
+# Tool 11: source-ingest
 # ---------------------------------------------------------------------------
 
 async def source_ingest(
@@ -1534,6 +1578,17 @@ async def lint_vault() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool 11b: lint_vault (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def lint_vault_v3() -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured.", "issues": []}
+    return await asyncio.to_thread(_lint_vault_v3, Path(vault_path))
+
+
+# ---------------------------------------------------------------------------
 # Tool 12: library-stats
 # ---------------------------------------------------------------------------
 
@@ -1858,6 +1913,17 @@ async def check_concept_alias_v3(name: str) -> dict:
     if not vault_path:
         return {"exists": False, "canonical": name, "error": "VAULT_PATH not configured."}
     return _check_concept_alias_v3(Path(vault_path), name)
+
+
+# ---------------------------------------------------------------------------
+# Tool 19c: merge_concept (v3 cutover)
+# ---------------------------------------------------------------------------
+
+async def merge_concept_v3(old: str, new: str) -> dict:
+    vault_path = get_vault_path()
+    if not vault_path:
+        return {"ok": False, "error": "VAULT_PATH not configured.", "warnings": []}
+    return await asyncio.to_thread(_merge_concept_v3, Path(vault_path), old, new)
 
 
 # ---------------------------------------------------------------------------

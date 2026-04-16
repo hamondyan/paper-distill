@@ -340,22 +340,36 @@ class ToolSurfaceContractTest(unittest.TestCase):
         tools = asyncio.run(mcp.list_tools())
         names = {tool.name for tool in tools}
 
-        # 12 consolidated tools
-        self.assertIn("query-library", names)
-        self.assertIn("update-preferences", names)
-        self.assertIn("search-papers", names)
-        self.assertIn("discover", names)
-        self.assertIn("ingest", names)
-        self.assertIn("read-paper", names)
-        self.assertIn("compile", names)
-        self.assertIn("write-wiki", names)
-        self.assertIn("concept", names)
-        self.assertIn("maintain", names)
-        self.assertIn("idea-analyze", names)
-        self.assertIn("vault-health", names)
-        self.assertEqual(len(names), 12)
+        expected = {
+            "status",
+            "kb_search",
+            "kb_get",
+            "discover_papers",
+            "ingest_and_read",
+            "check_concept_alias",
+            "upsert_wiki_page",
+            "merge_concept",
+            "kb_update_index",
+            "kb_reembed_force",
+            "lint_vault",
+        }
+        self.assertEqual(names, expected)
 
         # Old tool names should NOT be present
+        self.assertNotIn("update-preferences", names)
+        self.assertNotIn("search-papers", names)
+        self.assertNotIn("read-paper", names)
+        self.assertNotIn("compile", names)
+        self.assertNotIn("write-wiki", names)
+        self.assertNotIn("concept", names)
+        self.assertNotIn("maintain", names)
+        self.assertNotIn("idea-analyze", names)
+        self.assertNotIn("vault-health", names)
+        self.assertNotIn("query-library", names)
+        self.assertNotIn("discover", names)
+        self.assertNotIn("ingest", names)
+        self.assertNotIn("upsert-wiki-page", names)
+        self.assertNotIn("check-concept-alias", names)
         self.assertNotIn("source-discover", names)
         self.assertNotIn("source-ingest", names)
         self.assertNotIn("knowledge-compile-publish", names)
