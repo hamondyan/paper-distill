@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import yaml
 
+from server import tools_knowledge
+from server import tools_health
 from server.v3_store import upsert_wiki_page_v3
 
 
@@ -123,3 +126,61 @@ def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() ->
     assert "check_concept_alias_v3" not in source
     assert not hasattr(entrypoint, "upsert_wiki_page_v3")
     assert not hasattr(entrypoint, "check_concept_alias_v3")
+
+
+def test_check_concept_alias_returns_explicit_error_when_vault_path_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(tools_knowledge, "get_vault_path", lambda: "")
+
+    result = asyncio.run(tools_knowledge.check_concept_alias("Transformer"))
+
+    assert result == {
+        "ok": False,
+        "error": "VAULT_PATH not configured.",
+        "exists": False,
+        "canonical": "Transformer",
+    }
+
+
+def test_merge_concept_offloads_merge_work(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        calls.append(fn.__name__)
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(tools_knowledge.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(tools_knowledge, "get_vault_path", lambda: "/tmp/vault")
+
+    def fake_merge_concept_v3(*_args):
+        return {"ok": True}
+    fake_merge_concept_v3.__name__ = "merge_concept_v3"
+
+    monkeypatch.setattr(tools_knowledge, "merge_concept_v3", fake_merge_concept_v3)
+
+    result = asyncio.run(tools_knowledge.merge_concept("old", "new"))
+
+    assert result == {"ok": True}
+    assert calls == ["merge_concept_v3"]
+
+
+def test_lint_vault_offloads_lint_work(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        calls.append(fn.__name__)
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(tools_health.asyncio, "to_thread", fake_to_thread)
+
+    def fake_lint_vault_v3():
+        return {"ok": True, "issues": []}
+    fake_lint_vault_v3.__name__ = "lint_vault_v3"
+
+    monkeypatch.setattr(tools_health, "lint_vault_v3", fake_lint_vault_v3)
+
+    result = asyncio.run(tools_health.lint_vault())
+
+    assert result == {"ok": True, "issues": []}
+    assert calls == ["lint_vault_v3"]

@@ -9,12 +9,16 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
-    top_level_defs = [
-        node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    nonempty_lines = [line for line in source.splitlines() if line.strip()]
+    top_level_defs = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    import_specs: list[tuple[str | None, tuple[str, ...]]] = []
+    call_names: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            import_specs.append((node.module, tuple(alias.name for alias in node.names)))
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            func = node.value.func
+            if isinstance(func, ast.Name):
+                call_names.append(func.id)
     forbidden_names = {
         "server_runtime",
         "_DELEGATED_ASYNC_NAMES",
@@ -29,14 +33,19 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
         "lint_vault_v3",
     }
 
-    assert "from server.tools_core import register_core_tools" in source
-    assert "from server.tools_intake import register_intake_tools" in source
-    assert "from server.tools_knowledge import register_knowledge_tools" in source
-    assert "from server.tools_health import register_health_tools" in source
-    assert "register_core_tools(mcp)" in source
-    assert "register_intake_tools(mcp)" in source
-    assert "register_knowledge_tools(mcp)" in source
-    assert "register_health_tools(mcp)" in source
+    assert set(import_specs) == {
+        ("__future__", ("annotations",)),
+        ("fastmcp", ("FastMCP",)),
+        ("server.tools_core", ("register_core_tools",)),
+        ("server.tools_intake", ("register_intake_tools",)),
+        ("server.tools_knowledge", ("register_knowledge_tools",)),
+        ("server.tools_health", ("register_health_tools",)),
+    }
+    assert set(call_names) == {
+        "register_core_tools",
+        "register_intake_tools",
+        "register_knowledge_tools",
+        "register_health_tools",
+    }
     assert not any(name in source for name in forbidden_names)
     assert len(top_level_defs) <= 1
-    assert len(nonempty_lines) < 40

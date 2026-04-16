@@ -1,6 +1,7 @@
 """Knowledge v3 MCP tools."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -29,41 +30,47 @@ async def upsert_wiki_page(
     vault_path, error = _vault_path_or_error()
     if error is not None:
         return error
-    return upsert_wiki_page_v3(
-        vault_path=vault_path,
-        page_type=page_type,
-        target=target,
-        frontmatter=frontmatter,
-        body=body,
+    return await asyncio.to_thread(
+        upsert_wiki_page_v3,
+        vault_path,
+        page_type,
+        target,
+        frontmatter,
+        body,
     )
 
 
 async def check_concept_alias(name: str) -> dict[str, Any]:
     vault_path, error = _vault_path_or_error()
     if error is not None:
-        return {"exists": False, "canonical": name}
-    return check_concept_alias_v3(vault_path, name)
+        return {
+            "ok": False,
+            "error": "VAULT_PATH not configured.",
+            "exists": False,
+            "canonical": name,
+        }
+    return await asyncio.to_thread(check_concept_alias_v3, vault_path, name)
 
 
 async def merge_concept(old: str, new: str) -> dict[str, Any]:
     vault_path, error = _vault_path_or_error()
     if error is not None:
         return {"ok": False, "error": "VAULT_PATH not configured.", "warnings": []}
-    return merge_concept_v3(vault_path, old, new)
+    return await asyncio.to_thread(merge_concept_v3, vault_path, old, new)
 
 
 async def kb_update_index() -> dict[str, Any]:
     vault_path, error = _vault_path_or_error()
     if error is not None:
         return error
-    return qmd_update(vault_path)
+    return await asyncio.to_thread(qmd_update, vault_path)
 
 
 async def kb_reembed_force() -> dict[str, Any]:
     vault_path, error = _vault_path_or_error()
     if error is not None:
         return error
-    return qmd_reembed_force(vault_path)
+    return await asyncio.to_thread(qmd_reembed_force, vault_path)
 
 
 def register_knowledge_tools(mcp: FastMCP) -> None:
