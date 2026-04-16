@@ -97,6 +97,8 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "`qmd` owns formal search" in architecture
     assert "degraded" in architecture
     assert "missing qmd collections" in architecture
+    assert "`degraded` is a search readiness status" in architecture
+    assert "`kb_get(id_or_path)` fetches a specific document and does not use `degraded` collection readiness semantics" in architecture
     assert "qmd binary is missing or unavailable" in architecture
     assert "/get" in commands
     assert "uv run pytest -q" in testing

@@ -18,10 +18,10 @@ Python tools own deterministic writes, validation, and index scheduling.
 
 ## Read Surface
 
-- `kb_search(query, scope)` performs qmd-backed search. Supported scopes are `canon`, `insights`, and `raw`.
-- `kb_get(id_or_path)` fetches the current Markdown truth for one asset.
+- `kb_search(query, scope)` performs qmd-backed search. Supported scopes are `canon`, `insights`, and `raw`. `degraded` is a search readiness status for missing qmd collections or collections mounted to another vault.
+- `kb_get(id_or_path)` fetches a specific document and does not use `degraded` collection readiness semantics. It returns `ok`, `missing`, `error`, or `not_ready` based on the direct qmd get result.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
-- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd binary is missing or unavailable, the read path reports `not_ready`; if required collections are missing or mounted to another vault, it reports `degraded`.
+- Knowledge retrieval uses `kb_search` and `kb_get`. If qmd binary is missing or unavailable, the read path reports `not_ready`.
 
 ## Write Surface
 
@@ -45,7 +45,7 @@ Approval is file-native. Only a plain `#approved` tag in the inbox note body all
 
 - Missing `VAULT_PATH` returns an explicit configuration error.
 - Missing or unavailable qmd returns `not_ready` for retrieval.
-- The missing qmd collections state returns `degraded` until `status` reconciles the expected collection mounts.
+- The missing qmd collections state returns `degraded` for search until `status` reconciles the expected collection mounts.
 - Raw evidence capture may rewrite an existing `raw/evidence/` file for the same paper ID as capture repair.
 - If concept compounding fails during ingest, the paper still enters the vault and the failure is reported.
 - Index failure after a successful Python file write is returned as a warning, not as write failure.
