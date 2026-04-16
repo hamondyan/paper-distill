@@ -135,6 +135,7 @@ def test_skills_route_through_v3_tools_only() -> None:
     assert "qmd status" in skill_docs["knowledge-workbench"]
     assert "qmd update" in skill_docs["knowledge-workbench"]
     assert "qmd embed -f" in skill_docs["knowledge-workbench"]
+    assert "After a merge, report rewritten files, alias changes, and separate follow-up guidance for `qmd update` / `qmd embed -f` when needed." in skill_docs["knowledge-workbench"]
     assert "upsert_wiki_page" in skill_docs["knowledge-workbench"]
     assert "check_concept_alias" in skill_docs["knowledge-workbench"]
     assert "merge_concept" in skill_docs["knowledge-workbench"]

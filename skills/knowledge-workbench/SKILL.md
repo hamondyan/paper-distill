@@ -41,7 +41,7 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 - Only core concepts create `wiki/concepts/` pages.
 - Use `check_concept_alias` before creating a concept when the canonical surface is uncertain.
 - Call `merge_concept` directly when you are confident two surfaces refer to the same concept.
-- After a merge, report rewritten files, alias changes, and any qmd warnings.
+- After a merge, report rewritten files, alias changes, and separate follow-up guidance for `qmd update` / `qmd embed -f` when needed.
 
 ## Conversation Insights
 
