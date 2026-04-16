@@ -43,16 +43,15 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
     assert set(import_specs) == {
         ("__future__", ("annotations",)),
         ("fastmcp", ("FastMCP",)),
-        ("server.tools_core", ("register_core_tools",)),
+        ("server.tools_health", ("register_health_tools",)),
         ("server.tools_intake", ("register_intake_tools",)),
         ("server.tools_knowledge", ("register_knowledge_tools",)),
-        ("server.tools_health", ("register_health_tools",)),
     }
     assert set(call_names) == {
-        "register_core_tools",
+        "register_health_tools",
         "register_intake_tools",
         "register_knowledge_tools",
-        "register_health_tools",
     }
+    assert "tools_core" not in source
     assert not any(name in source for name in forbidden_names)
     assert function_names == ["main"]

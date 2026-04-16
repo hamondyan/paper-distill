@@ -9,16 +9,11 @@ from server.server import mcp
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_COMMANDS = {"discover", "inbox", "ingest", "search", "get", "lint", "status"}
 EXPECTED_MCP_TOOLS = {
-    "status",
-    "kb_search",
-    "kb_get",
     "discover_papers",
     "ingest_and_read",
     "check_concept_alias",
     "upsert_wiki_page",
     "merge_concept",
-    "kb_update_index",
-    "kb_reembed_force",
     "lint_vault",
 }
 EXPECTED_ROOT_DOCS = {
@@ -106,10 +101,15 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "MCP Surface Smoke Check" in testing
 
 
-def test_mcp_surface_exposes_v3_tool_names() -> None:
+def test_mcp_surface_exposes_business_tools_only() -> None:
     tools = asyncio.run(mcp.list_tools())
     names = {tool.name for tool in tools}
 
     assert names == EXPECTED_MCP_TOOLS
     assert "check-concept-alias" not in names
     assert "upsert-wiki-page" not in names
+    assert "status" not in names
+    assert "kb_search" not in names
+    assert "kb_get" not in names
+    assert "kb_update_index" not in names
+    assert "kb_reembed_force" not in names
