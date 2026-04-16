@@ -259,8 +259,10 @@ def test_merge_concept_returns_warnings_when_qmd_refresh_fails(
     ]
 
 
-def test_mcp_lists_v3_maintenance_surface_names() -> None:
+def test_mcp_lists_v3_health_surface_names() -> None:
     tools = asyncio.run(mcp.list_tools())
     names = {tool.name for tool in tools}
 
-    assert {"lint_vault", "merge_concept", "kb_update_index", "kb_reembed_force"} <= names
+    assert {"lint_vault", "merge_concept"} <= names
+    assert "kb_update_index" not in names
+    assert "kb_reembed_force" not in names
