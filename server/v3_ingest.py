@@ -6,33 +6,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from server.arxiv_capture import capture_arxiv_source
 from server.config import get_vault_path
 from server.paper_utils import extract_arxiv_id, paper_id
 from server.search import fetch_arxiv_record
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
-from server.vault_ops import write_markdown
+from server.v3_markdown import split_frontmatter, write_markdown
 
 _APPROVED_MARKER = "#approved"
 
 
 def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
     text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
+    frontmatter, body, has_frontmatter = split_frontmatter(text)
+    if not has_frontmatter:
         return {}, text.strip()
-    try:
-        _, remainder = text.split("---\n", 1)
-        fm_text, body = remainder.split("\n---\n", 1)
-    except ValueError:
-        return {}, text.strip()
-    try:
-        frontmatter = yaml.safe_load(fm_text) or {}
-    except yaml.YAMLError:
-        return {}, body.lstrip()
-    if not isinstance(frontmatter, dict):
-        frontmatter = {}
     return frontmatter, body.lstrip()
 
 

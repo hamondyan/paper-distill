@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import re
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from server.concept_registry import slugify
 from server.qmd_runtime import qmd_reembed_force, qmd_update
+from server.v3_markdown import render_markdown, split_frontmatter
+from server.v3_names import slugify, surface_key
 
 
 _WIKILINK_RE = re.compile(
     r"\[\[(?P<target>[^\]|#]+)(?P<section>#[^\]|]+)?(?P<label>\|[^\]]+)?\]\]"
 )
-_NON_WORD_RE = re.compile(r"[\W_]+", re.UNICODE)
 _FOOTER_CUES = ("related:", "see also:", "links:", "references:")
 
 
@@ -22,37 +19,7 @@ def _surface_key(value: str) -> str:
     normalized = value.casefold().strip()
     if normalized.isascii():
         return slugify(normalized)
-    return _NON_WORD_RE.sub("", normalized)
-
-
-def _split_frontmatter(text: str) -> tuple[dict[str, Any], str, bool]:
-    if not text.startswith("---\n"):
-        return {}, text, False
-    try:
-        _, remainder = text.split("---\n", 1)
-        fm_text, body = remainder.split("\n---\n", 1)
-    except ValueError:
-        return {}, text, False
-    frontmatter = yaml.safe_load(fm_text) or {}
-    if not isinstance(frontmatter, dict):
-        frontmatter = {}
-    return frontmatter, body, True
-
-
-def _render_markdown(frontmatter: dict[str, Any], body: str) -> str:
-    stream = StringIO()
-    stream.write("---\n")
-    stream.write(
-        yaml.safe_dump(
-            frontmatter,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).strip()
-    )
-    stream.write("\n---\n")
-    stream.write(body)
-    return stream.getvalue()
+    return surface_key(normalized)
 
 
 def _frontmatter_line_count(text: str) -> int:
@@ -145,10 +112,7 @@ def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[d
 
     for path in sorted((vault_path / "wiki").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
-        try:
-            frontmatter, body, _has_frontmatter = _split_frontmatter(text)
-        except yaml.YAMLError:
-            frontmatter, body = {}, text
+        frontmatter, body, _has_frontmatter = split_frontmatter(text)
 
         base_surfaces = (
             path.stem,
@@ -243,10 +207,7 @@ def _find_concept_paths(vault_path: Path, concept: str) -> list[Path]:
 
     for path in sorted(concept_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        try:
-            frontmatter, body, _has_frontmatter = _split_frontmatter(text)
-        except yaml.YAMLError:
-            continue
+        frontmatter, body, _has_frontmatter = split_frontmatter(text)
         canonical = str(frontmatter.get("concept") or frontmatter.get("title") or "").strip()
         for surface in (path.stem, canonical, _heading(body)):
             if _surface_key(surface) == concept_key:
@@ -272,7 +233,7 @@ def _rewrite_links(text: str, old: str, new: str) -> tuple[str, int]:
 
 def _add_alias_to_concept(path: Path, alias: str) -> bool:
     text = path.read_text(encoding="utf-8")
-    frontmatter, body, has_frontmatter = _split_frontmatter(text)
+    frontmatter, body, has_frontmatter = split_frontmatter(text)
     aliases = frontmatter.get("aliases", [])
     if isinstance(aliases, str):
         aliases = [aliases]
@@ -285,7 +246,11 @@ def _add_alias_to_concept(path: Path, alias: str) -> bool:
 
     aliases.append(alias)
     frontmatter["aliases"] = aliases
-    rendered = _render_markdown(frontmatter, body) if has_frontmatter else _render_markdown({"aliases": aliases}, text)
+    rendered = (
+        render_markdown(frontmatter, body)
+        if has_frontmatter
+        else render_markdown({"aliases": aliases}, text)
+    )
     path.write_text(rendered, encoding="utf-8")
     return True
 

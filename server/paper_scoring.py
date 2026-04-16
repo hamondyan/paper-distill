@@ -182,7 +182,7 @@ def _best_topic_fit(paper: dict, topics: dict[str, dict]) -> tuple[str, float]:
     return best_topic, best_score
 
 
-def _score_recency_v2(paper: dict) -> float:
+def _score_recency(paper: dict) -> float:
     now = datetime.now(timezone.utc)
     dt = _safe_parse_date(paper)
 
@@ -218,7 +218,7 @@ def _score_recency_v2(paper: dict) -> float:
     return 0.40
 
 
-def _score_impact_v2(paper: dict) -> float:
+def _score_impact(paper: dict) -> float:
     citations = _safe_citations(paper)
     if citations is None:
         return 0.50
@@ -237,12 +237,12 @@ def _score_impact_v2(paper: dict) -> float:
     return base
 
 
-def _score_novelty_v2(paper: dict, known_ids: set[str]) -> float:
+def _score_novelty(paper: dict, known_ids: set[str]) -> float:
     pid = paper_id(paper)
     return 0.0 if pid in known_ids else 1.0
 
 
-def _score_venue_tier_v2(paper: dict) -> float:
+def _score_venue_tier(paper: dict) -> float:
     tier = paper.get("venue_tier", "unknown")
     if tier == "tier_s":
         return 1.0
@@ -253,7 +253,7 @@ def _score_venue_tier_v2(paper: dict) -> float:
     return 0.50
 
 
-def _score_author_preference_v2(
+def _score_author_preference(
     paper: dict,
     whitelist_authors: list[str] | None,
     preferred_venues: list[str] | None,
@@ -270,7 +270,7 @@ def _score_author_preference_v2(
     return 0.0
 
 
-def _score_metadata_quality_v2(paper: dict) -> float:
+def _score_metadata_quality(paper: dict) -> float:
     checks = [
         bool(paper.get("abstract")),
         bool(paper.get("authors")),

@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import os
-import tempfile
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from server.qmd_runtime import qmd_update
 from server.v3_bootstrap import ensure_v3_layout
+from server.v3_markdown import atomic_write_text, render_markdown
 
 
 _PAGE_DIRS: dict[str, tuple[str, ...]] = {
@@ -27,50 +23,6 @@ def _target_path(vault_path: Path, page_type: str, target: str) -> Path:
             + ", ".join(sorted(_PAGE_DIRS))
         )
     return vault_path.joinpath(*page_dirs, f"{target}.md")
-
-
-def _render_markdown(frontmatter: dict[str, Any], body: str) -> str:
-    stream = StringIO()
-    stream.write("---\n")
-    stream.write(
-        yaml.safe_dump(
-            frontmatter,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).strip()
-    )
-    stream.write("\n")
-    stream.write("---\n\n")
-    stream.write(body.rstrip())
-    stream.write("\n")
-    return stream.getvalue()
-
-
-def _atomic_write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.stem}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            tmp_path = Path(handle.name)
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
-        tmp_path = None
-    finally:
-        if tmp_path is not None and tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except FileNotFoundError:
-                pass
 
 
 def upsert_wiki_page_v3(
@@ -97,7 +49,7 @@ def upsert_wiki_page_v3(
     payload["type"] = page_type
 
     try:
-        _atomic_write_text(path, _render_markdown(payload, body))
+        atomic_write_text(path, render_markdown(payload, body))
     except Exception as exc:  # pragma: no cover - defensive path
         return {"ok": False, "error": str(exc), "warnings": []}
 

@@ -4,35 +4,19 @@ import re
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from server.concept_registry import slugify
-
-_NON_WORD_RE = re.compile(r"[\W_]+", re.UNICODE)
+from server.v3_markdown import split_frontmatter
+from server.v3_names import surface_key
 
 
 def _normalize(value: str) -> str:
-    normalized = value.casefold().strip()
-    if normalized.isascii():
-        return slugify(normalized)
-    return _NON_WORD_RE.sub("", normalized)
+    return surface_key(value)
 
 
 def _read_concept_page(path: Path) -> tuple[dict[str, Any], str]:
     text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
+    frontmatter, body, has_frontmatter = split_frontmatter(text)
+    if not has_frontmatter:
         return {}, text
-    try:
-        _, remainder = text.split("---\n", 1)
-        fm_text, body = remainder.split("\n---\n", 1)
-    except ValueError:
-        return {}, text
-    try:
-        frontmatter = yaml.safe_load(fm_text) or {}
-    except yaml.YAMLError:
-        return {}, body
-    if not isinstance(frontmatter, dict):
-        frontmatter = {}
     return frontmatter, body
 
 

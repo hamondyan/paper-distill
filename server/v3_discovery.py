@@ -8,30 +8,7 @@ from typing import Any
 from server.config import get_vault_path
 from server.paper_utils import canonical_item_url
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
-
-
-async def search_papers(
-    query: str,
-    sources: list[str] | None = None,
-    max_results: int = 20,
-) -> list[dict[str, Any]]:
-    """Local wrapper to avoid a top-level runtime import cycle."""
-    from server.server_runtime import search_papers as runtime_search_papers
-
-    return await runtime_search_papers(
-        query=query,
-        sources=sources,
-        max_results=max_results,
-    )
-
-
-async def score_papers(
-    papers: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Local wrapper to avoid a top-level runtime import cycle."""
-    from server.server_runtime import score_papers as runtime_score_papers
-
-    return await runtime_score_papers(papers=papers)
+from server.v3_scoring import score_papers_v3, search_papers_v3
 
 
 def _load_seen_cache(vault_path: Path) -> dict[str, dict[str, Any]]:
@@ -156,8 +133,8 @@ async def discover_papers_v3(query: str | None = None) -> dict[str, Any]:
     vault_path = Path(vault_path_value)
     ensure_v3_layout(vault_path)
     cache = _load_seen_cache(vault_path)
-    results = await search_papers(query=query or "", sources=None, max_results=20)
-    scored_results = await score_papers(results)
+    results = await search_papers_v3(query=query or "", sources=None, max_results=20)
+    scored_results = await score_papers_v3(results)
 
     saved: list[dict[str, Any]] = []
     skipped_seen: list[str] = []
