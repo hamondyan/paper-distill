@@ -133,6 +133,30 @@ def test_v3_store_does_not_expose_qmd_update() -> None:
     assert not hasattr(v3_store, "qmd_update")
 
 
+def test_upsert_wiki_page_returns_a_fresh_follow_up_list_each_time(tmp_path: Path) -> None:
+    first = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="paper",
+        target="attention-is-all-you-need--arxiv-1706.03762",
+        frontmatter={"type": "paper"},
+        body="# Attention\n",
+    )
+    first["follow_up"].append("mutated")
+
+    second = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="paper",
+        target="attention-is-all-you-need--arxiv-1706.03762",
+        frontmatter={"type": "paper"},
+        body="# Attention\n",
+    )
+
+    assert second["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
+
+
 def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() -> None:
     from server import server as entrypoint
 

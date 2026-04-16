@@ -59,4 +59,4 @@ def upsert_wiki_page_v3(
     except Exception as exc:  # pragma: no cover - defensive path
         return {"ok": False, "error": str(exc), "warnings": []}
 
-    return {"ok": True, "path": str(path), "follow_up": FOLLOW_UP}
+    return {"ok": True, "path": str(path), "follow_up": list(FOLLOW_UP)}

@@ -296,5 +296,5 @@ def merge_concept_v3(vault_path: Path, old: str, new: str) -> dict[str, Any]:
         "rewritten_files": rewritten_files,
         "rewritten_links": rewritten_links,
         "alias_added": alias_added,
-        "follow_up": FOLLOW_UP,
+        "follow_up": list(FOLLOW_UP),
     }

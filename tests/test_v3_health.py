@@ -250,6 +250,30 @@ def test_v3_health_does_not_expose_qmd_side_effect_helpers() -> None:
     assert not hasattr(v3_health, "qmd_reembed_force")
 
 
+def test_merge_concept_returns_a_fresh_follow_up_list_each_time(
+    tmp_path: Path,
+) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("llm.md").write_text(
+        "---\ntype: concept\nconcept: LLM\naliases: []\n---\n\n# LLM\n",
+        encoding="utf-8",
+    )
+    paper_dir.joinpath("demo.md").write_text("[[大型语言模型]]\n", encoding="utf-8")
+
+    first = merge_concept_v3(tmp_path, "大型语言模型", "llm")
+    first["follow_up"].append("mutated")
+
+    second = merge_concept_v3(tmp_path, "大型语言模型", "llm")
+
+    assert second["follow_up"] == [
+        "Run qmd update after all writes in this round finish.",
+        "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
+    ]
+
+
 def test_mcp_lists_v3_health_surface_names() -> None:
     tools = asyncio.run(mcp.list_tools())
     names = {tool.name for tool in tools}
