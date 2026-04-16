@@ -169,12 +169,14 @@ def test_lint_vault_offloads_lint_work(monkeypatch) -> None:
     calls: list[str] = []
 
     async def fake_to_thread(fn, *args, **kwargs):
-        calls.append(fn.__name__)
+        calls.append(f"{fn.__name__}:{args[0]}")
         return fn(*args, **kwargs)
 
     monkeypatch.setattr(tools_health.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(tools_health, "get_vault_path", lambda: "/tmp/vault", raising=False)
 
-    def fake_lint_vault_v3():
+    def fake_lint_vault_v3(vault_path):
+        assert str(vault_path) == "/tmp/vault"
         return {"ok": True, "issues": []}
     fake_lint_vault_v3.__name__ = "lint_vault_v3"
 
@@ -183,4 +185,4 @@ def test_lint_vault_offloads_lint_work(monkeypatch) -> None:
     result = asyncio.run(tools_health.lint_vault())
 
     assert result == {"ok": True, "issues": []}
-    assert calls == ["lint_vault_v3"]
+    assert calls == ["lint_vault_v3:/tmp/vault"]
