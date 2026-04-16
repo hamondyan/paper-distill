@@ -1,51 +1,62 @@
-"""Core v3 MCP tools.
-
-Registers:
-    kb_search          - search the qmd-backed knowledge base
-    kb_get             - fetch the current truth for a document
-    status             - report v3 vault layout and qmd readiness
-    update-preferences - update user's learned preferences
-"""
+"""Core v3 MCP tools."""
 from __future__ import annotations
 
 from typing import Any
 
 from fastmcp import FastMCP
 
-from server.server_runtime import (
-    kb_get as _kb_get,
-    kb_search as _kb_search,
-    update_learned_preferences as _update_prefs,
-    v3_status as _v3_status,
-)
+from server.config import get_vault_path
+from server.qmd_runtime import ensure_qmd_ready, qmd_get, qmd_ready_report, qmd_search
+from server.v3_bootstrap import ensure_v3_layout
+
+
+def _vault_path_or_error() -> tuple[str | None, dict[str, Any] | None]:
+    vault_path = str(get_vault_path()).strip()
+    if not vault_path:
+        return None, {"status": "error", "error": "VAULT_PATH not configured."}
+    return vault_path, None
 
 
 async def kb_search(query: str, scope: str = "canon") -> dict[str, Any]:
-    """Search the qmd-backed knowledge base."""
-    return _kb_search(query=query, scope=scope)
+    vault_path_value, error = _vault_path_or_error()
+    if error is not None:
+        return error
+
+    from pathlib import Path
+
+    vault_path = Path(vault_path_value)
+    ensure_v3_layout(vault_path)
+    return qmd_search(vault_path=vault_path, query=query, scope=scope)
 
 
 async def kb_get(id_or_path: str) -> dict[str, Any]:
-    """Fetch the current file truth by stable ID or vault-relative path."""
-    return _kb_get(id_or_path=id_or_path)
+    vault_path_value, error = _vault_path_or_error()
+    if error is not None:
+        return error
+
+    from pathlib import Path
+
+    vault_path = Path(vault_path_value)
+    ensure_v3_layout(vault_path)
+    return qmd_get(vault_path=vault_path, id_or_path=id_or_path)
 
 
 async def status() -> dict[str, Any]:
-    """Report v3 vault layout and qmd readiness."""
-    return _v3_status()
+    vault_path_value, error = _vault_path_or_error()
+    if error is not None:
+        return error
 
+    from pathlib import Path
+    import subprocess
 
-async def update_preferences(
-    accepted_keywords: list[str] | None = None,
-    rejected_keywords: list[str] | None = None,
-    preferred_venues: list[str] | None = None,
-) -> dict[str, Any]:
-    """Update the user's learned preferences in settings.json."""
-    return await _update_prefs(
-        accepted_keywords=accepted_keywords,
-        rejected_keywords=rejected_keywords,
-        preferred_venues=preferred_venues,
-    )
+    vault_path = Path(vault_path_value)
+    layout = ensure_v3_layout(vault_path)
+    try:
+        ensure_qmd_ready(vault_path)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    qmd = qmd_ready_report(vault_path)
+    return {"layout": layout, "qmd": qmd}
 
 
 def register_core_tools(mcp: FastMCP) -> None:

@@ -112,8 +112,14 @@ def test_upsert_wiki_page_rejects_unknown_type_without_creating_layout(
     assert not (tmp_path / "inbox").exists()
 
 
-def test_server_entrypoint_exposes_v3_knowledge_delegates() -> None:
+def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() -> None:
     from server import server as entrypoint
 
-    assert callable(entrypoint.upsert_wiki_page_v3)
-    assert callable(entrypoint.check_concept_alias_v3)
+    source = Path(entrypoint.__file__).read_text(encoding="utf-8")
+
+    assert "register_knowledge_tools(mcp)" in source
+    assert "from server import server_runtime as _rt" not in source
+    assert "upsert_wiki_page_v3" not in source
+    assert "check_concept_alias_v3" not in source
+    assert not hasattr(entrypoint, "upsert_wiki_page_v3")
+    assert not hasattr(entrypoint, "check_concept_alias_v3")

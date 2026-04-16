@@ -4,8 +4,9 @@ import asyncio
 from pathlib import Path
 from unittest.mock import Mock
 
+from server import qmd_runtime
+from server import tools_core
 from server.server import mcp
-from server import qmd_runtime, server_runtime
 
 
 def test_mcp_lists_v3_core_read_surface_names() -> None:
@@ -20,9 +21,9 @@ def test_mcp_lists_v3_core_read_surface_names() -> None:
 def test_kb_search_returns_not_ready_when_qmd_is_missing(monkeypatch, tmp_path: Path) -> None:
     ensured: list[Path] = []
 
-    monkeypatch.setattr(server_runtime, "get_vault_path", lambda: str(tmp_path))
+    monkeypatch.setattr(tools_core, "get_vault_path", lambda: str(tmp_path))
     monkeypatch.setattr(
-        server_runtime,
+        tools_core,
         "ensure_v3_layout",
         lambda vault_path: ensured.append(vault_path) or {"created": []},
     )
@@ -32,7 +33,7 @@ def test_kb_search_returns_not_ready_when_qmd_is_missing(monkeypatch, tmp_path: 
 
     monkeypatch.setattr(qmd_runtime.subprocess, "run", raise_missing)
 
-    result = server_runtime.kb_search(query="graph attention", scope="canon")
+    result = asyncio.run(tools_core.kb_search(query="graph attention", scope="canon"))
 
     assert ensured == [tmp_path]
     assert result == {
@@ -41,7 +42,7 @@ def test_kb_search_returns_not_ready_when_qmd_is_missing(monkeypatch, tmp_path: 
     }
 
 
-def test_kb_get_returns_current_file_truth_from_real_runtime_path(
+def test_kb_get_returns_current_file_truth_from_qmd_runtime(
     monkeypatch, tmp_path: Path
 ) -> None:
     vault_path = tmp_path
@@ -51,9 +52,9 @@ def test_kb_get_returns_current_file_truth_from_real_runtime_path(
 
     ensured: list[Path] = []
 
-    monkeypatch.setattr(server_runtime, "get_vault_path", lambda: str(vault_path))
+    monkeypatch.setattr(tools_core, "get_vault_path", lambda: str(vault_path))
     monkeypatch.setattr(
-        server_runtime,
+        tools_core,
         "ensure_v3_layout",
         lambda path: ensured.append(path) or {"created": []},
     )
@@ -65,7 +66,7 @@ def test_kb_get_returns_current_file_truth_from_real_runtime_path(
 
     monkeypatch.setattr(qmd_runtime.subprocess, "run", fake_run)
 
-    result = server_runtime.kb_get("wiki/papers/attention-is-all-you-need.md")
+    result = asyncio.run(tools_core.kb_get("wiki/papers/attention-is-all-you-need.md"))
 
     assert ensured == [vault_path]
     assert result == {
@@ -80,7 +81,7 @@ def test_status_attempts_qmd_bootstrap_before_reporting_readiness(
 ) -> None:
     calls: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(server_runtime, "get_vault_path", lambda: str(tmp_path))
+    monkeypatch.setattr(tools_core, "get_vault_path", lambda: str(tmp_path))
 
     def fake_ensure_v3_layout(vault_path: Path) -> dict[str, object]:
         calls.append(("layout", vault_path))
@@ -94,18 +95,18 @@ def test_status_attempts_qmd_bootstrap_before_reporting_readiness(
         calls.append(("qmd_report", vault_path))
         return {"status": "not_ready", "reason": "qmd binary not found"}
 
-    monkeypatch.setattr(server_runtime, "ensure_v3_layout", fake_ensure_v3_layout)
-    monkeypatch.setattr(server_runtime, "ensure_qmd_ready", fake_ensure_qmd_ready)
-    monkeypatch.setattr(server_runtime, "qmd_ready_report", fake_qmd_ready_report)
+    monkeypatch.setattr(tools_core, "ensure_v3_layout", fake_ensure_v3_layout)
+    monkeypatch.setattr(tools_core, "ensure_qmd_ready", fake_ensure_qmd_ready)
+    monkeypatch.setattr(tools_core, "qmd_ready_report", fake_qmd_ready_report)
 
-    result = asyncio.run(mcp.call_tool("status"))
+    result = asyncio.run(tools_core.status())
 
     assert calls == [
         ("layout", tmp_path),
         ("qmd_bootstrap", tmp_path),
         ("qmd_report", tmp_path),
     ]
-    assert result.structured_content == {
+    assert result == {
         "layout": {"created": ["wiki/papers"]},
         "qmd": {"status": "not_ready", "reason": "qmd binary not found"},
     }
