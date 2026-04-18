@@ -55,6 +55,36 @@ def test_hooks_command_runs_through_bash_with_spaced_root() -> None:
     assert "Paper Distill v3 installed" in payload["additionalContext"]
 
 
+def test_hooks_command_uses_claude_override_branch() -> None:
+    hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+
+    with TemporaryDirectory(prefix="paper distill ") as temp_dir:
+        temp_root = Path(temp_dir)
+        spaced_root = temp_root / "claude plugin root"
+        spaced_root.mkdir()
+        repo_link = spaced_root / "paper-distill"
+        repo_link.symlink_to(REPO_ROOT, target_is_directory=True)
+
+        proc = subprocess.run(
+            ["bash", "-lc", command],
+            cwd=temp_root,
+            env={
+                **os.environ,
+                "CLAUDE_PLUGIN_ROOT": str(repo_link),
+                "CODEX_PLUGIN_ROOT": "",
+                "OPENCLAW_PLUGIN_ROOT": "",
+            },
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+    payload = json.loads(proc.stdout)
+    assert payload["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert "Paper Distill v3 installed" in payload["hookSpecificOutput"]["additionalContext"]
+
+
 def test_session_start_resolves_root_via_shared_helper() -> None:
     session_start = (REPO_ROOT / "hooks" / "session-start").read_text(encoding="utf-8")
     assert "plugin-root.sh" in session_start
