@@ -36,7 +36,15 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 - Do not edit `wiki/papers/`, `wiki/concepts/`, `insights/ideas/`, or `insights/conversations/` by hand.
 - After write-heavy work, tell the user that `qmd update` is separate and `qmd embed -f` is optional when semantic retrieval must reflect the new state immediately.
 
-## Concept Rules
+See [references/concept-rules.md](references/concept-rules.md) for concept selection, naming, and merge decisions.
+
+## Conversation Insights
+
+When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
+
+See [references/conversation-insights.md](references/conversation-insights.md) for note structure, trigger heuristics, and examples.
+
+## Concept Maintenance
 
 - Only core concepts create `wiki/concepts/` pages.
 - Reuse existing concepts before creating new concept pages.
@@ -44,16 +52,15 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 - Call `merge_concept` directly when you are confident two surfaces refer to the same concept.
 - After a merge, report rewritten files, alias changes, and separate follow-up guidance for `qmd update` / `qmd embed -f` when needed.
 
-## Conversation Insights
-
-When a discussion produces a reusable research insight, write a distilled note to `insights/conversations/` through `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer. Do not save verbatim transcripts, and do not edit `insights/conversations/` by hand.
-
 ## Health And Index Maintenance
 
 - Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, and concept pages without supporting papers.
 - Use QMD CLI directly for `qmd status`, `qmd update`, `qmd embed -f`, `qmd collection ...`, and `qmd context ...`.
+- For a vault health snapshot (counts + lint issues + recent activity), run the `/status` command.
 - Check `docs/qmd-cli.md` first for the Paper Distill mapping.
 - If command details are uncertain, follow runtime `qmd --help`.
+
+See [references/health-maintenance.md](references/health-maintenance.md) for lint-triage recipes, when to run `qmd embed -f`, and how to interpret specific issue codes.
 
 ## Skill / Tool Contract
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date, timedelta
 from pathlib import Path
 
 import yaml
 
 from server.server import mcp
-from server.v3_health import lint_vault_v3, merge_concept_v3
+from server.v3_health import INBOX_STALE_DAYS, lint_vault_v3, merge_concept_v3
 
 
 def _read_frontmatter(path: Path) -> dict:
@@ -248,6 +249,118 @@ def test_lint_vault_flags_regex_shaped_malformed_links(tmp_path: Path) -> None:
     result = lint_vault_v3(tmp_path)
 
     assert any(issue["code"] == "malformed_link" for issue in result["issues"])
+
+
+def test_lint_vault_flags_paper_missing_required_fields(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text("# Transformer\n", encoding="utf-8")
+    paper_dir.joinpath("demo.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:0000.0000\n"
+        "title: Demo\n"
+        "---\n\n"
+        "# Demo\n\nSee [[Transformer]].\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+    field_issues = [i for i in result["issues"] if i["code"] == "paper_missing_required_fields"]
+
+    assert field_issues, result["issues"]
+    missing = field_issues[0]["fields"]
+    assert "venue" in missing
+    assert "source_layer" in missing
+    assert "year" in missing
+    assert "key_concepts_topk" in missing
+
+
+def test_lint_vault_flags_paper_without_raw_evidence(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text("# Transformer\n", encoding="utf-8")
+    paper_dir.joinpath("demo.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:1706.03762\n"
+        "title: Attention Is All You Need\n"
+        "year: 2017\n"
+        "venue: NeurIPS\n"
+        "source_layer: wiki\n"
+        "key_concepts_topk: [Transformer]\n"
+        "---\n\n"
+        "# Attention Is All You Need\n\nSee [[Transformer]].\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+    orphan_issues = [i for i in result["issues"] if i["code"] == "paper_without_raw_evidence"]
+
+    assert orphan_issues
+    assert orphan_issues[0]["paper_id"] == "arxiv:1706.03762"
+
+
+def test_lint_vault_does_not_flag_paper_with_matching_raw_evidence(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    evidence_dir = tmp_path / "raw" / "evidence"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    evidence_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text("# Transformer\n", encoding="utf-8")
+    paper_dir.joinpath("demo.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:1706.03762\n"
+        "title: Attention Is All You Need\n"
+        "year: 2017\n"
+        "venue: NeurIPS\n"
+        "source_layer: wiki\n"
+        "key_concepts_topk: [Transformer]\n"
+        "---\n\n"
+        "# Attention Is All You Need\n\nSee [[Transformer]].\n",
+        encoding="utf-8",
+    )
+    evidence_dir.joinpath("demo.md").write_text(
+        "---\ntype: raw_evidence\npaper_id: arxiv:1706.03762\n---\n\n# Evidence\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert not any(i["code"] == "paper_without_raw_evidence" for i in result["issues"])
+
+
+def test_lint_vault_flags_stale_inbox_notes(tmp_path: Path) -> None:
+    inbox_dir = tmp_path / "inbox"
+    inbox_dir.mkdir(parents=True)
+    today = date(2026, 4, 18)
+    stale_day = (today - timedelta(days=INBOX_STALE_DAYS + 5)).isoformat()
+    fresh_day = (today - timedelta(days=3)).isoformat()
+    inbox_dir.joinpath("stale.md").write_text(
+        f'---\ntype: inbox_stub\ndiscovered_at: "{stale_day}"\n---\n\nsome note\n',
+        encoding="utf-8",
+    )
+    inbox_dir.joinpath("approved.md").write_text(
+        f'---\ntype: inbox_stub\ndiscovered_at: "{stale_day}"\n---\n\n#approved\n',
+        encoding="utf-8",
+    )
+    inbox_dir.joinpath("fresh.md").write_text(
+        f'---\ntype: inbox_stub\ndiscovered_at: "{fresh_day}"\n---\n\nstill deciding\n',
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path, today=today)
+    stale = [i for i in result["issues"] if i["code"] == "inbox_stale"]
+
+    assert len(stale) == 1
+    assert stale[0]["path"].endswith("stale.md")
+    assert int(stale[0]["age_days"]) >= INBOX_STALE_DAYS
 
 
 def test_merge_concept_rewrites_links_updates_aliases_and_returns_follow_up(

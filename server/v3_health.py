@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from server.v3_markdown import render_markdown, split_frontmatter
 from server.v3_names import slugify, surface_key
+
+INBOX_STALE_DAYS = 30
+_PAPER_REQUIRED_STRING_FIELDS = ("paper_id", "title", "venue", "source_layer")
 
 
 _WIKILINK_RE = re.compile(
@@ -242,13 +246,125 @@ def _link_quality_issues(path: Path, text: str, known_surfaces: set[str]) -> lis
     return issues
 
 
-def lint_vault_v3(vault_path: Path) -> dict[str, Any]:
+def _paper_required_field_issues(
+    path: Path, frontmatter: dict[str, Any]
+) -> list[dict[str, str]]:
+    missing: list[str] = []
+    for field in _PAPER_REQUIRED_STRING_FIELDS:
+        value = frontmatter.get(field)
+        if not (isinstance(value, str) and value.strip()):
+            missing.append(field)
+    year = frontmatter.get("year")
+    if isinstance(year, bool) or not isinstance(year, int):
+        missing.append("year")
+    if not _string_list(frontmatter.get("key_concepts_topk")):
+        missing.append("key_concepts_topk")
+    if not missing:
+        return []
+    return [
+        {
+            "code": "paper_missing_required_fields",
+            "path": str(path),
+            "fields": ", ".join(missing),
+        }
+    ]
+
+
+def _paper_id_index(raw_evidence_dir: Path) -> set[str]:
+    known: set[str] = set()
+    if not raw_evidence_dir.is_dir():
+        return known
+    for path in sorted(raw_evidence_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        frontmatter, _body, _ = split_frontmatter(text)
+        pid = str(frontmatter.get("paper_id") or "").strip()
+        if pid:
+            known.add(pid)
+    return known
+
+
+def _paper_without_raw_evidence_issues(
+    path: Path,
+    frontmatter: dict[str, Any],
+    known_paper_ids: set[str],
+) -> list[dict[str, str]]:
+    pid = str(frontmatter.get("paper_id") or "").strip()
+    if not pid:
+        return []
+    if pid in known_paper_ids:
+        return []
+    return [
+        {
+            "code": "paper_without_raw_evidence",
+            "path": str(path),
+            "paper_id": pid,
+        }
+    ]
+
+
+def _parse_discovered_at(value: Any) -> date | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+
+def _inbox_stale_issues(
+    vault_path: Path, today: date, stale_after_days: int
+) -> list[dict[str, str]]:
+    inbox_dir = vault_path / "inbox"
+    if not inbox_dir.is_dir():
+        return []
+    cutoff = today - timedelta(days=stale_after_days)
+    issues: list[dict[str, str]] = []
+    for path in sorted(inbox_dir.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        frontmatter, body, _ = split_frontmatter(text)
+        if "#approved" in body:
+            continue
+        discovered = _parse_discovered_at(frontmatter.get("discovered_at"))
+        if discovered is None or discovered > cutoff:
+            continue
+        age_days = (today - discovered).days
+        issues.append(
+            {
+                "code": "inbox_stale",
+                "path": str(path),
+                "discovered_at": discovered.isoformat(),
+                "age_days": str(age_days),
+            }
+        )
+    return issues
+
+
+def lint_vault_v3(
+    vault_path: Path, *, today: date | None = None
+) -> dict[str, Any]:
     known_surfaces, concept_surfaces, issues = _known_surfaces_and_alias_issues(vault_path)
+    known_paper_ids = _paper_id_index(vault_path / "raw" / "evidence")
     for path in sorted(vault_path.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         frontmatter, _body, _has_frontmatter = split_frontmatter(text)
         if path.parent.name == "papers" and path.parent.parent.name == "wiki":
             issues.extend(_paper_quality_issues(path, frontmatter, text, concept_surfaces))
+            issues.extend(_paper_required_field_issues(path, frontmatter))
+            issues.extend(
+                _paper_without_raw_evidence_issues(path, frontmatter, known_paper_ids)
+            )
         if path.parent.name == "concepts" and path.parent.parent.name == "wiki":
             issues.extend(_concept_quality_issues(path, frontmatter))
         if _frontmatter_line_count(text) > 20:
@@ -257,6 +373,7 @@ def lint_vault_v3(vault_path: Path) -> dict[str, Any]:
             issues.extend(_malformed_link_issues(path, text))
             issues.extend(_repeated_link_issues(path, text))
             issues.extend(_link_quality_issues(path, text, known_surfaces))
+    issues.extend(_inbox_stale_issues(vault_path, today or date.today(), INBOX_STALE_DAYS))
     return {"ok": True, "issues": issues}
 
 

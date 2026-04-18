@@ -1,7 +1,8 @@
 ---
 name: approve
-description: Mark inbox candidates approved from chat or explicit selection
-user_invocable: true
+description: Use when the user decides to accept recommended inbox candidates after a discovery round. Writes the plain `#approved` body marker to the matching inbox notes so they become eligible for capture.
+argument-hint: "[paper-id | arxiv-id | inbox-path | all]"
+user-invocable: true
 ---
 
 Use the v3 `approve_papers` tool to add a plain `#approved` marker to matching inbox notes.

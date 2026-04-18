@@ -26,55 +26,21 @@ Turn local evidence into editable research idea notes. Ideas and distilled conve
 
 ## Write Idea Notes
 
-Create or update `insights/ideas/{slug}.md` with:
-
-```python
-upsert_wiki_page(
-    page_type="idea",
-    target=slug,
-    frontmatter={
-        "idea_state": "active",
-        "topics": topics,
-        "related_papers": related_papers,
-        "related_concepts": related_concepts,
-    },
-    body=body,
-)
-```
-
-Recommended sections:
-
-- `Summary`
-- `Local Evidence`
-- `Hypothesis / Bridge`
-- `Kill Criteria`
-- `Next Step`
+Use `upsert_wiki_page(page_type="idea", target=<slug>, frontmatter=..., body=...)` to create or update an idea note in `insights/ideas/`. See [references/idea-note-template.md](references/idea-note-template.md) for the full frontmatter shape and the recommended body sections (Summary / Local Evidence / Hypothesis / Kill Criteria / Next Step).
 
 ## Write Conversation Notes
 
-When the useful asset is a distilled conversation takeaway rather than a research idea, write:
-
-```python
-upsert_wiki_page(
-    page_type="conversation",
-    target=slug,
-    frontmatter={
-        "source_layer": "insights",
-        "related_concepts_topk": related_concepts[:3],
-    },
-    body=body,
-)
-```
-
-Do not store verbatim transcripts.
+Use `upsert_wiki_page(page_type="conversation", target=<slug>, frontmatter=..., body=...)` when the useful asset is a distilled conversation takeaway rather than a research idea. Do not store verbatim transcripts. See [references/conversation-note-template.md](references/conversation-note-template.md) for the frontmatter and body shape.
 
 ## Curate Ideas
 
 - Use `qmd query` before creating a new idea.
-- If an idea is rejected, parked, or superseded, update `idea_state`, `decision_reason`, `decision_at`, and `superseded_by` in the note.
+- If an idea is rejected, parked, or superseded, update `idea_state`, `decision_reason`, `decision_at`, and `superseded_by` in the note rather than deleting it.
 - Keep negative knowledge in the idea note itself.
-- Rank ideas by local evidence, novelty, feasibility, and kill criteria clarity.
+- Rank active ideas by local evidence, novelty, feasibility, and kill-criterion clarity.
 - Offer targeted follow-ups: search related papers, create a core concept page, or capture a conversation insight.
+
+See [references/curation-rules.md](references/curation-rules.md) for state transitions, ranking heuristics, and when to retire an idea permanently.
 
 ## Rules
 
@@ -85,6 +51,12 @@ Do not store verbatim transcripts.
 - Use QMD CLI directly for `qmd query`, `qmd get`, `qmd status`, `qmd update`, `qmd embed -f`, and collection/context health.
 - Check `docs/qmd-cli.md` first for the Paper Distill mapping.
 - If command details are uncertain, follow runtime `qmd --help`.
+
+## When Not To Write Yet
+
+- If the evidence is thin, keep the output as candidate ideas in chat instead of writing a note.
+- If the same idea already exists, update or supersede it rather than creating a near-duplicate file.
+- If the user only wants exploration, do the retrieval and ranking work first, then ask whether any candidate should be saved.
 
 ## Skill / Tool Contract
 

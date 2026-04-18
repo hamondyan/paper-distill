@@ -6,7 +6,7 @@ from typing import Any
 
 from server.paper_utils import normalise_title
 from server.v3_bootstrap import ensure_v3_layout
-from server.v3_markdown import atomic_write_text, render_markdown
+from server.v3_markdown import atomic_write_text, render_markdown, split_frontmatter
 
 
 FOLLOW_UP: list[str] = [
@@ -130,3 +130,30 @@ def upsert_wiki_page_v3(
         return {"ok": False, "error": str(exc), "warnings": []}
 
     return {"ok": True, "path": str(path), "follow_up": list(FOLLOW_UP)}
+
+
+_AUDIT_PAGE_TYPES: tuple[str, ...] = ("paper", "concept")
+
+
+def audit_wiki_schema(vault_path: Path) -> list[dict[str, Any]]:
+    """Scan wiki pages and return schema violations without modifying files."""
+    violations: list[dict[str, Any]] = []
+    for page_type in _AUDIT_PAGE_TYPES:
+        page_dir = vault_path.joinpath(*_PAGE_DIRS[page_type])
+        if not page_dir.is_dir():
+            continue
+        for md_path in sorted(page_dir.glob("*.md")):
+            try:
+                text = md_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                violations.append(
+                    {"page_type": page_type, "path": str(md_path), "errors": [f"read error: {exc}"]}
+                )
+                continue
+            frontmatter, body, _ = split_frontmatter(text)
+            errors = _quality_errors(page_type, frontmatter, body)
+            if errors:
+                violations.append(
+                    {"page_type": page_type, "path": str(md_path), "errors": errors}
+                )
+    return violations

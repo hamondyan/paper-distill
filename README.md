@@ -50,7 +50,7 @@ Bootstrap succeeds when the command reports the vault layout plus ready QMD coll
 ## Core Flow
 
 ```text
-/discover -> approve in chat or add #approved in inbox note -> /ingest approved -> qmd query or qmd get -> write -> /lint
+/discover -> approve in chat -> /ingest approved -> qmd query or qmd get -> write -> /lint
 ```
 
 Direct ingestion is also available. The agent can resolve paper titles, acronyms, aliases, project names, arXiv URLs, arXiv IDs, or arXiv DOI values to arXiv identities, then call the single intake tool:
@@ -81,9 +81,9 @@ vault/
 
 - `/discover` writes inbox stubs.
 - `/approve` marks selected inbox stubs approved from chat or explicit paper IDs/paths.
-- `/inbox` summarizes pending and approved candidates.
 - `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
+- `/status` returns a vault health snapshot (counts, pending approvals, lint issues, last activity).
 
 Some hosts expose plugin commands with the plugin namespace, such as `/paper-distill:ingest`.
 

@@ -44,10 +44,10 @@ All fields below are required for generated paper pages.
 | `title` | string | Paper title. |
 | `year` | number | Publication year. |
 | `venue` | string | Venue name. |
-| `source_layer` | string | Usually `canon`. |
+| `source_layer` | string | Non-empty provenance label; agent-authored canonical pages usually use `wiki`. |
 | `key_concepts_topk` | list | One to five most important linked concepts. |
 
-Paper pages are agent-owned and generally not manually edited. Each paper page must link at least one concept from `key_concepts_topk` in the body with a wikilink such as `[[Transformer]]`. The preferred budget is one to three concept links; more than five concept links is treated as too dense by vault lint.
+Paper pages are agent-owned and generally not manually edited. Write-time validation rejects missing or empty `paper_id`, `title`, `venue`, or `source_layer`, non-integer `year`, duplicate concepts, or `key_concepts_topk` lists outside the 1-to-5 range. Each paper page must link at least one concept from `key_concepts_topk` in the body with a wikilink such as `[[Transformer]]`. The preferred budget is one to three concept links; more than five concept links is treated as too dense by vault lint. Vault lint also reports `paper_without_raw_evidence` when a paper page has no matching `raw/evidence/` file.
 
 ## Concept Page
 
@@ -59,10 +59,10 @@ All fields below are required for generated concept pages.
 | `type` | string | Forced to `concept`. |
 | `concept` | string | Canonical display name. |
 | `aliases` | list | Accepted alternate surfaces. |
-| `source_layer` | string | Usually `canon`. |
+| `source_layer` | string | Non-empty provenance label; agent-authored concept pages usually use `wiki`. |
 | `related_papers_topk` | list | At least one paper that supports the concept. |
 
-Only core concepts get concept pages. Reuse existing concepts before creating new pages: search with QMD, call `check_concept_alias` when the surface is uncertain, and create a new concept only when it represents a durable research concept supported by at least one paper.
+Only core concepts get concept pages. Write-time validation rejects missing or empty `concept` / `source_layer`, non-list `aliases`, or empty `related_papers_topk`. Reuse existing concepts before creating new pages: search with QMD, call `check_concept_alias` when the surface is uncertain, and create a new concept only when it represents a durable research concept supported by at least one paper.
 
 ## Idea Page
 

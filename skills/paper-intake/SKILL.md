@@ -29,45 +29,32 @@ Execute this decision tree before any tool call:
 3. User asked to ingest approvals: call `ingest_and_read(input_value="approved")`.
 4. User provided arXiv URL(s), arXiv ID(s), or arXiv DOI value(s): call `ingest_and_read(input_value=...)` directly. Batch multiple resolved identifiers into one call when possible.
 5. User provided title(s), acronym(s), alias(es), project name(s), or mixed natural paper references: the agent must resolve each reference to an arXiv URL first, then call `ingest_and_read` with the resolved arXiv identities. Do not ask for a second confirmation after resolving.
-6. User asked for discovery without asking to ingest specific papers: call `discover_papers(query=...)`, then stop and offer to approve selected inbox stubs from chat or explain that the user can add `#approved` in the note body.
+6. User asked for discovery without asking to ingest specific papers: call `discover_papers(query=...)`, then stop and offer to approve selected inbox stubs from chat. The file-native approval marker remains an internal implementation detail. After discovery, apply the post-discovery re-scoring pass defined in [references/post-discovery-rescoring.md](references/post-discovery-rescoring.md).
 7. User asked whether something is already in the vault or wants to read local evidence: use QMD CLI directly, usually `qmd query` or `qmd get`.
-8. User wants a canonical paper page after capture and reading: distill the returned raw evidence, then call `upsert_wiki_page(page_type="paper", ...)`.
+8. User wants a canonical paper page after capture and reading: hand off to the `paper-distillation` skill.
 
-## Approval Rules
+## Core Rules
 
-- Approval is file-native. Only a plain `#approved` tag in the inbox note body counts.
-- `approve_papers` is the chat-native way to write that same `#approved` body marker for selected inbox notes.
-- Frontmatter status fields and filenames do not permit approved-batch ingest.
-- Never ingest unapproved inbox notes.
-- Do not edit `raw/evidence/` by hand. It is normally read-only after capture; capture repair may rewrite the same paper ID.
+- **Approval is file-native.** Only a plain `#approved` tag in the inbox note body counts. `approve_papers` is the chat-native way to write that same marker. Never ingest unapproved inbox notes. See [references/approval-rules.md](references/approval-rules.md) for edge cases (frontmatter status fields, code fences, nested notes).
+- **Ingest captures only.** `ingest_and_read(input_value="approved")` processes approved inbox notes; batch-ingest accepts arXiv URLs, arXiv IDs, arXiv DOI values. Natural references are agent-resolved before the MCP call. Do not edit `raw/evidence/` by hand. See [references/ingest-rules.md](references/ingest-rules.md) for the resolved/unresolved reporting contract and capture repair behavior.
+- **Canonical pages are a separate skill.** Distillation from `raw/evidence/` to `wiki/papers/` is handled by the `paper-distillation` skill. The canonical flow requires 1–5 concepts in `key_concepts_topk`, at least one wikilinked in the body, and `check_concept_alias` before linking uncertain concept surfaces.
+- **Conversation insights use the tool path.** If a paper-intake conversation surfaces a durable insight about why a paper matters, save the distilled takeaway to `insights/conversations/` through the Python write path. Do not save verbatim transcripts or edit insight files by hand.
 
-## Ingest Rules
+## Post-Discovery Re-scoring
 
-- `ingest_and_read(input_value="approved")` reads approved inbox notes and writes captured Markdown to `raw/evidence/`.
-- `ingest_and_read(input_value=<identifier_or_batch>)` accepts one or many arXiv URLs, arXiv IDs, or arXiv DOI values.
-- Natural references such as `openvla`, exact paper titles, project names, and acronyms are agent-resolved before MCP capture. If the agent cannot find a credible arXiv URL for a reference, report it as unresolved and do not include it in the tool call.
-- Do not ask the user to confirm agent-resolved arXiv URLs before calling `ingest_and_read`.
-- Report resolved inputs, unresolved inputs, each captured paper's `paper_id`, title, raw evidence path, and any errors.
-- If capture succeeds but later processing reports a warning, keep the successful file write and explain the warning.
-- If concept compounding fails during ingest, report it clearly; the new paper still enters the vault.
-
-## Canonical Page Creation
-
-After reading and distilling captured evidence:
-
-1. Use `qmd query` to find related papers and concepts.
-2. Use `qmd get` for any cited local pages you need to inspect.
-3. Select the smallest useful concept set before writing the paper page: one to three concepts is preferred, five is the maximum.
-4. Reuse existing concepts first. If the canonical surface is uncertain, call `check_concept_alias` before creating or linking a concept.
-5. Create or refresh the paper page with `upsert_wiki_page(page_type="paper", target=..., frontmatter=..., body=...)`. The paper frontmatter must include `paper_id`, `title`, `year`, `venue`, `source_layer`, and `key_concepts_topk`; the body must link at least one concept from `key_concepts_topk`.
-6. Create concept pages only for core concepts. A concept page must include `concept`, `aliases`, `source_layer`, and at least one `related_papers_topk` entry.
-7. If a paper-intake conversation surfaces a durable insight about why a paper matters, save the distilled takeaway to `insights/conversations/` through the Python write path. Do not save verbatim transcripts or edit insight files by hand.
+After `discover_papers` returns, the agent should re-read candidates whose heuristic score is 0 and whose `topic_fit` is 0 against the user's `research_profile.direction`. Relevant candidates get a one-line `rescore_reason` appended to the inbox note body so later recommendation rounds can surface them. See [references/post-discovery-rescoring.md](references/post-discovery-rescoring.md) for the full playbook.
 
 ## QMD CLI Guidance
 
 - Use QMD CLI directly for `qmd query`, `qmd get`, `qmd status`, `qmd update`, `qmd embed -f`, and collection/context health.
 - Check `docs/qmd-cli.md` first for the Paper Distill mapping.
 - If command details are uncertain, follow runtime `qmd --help`.
+
+## Output Expectations
+
+- After discovery, summarize the strongest candidates and the reason they are worth approval.
+- After approval or ingest, report exact identifiers processed and unresolved references separately.
+- If approval or ingest cannot proceed, explain the blocking state in one sentence before suggesting the next step.
 
 ## Skill / Tool Contract
 

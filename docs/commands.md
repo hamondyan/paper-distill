@@ -4,9 +4,9 @@ Paper Distill v3.0 keeps slash commands for business actions only.
 
 - `/discover` writes inbox stubs.
 - `/approve` marks selected inbox stubs approved without opening the inbox.
-- `/inbox` summarizes pending and approved candidates.
 - `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
+- `/status` returns a vault health snapshot (counts, pending approvals, lint issues, last activity).
 
 In plugin hosts that namespace slash commands, these may appear with the plugin prefix, for example `/paper-distill:discover`.
 
@@ -16,9 +16,9 @@ Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd q
 
 - `/discover` -> `discover_papers`
 - `/approve` -> `approve_papers`
-- `/inbox` -> no tool; it is a read-only summary and approval reminder
 - `/ingest` -> `ingest_and_read`
 - `/lint` -> `lint_vault`
+- `/status` -> agent-side snapshot (calls `lint_vault` + scans vault directories)
 
 ## Command Details
 
@@ -40,10 +40,6 @@ Examples:
 /approve all
 ```
 
-### `/inbox`
-
-Summarizes inbox notes and explains approval. Approval is file-native: add a plain `#approved` tag to the inbox note body.
-
 ### `/ingest`
 
 Use `/ingest approved` to ingest approved inbox notes.
@@ -64,4 +60,8 @@ Examples:
 
 ### `/lint`
 
-Runs `lint_vault` and reports structural issues without rewriting files. It checks malformed or dead links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, and concept pages without supporting papers.
+Runs `lint_vault` and reports structural issues without rewriting files. It checks malformed or dead links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing required fields, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, concept pages without supporting papers, paper pages without matching raw evidence, and stale inbox notes.
+
+### `/status`
+
+Returns a vault health snapshot combining `lint_vault` output with directory counts (papers, concepts, ideas, conversations, inbox pending, inbox approved, raw evidence) and recent activity from `vault-log.md`. Agent-side; no new MCP tool required.

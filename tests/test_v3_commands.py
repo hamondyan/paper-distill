@@ -7,7 +7,7 @@ from server.server import mcp
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_COMMANDS = {"approve", "discover", "inbox", "ingest", "lint"}
+EXPECTED_COMMANDS = {"approve", "discover", "ingest", "lint", "status"}
 EXPECTED_MCP_TOOLS = {
     "approve_papers",
     "discover_papers",
@@ -49,18 +49,24 @@ def test_superpowers_process_artifacts_are_absent_from_docs() -> None:
 def test_public_command_docs_point_to_v3_tools() -> None:
     approve_doc = (REPO_ROOT / "commands/approve.md").read_text(encoding="utf-8")
     discover_doc = (REPO_ROOT / "commands/discover.md").read_text(encoding="utf-8")
-    inbox_doc = (REPO_ROOT / "commands/inbox.md").read_text(encoding="utf-8")
     ingest_doc = (REPO_ROOT / "commands/ingest.md").read_text(encoding="utf-8")
     lint_doc = (REPO_ROOT / "commands/lint.md").read_text(encoding="utf-8")
+    status_doc = (REPO_ROOT / "commands/status.md").read_text(encoding="utf-8")
 
     assert "approve_papers" in approve_doc
     assert "#approved" in approve_doc
     assert "discover_papers" in discover_doc
-    assert "#approved" in inbox_doc
     assert "ingest_and_read" in ingest_doc
     assert "qmd update" in ingest_doc
     assert "qmd embed -f" in ingest_doc
     assert "lint_vault" in lint_doc
+    assert "lint_vault" in status_doc
+    assert 'argument-hint: "[paper-id | arxiv-id | inbox-path | all]"' in approve_doc
+    assert 'argument-hint: "[approved | arxiv-url | arxiv-id | arxiv-doi | paper-title]"' in ingest_doc
+    assert 'argument-hint: ""' in status_doc
+    assert "paper_missing_required_fields" in status_doc
+    assert "paper_key_concept_unlinked" in status_doc
+    assert "concept_not_linked_in_body" not in status_doc
 
 
 def test_ingest_command_documents_agent_resolved_batch_inputs() -> None:
@@ -77,23 +83,35 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     installation = (REPO_ROOT / "docs/installation.md").read_text(encoding="utf-8")
     architecture = (REPO_ROOT / "docs/architecture.md").read_text(encoding="utf-8")
     commands = (REPO_ROOT / "docs/commands.md").read_text(encoding="utf-8")
+    frontmatter = (REPO_ROOT / "docs/frontmatter-reference.md").read_text(encoding="utf-8")
     testing = (REPO_ROOT / "docs/testing.md").read_text(encoding="utf-8")
     vault_layout = (REPO_ROOT / "docs/vault-layout.md").read_text(encoding="utf-8")
     qmd_cli = (REPO_ROOT / "docs/qmd-cli.md").read_text(encoding="utf-8")
 
     assert "qmd as the read/index path" in readme
     assert "docs/qmd-cli.md" in readme
+    assert "approve in chat" in readme
+    assert "add #approved in inbox note" not in readme
     assert "qmd-cli.md" in docs_index
+    assert "approving capture from chat, reading through QMD CLI" in docs_index
+    assert "approving capture from chat or inbox notes" not in docs_index
     assert "paper-distill-admin bootstrap" in installation
     assert "creates the vault layout and initializes the QMD collections and contexts" in installation
     assert "docs/qmd-cli.md" in installation
     assert "QMD CLI is the only read/index path" in architecture
     assert "business MCP" in architecture
+    assert "discover -> approve in chat -> ingest -> qmd query/get -> canonical write -> lint" in architecture
     assert "docs/qmd-cli.md" in commands
     assert "/discover" in commands
     assert "/approve" in commands
     assert "/lint" in commands
+    assert "/status" in commands
+    assert "paper pages without matching raw evidence" in commands
+    assert "conversations, inbox pending, inbox approved, raw evidence" in commands
     assert "/get" not in commands
+    assert "1-to-5 range" in frontmatter
+    assert "paper_without_raw_evidence" in frontmatter
+    assert "agent-authored canonical pages usually use `wiki`" in frontmatter
     assert "uv run python -m pytest -q" in testing
     assert "uv run python -m compileall -q server tests" in testing
     assert "business surface" in testing

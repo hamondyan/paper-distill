@@ -1,7 +1,8 @@
 ---
 name: ingest
-description: Ingest approved inbox items or agent-resolved arXiv identities
-user_invocable: true
+description: Use when the user wants to capture approved inbox notes, or directly ingest one or more arXiv URLs, IDs, DOIs, or paper titles/acronyms. Writes raw evidence to raw/evidence/.
+argument-hint: "[approved | arxiv-url | arxiv-id | arxiv-doi | paper-title]"
+user-invocable: true
 ---
 
 Use the v3 `ingest_and_read` tool to ingest raw evidence.

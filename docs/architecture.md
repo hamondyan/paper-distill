@@ -38,10 +38,10 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 ## First-Release Flow
 
 ```text
-discover -> approve with #approved -> ingest -> qmd query/get -> canonical write -> lint
+discover -> approve in chat -> ingest -> qmd query/get -> canonical write -> lint
 ```
 
-Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest.
+Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest, but users still approve through the agent and `approve_papers` writes that marker for them.
 
 ## Failure Semantics
 
