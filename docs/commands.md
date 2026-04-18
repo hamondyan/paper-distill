@@ -4,7 +4,7 @@ Paper Distill v3.0 keeps slash commands for business actions only.
 
 - `/discover` writes inbox stubs.
 - `/inbox` summarizes pending and approved candidates.
-- `/ingest approved` or `/ingest <url>` captures raw evidence.
+- `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
 
 Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd query`, `qmd get`, `qmd status`, `qmd update`, `qmd embed -f`, collection/context checks, and `qmd ls`.

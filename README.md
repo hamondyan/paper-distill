@@ -44,7 +44,7 @@ vault/
 
 - `/discover` writes inbox stubs.
 - `/inbox` summarizes pending and approved candidates.
-- `/ingest approved` or `/ingest <url>` captures raw evidence.
+- `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
 
 For QMD read/index work, use [docs/qmd-cli.md](docs/qmd-cli.md).

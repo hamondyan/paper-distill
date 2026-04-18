@@ -93,6 +93,35 @@ class V3IngestTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["input"], "1706.03762")
         self.assertEqual(result["items"][0]["paper_id"], "arxiv:1706.03762")
 
+    def test_direct_input_accepts_arxiv_doi(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = _cleaned_doc("DOI Paper", "# DOI Paper\n\nBody.")
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch(
+                        "server.v3_ingest.fetch_arxiv_record",
+                        new=AsyncMock(
+                            return_value={
+                                "paper_id": "arxiv:2405.12213",
+                                "title": "DOI Paper",
+                                "arxiv_id": "2405.12213",
+                                "authors": ["Ada Lovelace"],
+                                "year": 2024,
+                            }
+                        ),
+                    ) as fetch_mock:
+                        with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(return_value=captured)):
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(ingest_and_read_v3("10.48550/arxiv.2405.12213"))
+
+        self.assertEqual(fetch_mock.await_count, 1)
+        self.assertEqual(result["captured_count"], 1)
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["input"], "10.48550/arxiv.2405.12213")
+        self.assertEqual(result["items"][0]["paper_id"], "arxiv:2405.12213")
+
     def test_direct_input_ingests_multiple_resolved_arxiv_items(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             docs = {
