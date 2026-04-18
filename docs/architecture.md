@@ -32,7 +32,7 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
 - `upsert_wiki_page(page_type, target, frontmatter, body)` writes `paper`, `concept`, `idea`, or `conversation` pages through Python validation.
 - `merge_concept(old, new)` rewrites concept links and adds the old surface as an alias on the target concept.
-- `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
+- `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper concept-link quality issues, and concept pages without supporting papers.
 - Business MCP does not wrap `qmd query`, `qmd get`, `qmd status`, `qmd update`, or `qmd embed -f`.
 
 ## First-Release Flow

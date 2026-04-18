@@ -29,8 +29,8 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 
 ## Write Workflow
 
-- Use `upsert_wiki_page(page_type="paper", ...)` for canonical paper pages.
-- Use `upsert_wiki_page(page_type="concept", ...)` only for core concepts.
+- Use `upsert_wiki_page(page_type="paper", ...)` for canonical paper pages. Generated paper pages must include required metadata and one to five `key_concepts_topk` entries, with at least one of those concepts linked in the body.
+- Use `upsert_wiki_page(page_type="concept", ...)` only for core concepts. Generated concept pages must include `concept`, `aliases`, `source_layer`, and at least one supporting `related_papers_topk` entry.
 - Use `upsert_wiki_page(page_type="idea", ...)` for idea assets.
 - Use `upsert_wiki_page(page_type="conversation", ...)` or the Python conversation insight writer for distilled conversation insights.
 - Do not edit `wiki/papers/`, `wiki/concepts/`, `insights/ideas/`, or `insights/conversations/` by hand.
@@ -39,6 +39,7 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 ## Concept Rules
 
 - Only core concepts create `wiki/concepts/` pages.
+- Reuse existing concepts before creating new concept pages.
 - Use `check_concept_alias` before creating a concept when the canonical surface is uncertain.
 - Call `merge_concept` directly when you are confident two surfaces refer to the same concept.
 - After a merge, report rewritten files, alias changes, and separate follow-up guidance for `qmd update` / `qmd embed -f` when needed.
@@ -49,7 +50,7 @@ When a discussion produces a reusable research insight, write a distilled note t
 
 ## Health And Index Maintenance
 
-- Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, and oversized frontmatter.
+- Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, and concept pages without supporting papers.
 - Use QMD CLI directly for `qmd status`, `qmd update`, `qmd embed -f`, `qmd collection ...`, and `qmd context ...`.
 - Check `docs/qmd-cli.md` first for the Paper Distill mapping.
 - If command details are uncertain, follow runtime `qmd --help`.

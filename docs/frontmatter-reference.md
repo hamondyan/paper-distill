@@ -35,6 +35,7 @@ Raw evidence is normally read-only after capture. Capture repair may rewrite the
 ## Paper Page
 
 Written through `upsert_wiki_page(page_type="paper", ...)` under `wiki/papers/`.
+All fields below are required for generated paper pages.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -44,13 +45,14 @@ Written through `upsert_wiki_page(page_type="paper", ...)` under `wiki/papers/`.
 | `year` | number | Publication year. |
 | `venue` | string | Venue name. |
 | `source_layer` | string | Usually `canon`. |
-| `key_concepts_topk` | list | Most important linked concepts. |
+| `key_concepts_topk` | list | One to five most important linked concepts. |
 
-Paper pages are agent-owned and generally not manually edited.
+Paper pages are agent-owned and generally not manually edited. Each paper page must link at least one concept from `key_concepts_topk` in the body with a wikilink such as `[[Transformer]]`. The preferred budget is one to three concept links; more than five concept links is treated as too dense by vault lint.
 
 ## Concept Page
 
 Written through `upsert_wiki_page(page_type="concept", ...)` under `wiki/concepts/`.
+All fields below are required for generated concept pages.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -58,9 +60,9 @@ Written through `upsert_wiki_page(page_type="concept", ...)` under `wiki/concept
 | `concept` | string | Canonical display name. |
 | `aliases` | list | Accepted alternate surfaces. |
 | `source_layer` | string | Usually `canon`. |
-| `related_papers_topk` | list | Papers that support the concept. |
+| `related_papers_topk` | list | At least one paper that supports the concept. |
 
-Only core concepts get concept pages.
+Only core concepts get concept pages. Reuse existing concepts before creating new pages: search with QMD, call `check_concept_alias` when the surface is uncertain, and create a new concept only when it represents a durable research concept supported by at least one paper.
 
 ## Idea Page
 

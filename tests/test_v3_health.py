@@ -89,6 +89,100 @@ def test_lint_vault_flags_dead_links_alias_ambiguity_and_footer_linking(
     assert {"dead_link", "alias_ambiguity", "template_footer_link"} <= codes
 
 
+def test_lint_vault_flags_paper_without_concept_link(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text(
+        "---\ntype: concept\nconcept: Transformer\naliases: []\n---\n\n# Transformer\n",
+        encoding="utf-8",
+    )
+    paper_dir.joinpath("attention.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:1706.03762\n"
+        "title: Attention Is All You Need\n"
+        "key_concepts_topk: [Transformer]\n"
+        "---\n\n"
+        "# Attention Is All You Need\n\n"
+        "This paper summary forgot to link its concept.\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert any(issue["code"] == "paper_missing_concept_link" for issue in result["issues"])
+
+
+def test_lint_vault_flags_paper_key_concept_not_linked_in_body(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text("# Transformer\n", encoding="utf-8")
+    concept_dir.joinpath("attention.md").write_text("# Attention\n", encoding="utf-8")
+    paper_dir.joinpath("attention.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:1706.03762\n"
+        "title: Attention Is All You Need\n"
+        "key_concepts_topk: [Transformer]\n"
+        "---\n\n"
+        "# Attention Is All You Need\n\n"
+        "This page links [[Attention]] but not its key concept.\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert any(issue["code"] == "paper_key_concept_unlinked" for issue in result["issues"])
+
+
+def test_lint_vault_flags_paper_with_too_many_concept_links(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    for concept in ("A", "B", "C", "D", "E", "F"):
+        concept_dir.joinpath(f"{concept.lower()}.md").write_text(f"# {concept}\n", encoding="utf-8")
+    paper_dir.joinpath("dense.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:0000.00000\n"
+        "title: Dense Paper\n"
+        "key_concepts_topk: [A, B, C, D, E, F]\n"
+        "---\n\n"
+        "# Dense Paper\n\n"
+        "[[A]] [[B]] [[C]] [[D]] [[E]] [[F]]\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert any(issue["code"] == "paper_too_many_concept_links" for issue in result["issues"])
+
+
+def test_lint_vault_flags_concept_without_supporting_paper(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    concept_dir.mkdir(parents=True)
+    concept_dir.joinpath("transformer.md").write_text(
+        "---\n"
+        "type: concept\n"
+        "concept: Transformer\n"
+        "aliases: []\n"
+        "source_layer: canon\n"
+        "related_papers_topk: []\n"
+        "---\n\n"
+        "# Transformer\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert any(issue["code"] == "concept_missing_supporting_paper" for issue in result["issues"])
+
+
 def test_lint_vault_flags_alias_that_conflicts_with_canonical(tmp_path: Path) -> None:
     concept_dir = tmp_path / "wiki" / "concepts"
     concept_dir.mkdir(parents=True)

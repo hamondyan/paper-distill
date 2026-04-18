@@ -57,9 +57,11 @@ After reading and distilling captured evidence:
 
 1. Use `qmd query` to find related papers and concepts.
 2. Use `qmd get` for any cited local pages you need to inspect.
-3. Create or refresh the paper page with `upsert_wiki_page(page_type="paper", target=..., frontmatter=..., body=...)`.
-4. Create concept pages only for core concepts, using `check_concept_alias` first when the canonical surface is uncertain.
-5. If a paper-intake conversation surfaces a durable insight about why a paper matters, save the distilled takeaway to `insights/conversations/` through the Python write path. Do not save verbatim transcripts or edit insight files by hand.
+3. Select the smallest useful concept set before writing the paper page: one to three concepts is preferred, five is the maximum.
+4. Reuse existing concepts first. If the canonical surface is uncertain, call `check_concept_alias` before creating or linking a concept.
+5. Create or refresh the paper page with `upsert_wiki_page(page_type="paper", target=..., frontmatter=..., body=...)`. The paper frontmatter must include `paper_id`, `title`, `year`, `venue`, `source_layer`, and `key_concepts_topk`; the body must link at least one concept from `key_concepts_topk`.
+6. Create concept pages only for core concepts. A concept page must include `concept`, `aliases`, `source_layer`, and at least one `related_papers_topk` entry.
+7. If a paper-intake conversation surfaces a durable insight about why a paper matters, save the distilled takeaway to `insights/conversations/` through the Python write path. Do not save verbatim transcripts or edit insight files by hand.
 
 ## QMD CLI Guidance
 

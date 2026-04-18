@@ -109,8 +109,9 @@ def _heading(body: str) -> str:
     return next((line[2:].strip() for line in body.splitlines() if line.startswith("# ")), "")
 
 
-def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[dict[str, str]]]:
+def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], set[str], list[dict[str, str]]]:
     known: set[str] = set()
+    concept_surfaces: set[str] = set()
     surface_owners: dict[str, set[str]] = {}
 
     for path in sorted((vault_path / "wiki").rglob("*.md")):
@@ -128,6 +129,8 @@ def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[d
             key = _surface_key(surface)
             if key:
                 known.add(key)
+                if path.parent.name == "concepts":
+                    concept_surfaces.add(key)
 
         if path.parent.name == "concepts":
             canonical = str(frontmatter.get("concept") or _heading(body) or path.stem)
@@ -141,6 +144,7 @@ def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[d
                 if not key:
                     continue
                 known.add(key)
+                concept_surfaces.add(key)
                 surface_owners.setdefault(key, set()).add(owner)
 
     issues: list[dict[str, str]] = []
@@ -154,7 +158,55 @@ def _known_surfaces_and_alias_issues(vault_path: Path) -> tuple[set[str], list[d
                     "owners": ", ".join(distinct_owners),
                 }
             )
-    return known, issues
+    return known, concept_surfaces, issues
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _link_targets(text: str) -> set[str]:
+    return {
+        _surface_key(match.group("target").strip())
+        for match in _WIKILINK_RE.finditer(text)
+        if match.group("target").strip()
+    }
+
+
+def _paper_quality_issues(
+    path: Path,
+    frontmatter: dict[str, Any],
+    text: str,
+    concept_surfaces: set[str],
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    link_targets = _link_targets(text)
+    concept_links = sorted(target for target in link_targets if target in concept_surfaces)
+    key_concepts = _string_list(frontmatter.get("key_concepts_topk"))
+    key_concept_surfaces = {_surface_key(concept) for concept in key_concepts}
+
+    if not concept_links:
+        issues.append({"code": "paper_missing_concept_link", "path": str(path)})
+    elif key_concept_surfaces and not key_concept_surfaces.intersection(concept_links):
+        issues.append({"code": "paper_key_concept_unlinked", "path": str(path)})
+
+    if len(concept_links) > 5:
+        issues.append(
+            {
+                "code": "paper_too_many_concept_links",
+                "path": str(path),
+                "count": str(len(concept_links)),
+            }
+        )
+    return issues
+
+
+def _concept_quality_issues(path: Path, frontmatter: dict[str, Any]) -> list[dict[str, str]]:
+    if _string_list(frontmatter.get("related_papers_topk")):
+        return []
+    return [{"code": "concept_missing_supporting_paper", "path": str(path)}]
 
 
 def _link_quality_issues(path: Path, text: str, known_surfaces: set[str]) -> list[dict[str, str]]:
@@ -191,9 +243,14 @@ def _link_quality_issues(path: Path, text: str, known_surfaces: set[str]) -> lis
 
 
 def lint_vault_v3(vault_path: Path) -> dict[str, Any]:
-    known_surfaces, issues = _known_surfaces_and_alias_issues(vault_path)
+    known_surfaces, concept_surfaces, issues = _known_surfaces_and_alias_issues(vault_path)
     for path in sorted(vault_path.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
+        frontmatter, _body, _has_frontmatter = split_frontmatter(text)
+        if path.parent.name == "papers" and path.parent.parent.name == "wiki":
+            issues.extend(_paper_quality_issues(path, frontmatter, text, concept_surfaces))
+        if path.parent.name == "concepts" and path.parent.parent.name == "wiki":
+            issues.extend(_concept_quality_issues(path, frontmatter))
         if _frontmatter_line_count(text) > 20:
             issues.append({"code": "frontmatter_too_large", "path": str(path)})
         if "[[" in text or "]]" in text:

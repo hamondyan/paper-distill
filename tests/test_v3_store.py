@@ -28,12 +28,14 @@ def test_upsert_wiki_page_writes_markdown_and_returns_follow_up_guidance(
         frontmatter={
             "type": "paper",
             "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
             "year": 2017,
+            "venue": "NeurIPS",
             "status": "distilled",
             "key_concepts_topk": ["Transformer"],
             "source_layer": "canon",
         },
-        body="# Attention\n\n## Context\nTest",
+        body="# Attention\n\n## Context\nThis paper introduced the [[Transformer]].",
     )
 
     path = tmp_path / "wiki" / "papers" / "attention-is-all-you-need--arxiv-1706.03762.md"
@@ -46,7 +48,106 @@ def test_upsert_wiki_page_writes_markdown_and_returns_follow_up_guidance(
     assert path.exists()
     frontmatter, body = _read_markdown(path)
     assert frontmatter["paper_id"] == "arxiv:1706.03762"
-    assert body == "# Attention\n\n## Context\nTest"
+    assert body == "# Attention\n\n## Context\nThis paper introduced the [[Transformer]]."
+
+
+def test_upsert_wiki_page_rejects_paper_without_required_quality_fields(
+    tmp_path: Path,
+) -> None:
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="paper",
+        target="attention-is-all-you-need--arxiv-1706.03762",
+        frontmatter={
+            "type": "paper",
+            "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
+            "year": 2017,
+            "source_layer": "canon",
+            "key_concepts_topk": [],
+        },
+        body="# Attention\n\nA summary without a concept link.",
+    )
+
+    assert result["ok"] is False
+    assert "paper frontmatter requires non-empty venue" in result["error"]
+    assert "paper key_concepts_topk must contain 1 to 5 concepts" in result["error"]
+    assert not (tmp_path / "wiki" / "papers").exists()
+
+
+def test_upsert_wiki_page_requires_paper_body_to_link_key_concept(
+    tmp_path: Path,
+) -> None:
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="paper",
+        target="attention-is-all-you-need--arxiv-1706.03762",
+        frontmatter={
+            "type": "paper",
+            "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
+            "year": 2017,
+            "venue": "NeurIPS",
+            "source_layer": "canon",
+            "key_concepts_topk": ["Transformer"],
+        },
+        body="# Attention\n\nA summary that forgets to link the concept.",
+    )
+
+    assert result == {
+        "ok": False,
+        "error": "paper body must link at least one key concept from key_concepts_topk",
+        "warnings": [],
+    }
+
+
+def test_upsert_wiki_page_rejects_concept_without_supporting_paper(
+    tmp_path: Path,
+) -> None:
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="concept",
+        target="transformer",
+        frontmatter={
+            "type": "concept",
+            "concept": "Transformer",
+            "aliases": [],
+            "source_layer": "canon",
+            "related_papers_topk": [],
+        },
+        body="# Transformer\n\nA reusable architecture concept.",
+    )
+
+    assert result == {
+        "ok": False,
+        "error": "concept related_papers_topk must contain at least one supporting paper",
+        "warnings": [],
+    }
+
+
+def test_upsert_wiki_page_accepts_quality_checked_concept_page(
+    tmp_path: Path,
+) -> None:
+    result = upsert_wiki_page_v3(
+        vault_path=tmp_path,
+        page_type="concept",
+        target="transformer",
+        frontmatter={
+            "type": "concept",
+            "concept": "Transformer",
+            "aliases": ["self-attention architecture"],
+            "source_layer": "canon",
+            "related_papers_topk": ["arxiv:1706.03762"],
+        },
+        body="# Transformer\n\nSupported by [[Attention Is All You Need]].",
+    )
+
+    path = tmp_path / "wiki" / "concepts" / "transformer.md"
+    assert result["ok"] is True
+    assert path.exists()
+    frontmatter, _body = _read_markdown(path)
+    assert frontmatter["type"] == "concept"
+    assert frontmatter["concept"] == "Transformer"
 
 
 def test_upsert_wiki_page_supports_conversation_page_type(tmp_path: Path, monkeypatch) -> None:
@@ -96,8 +197,16 @@ def test_upsert_wiki_page_enforces_requested_page_type(tmp_path: Path, monkeypat
         vault_path=tmp_path,
         page_type="paper",
         target="attention-is-all-you-need--arxiv-1706.03762",
-        frontmatter={"type": "concept", "paper_id": "arxiv:1706.03762"},
-        body="# Attention\n",
+        frontmatter={
+            "type": "concept",
+            "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
+            "year": 2017,
+            "venue": "NeurIPS",
+            "source_layer": "canon",
+            "key_concepts_topk": ["Transformer"],
+        },
+        body="# Attention\n\n[[Transformer]]",
     )
 
     path = tmp_path / "wiki" / "papers" / "attention-is-all-you-need--arxiv-1706.03762.md"
@@ -138,8 +247,16 @@ def test_upsert_wiki_page_returns_a_fresh_follow_up_list_each_time(tmp_path: Pat
         vault_path=tmp_path,
         page_type="paper",
         target="attention-is-all-you-need--arxiv-1706.03762",
-        frontmatter={"type": "paper"},
-        body="# Attention\n",
+        frontmatter={
+            "type": "paper",
+            "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
+            "year": 2017,
+            "venue": "NeurIPS",
+            "source_layer": "canon",
+            "key_concepts_topk": ["Transformer"],
+        },
+        body="# Attention\n\n[[Transformer]]",
     )
     first["follow_up"].append("mutated")
 
@@ -147,8 +264,16 @@ def test_upsert_wiki_page_returns_a_fresh_follow_up_list_each_time(tmp_path: Pat
         vault_path=tmp_path,
         page_type="paper",
         target="attention-is-all-you-need--arxiv-1706.03762",
-        frontmatter={"type": "paper"},
-        body="# Attention\n",
+        frontmatter={
+            "type": "paper",
+            "paper_id": "arxiv:1706.03762",
+            "title": "Attention Is All You Need",
+            "year": 2017,
+            "venue": "NeurIPS",
+            "source_layer": "canon",
+            "key_concepts_topk": ["Transformer"],
+        },
+        body="# Attention\n\n[[Transformer]]",
     )
 
     assert second["follow_up"] == [

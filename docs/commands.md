@@ -62,4 +62,4 @@ Examples:
 
 ### `/lint`
 
-Runs `lint_vault` and reports structural issues without rewriting files.
+Runs `lint_vault` and reports structural issues without rewriting files. It checks malformed or dead links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, and concept pages without supporting papers.

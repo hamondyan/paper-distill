@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
+from server.paper_utils import normalise_title
 from server.v3_bootstrap import ensure_v3_layout
 from server.v3_markdown import atomic_write_text, render_markdown
 
@@ -19,6 +21,9 @@ _PAGE_DIRS: dict[str, tuple[str, ...]] = {
     "idea": ("insights", "ideas"),
     "conversation": ("insights", "conversations"),
 }
+_WIKILINK_RE = re.compile(
+    r"\[\[(?P<target>[^\]|#]+)(?P<section>#[^\]|]+)?(?P<label>\|[^\]]+)?\]\]"
+)
 
 
 def _target_path(vault_path: Path, page_type: str, target: str) -> Path:
@@ -29,6 +34,68 @@ def _target_path(vault_path: Path, page_type: str, target: str) -> Path:
             + ", ".join(sorted(_PAGE_DIRS))
         )
     return vault_path.joinpath(*page_dirs, f"{target}.md")
+
+
+def _non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _wikilink_targets(body: str) -> set[str]:
+    return {
+        normalise_title(match.group("target").strip())
+        for match in _WIKILINK_RE.finditer(body)
+        if match.group("target").strip()
+    }
+
+
+def _validate_paper_page(frontmatter: dict[str, Any], body: str) -> list[str]:
+    errors: list[str] = []
+    for field in ("paper_id", "title", "venue", "source_layer"):
+        if not _non_empty_string(frontmatter.get(field)):
+            errors.append(f"paper frontmatter requires non-empty {field}")
+    year = frontmatter.get("year")
+    if isinstance(year, bool) or not isinstance(year, int):
+        errors.append("paper frontmatter requires integer year")
+
+    key_concepts = _string_list(frontmatter.get("key_concepts_topk"))
+    if not 1 <= len(key_concepts) <= 5:
+        errors.append("paper key_concepts_topk must contain 1 to 5 concepts")
+    if len(set(map(normalise_title, key_concepts))) != len(key_concepts):
+        errors.append("paper key_concepts_topk must not contain duplicate concepts")
+
+    if key_concepts:
+        linked = _wikilink_targets(body)
+        expected = {normalise_title(concept) for concept in key_concepts}
+        if not linked.intersection(expected):
+            errors.append("paper body must link at least one key concept from key_concepts_topk")
+    return errors
+
+
+def _validate_concept_page(frontmatter: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not _non_empty_string(frontmatter.get("concept")):
+        errors.append("concept frontmatter requires non-empty concept")
+    if not isinstance(frontmatter.get("aliases"), list):
+        errors.append("concept aliases must be a list")
+    if not _non_empty_string(frontmatter.get("source_layer")):
+        errors.append("concept frontmatter requires non-empty source_layer")
+    if not _string_list(frontmatter.get("related_papers_topk")):
+        errors.append("concept related_papers_topk must contain at least one supporting paper")
+    return errors
+
+
+def _quality_errors(page_type: str, frontmatter: dict[str, Any], body: str) -> list[str]:
+    if page_type == "paper":
+        return _validate_paper_page(frontmatter, body)
+    if page_type == "concept":
+        return _validate_concept_page(frontmatter)
+    return []
 
 
 def upsert_wiki_page_v3(
@@ -49,10 +116,13 @@ def upsert_wiki_page_v3(
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "warnings": []}
 
-    ensure_v3_layout(vault_path)
-
     payload = dict(frontmatter or {})
     payload["type"] = page_type
+    errors = _quality_errors(page_type, payload, body)
+    if errors:
+        return {"ok": False, "error": "; ".join(errors), "warnings": []}
+
+    ensure_v3_layout(vault_path)
 
     try:
         atomic_write_text(path, render_markdown(payload, body))
