@@ -142,9 +142,12 @@ def test_plugin_docs_and_manifests_describe_root_as_plugin() -> None:
     codex_manifest = json.loads((REPO_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
     claude_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    docs_readme = (REPO_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     installation = (REPO_ROOT / "docs" / "plugin-installation.md").read_text(encoding="utf-8")
 
     assert "repository root as the plugin root" in readme
+    assert "[Plugin Installation](docs/plugin-installation.md)" in readme
+    assert "[Plugin Installation](plugin-installation.md)" in docs_readme
     assert "registering this checkout as a local plugin root" in installation
     assert "Codex local plugin manifest" in codex_manifest["description"]
     assert "Claude compatibility manifest" in claude_manifest["description"]

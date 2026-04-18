@@ -5,6 +5,7 @@ Paper Distill is an Obsidian-friendly v3 research knowledge system for discoveri
 ## Start Here
 
 - [Installation](installation.md): install dependencies, configure the vault, and bootstrap the layout plus QMD collections/contexts.
+- [Plugin Installation](plugin-installation.md): register this checkout as a local plugin root for Codex, Claude, and OpenClaw.
 - [QMD CLI](qmd-cli.md): canonical guide for read/index workflows in Paper Distill.
 - [Commands](commands.md): business slash commands and their MCP tools.
 - [Architecture](architecture.md): storage layers and the QMD CLI versus business MCP boundary.

@@ -164,6 +164,7 @@ If `qmd query` does not show recent writes, run `qmd update`; run `qmd embed -f`
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Plugin Installation](docs/plugin-installation.md)
 - [Commands](docs/commands.md)
 - [Architecture](docs/architecture.md)
 - [QMD CLI Guide](docs/qmd-cli.md)
