@@ -4,8 +4,16 @@ Paper Distill uses the repository root as the plugin root.
 
 Installing Paper Distill means registering this checkout as a local plugin root in the host, not copying the project into a separate plugin bundle.
 
-- Codex uses `.codex-plugin/plugin.json` for discovery.
-- Claude uses `.claude-plugin/plugin.json` for discovery.
-- OpenClaw uses the shared `.mcp.json` runtime.
+## Install
+
+- Codex: register this checkout as a local plugin and point Codex at `.codex-plugin/plugin.json`.
+- Claude: register this checkout through `.claude-plugin/plugin.json`.
+- OpenClaw: register this checkout through the shared `.mcp.json` runtime.
+
+## Uninstall
+
+- Codex: remove the local plugin registration that points at this checkout.
+- Claude: remove the `.claude-plugin/plugin.json` registration for this checkout.
+- OpenClaw: remove the `.mcp.json` registration that points at this checkout.
 
 Uninstalling means removing the host registration. It does not mean deleting this checkout.
