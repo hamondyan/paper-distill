@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT:-${OPENCLAW_PLUGIN_ROOT:-$PWD}}/hooks/session-start\"",
+            "command": "/bin/bash -lc 'ROOT_CANDIDATE=\"${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-${OPENCLAW_PLUGIN_ROOT:-$PWD}}}\"; ROOT=\"$($ROOT_CANDIDATE/scripts/plugin-root.sh)\"; exec \"$ROOT/hooks/session-start\"'",
             "timeout": 10000
           }
         ]

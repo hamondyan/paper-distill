@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -15,8 +16,12 @@ def test_mcp_launcher_uses_shared_root_helper() -> None:
 
 
 def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
-    hooks_json = (REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8")
-    assert "CLAUDE_PLUGIN_ROOT" not in hooks_json
+    hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert "/bin/bash -lc" in command
+    assert "scripts/plugin-root.sh" in command
+    assert "hooks/session-start" in command
+    assert "CLAUDE_PLUGIN_ROOT" in command
 
 
 def test_session_start_resolves_root_via_shared_helper() -> None:
