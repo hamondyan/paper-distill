@@ -26,6 +26,15 @@ def test_mcp_json_uses_cross_host_root_fallback_chain() -> None:
     assert "$PWD" in command
 
 
+def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
+    hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert "/bin/bash -lc" in command
+    assert "scripts/plugin-root.sh" in command
+    assert "hooks/session-start" in command
+    assert "CLAUDE_PLUGIN_ROOT" not in command
+
+
 def test_hooks_command_runs_through_bash_with_spaced_root() -> None:
     hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]

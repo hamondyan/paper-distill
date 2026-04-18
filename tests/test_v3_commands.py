@@ -43,8 +43,13 @@ def test_root_docs_inventory_matches_v3_public_docs() -> None:
 
 
 def test_superpowers_process_artifacts_live_under_docs_namespace() -> None:
-    superpowers_root = REPO_ROOT / "docs" / "superpowers"
-    assert superpowers_root.is_dir()
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (REPO_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "docs/superpowers" not in readme
+    assert "docs/superpowers" not in docs_index
+    assert "superpowers" not in readme
+    assert "superpowers" not in docs_index
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:
