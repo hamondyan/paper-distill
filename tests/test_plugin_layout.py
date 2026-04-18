@@ -61,15 +61,26 @@ def test_hooks_command_uses_claude_override_branch() -> None:
 
     with TemporaryDirectory(prefix="paper distill ") as temp_dir:
         temp_root = Path(temp_dir)
+
+        def write_fake_helper(root: Path, resolved_root: str) -> None:
+            helper_dir = root / "scripts"
+            helper_dir.mkdir(parents=True)
+            helper = helper_dir / "plugin-root.sh"
+            helper.write_text(
+                f"#!/usr/bin/env bash\nprintf '%s\\n' '{resolved_root}'\n",
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+
         fake_cwd = temp_root / "cwd helper"
         fake_cwd.mkdir()
-        fake_helper = fake_cwd / "scripts"
-        fake_helper.mkdir()
-        (fake_helper / "plugin-root.sh").write_text(
-            "#!/usr/bin/env bash\nprintf '%s\n' '/definitely/not/the/claude/root'\n",
-            encoding="utf-8",
-        )
-        (fake_helper / "plugin-root.sh").chmod(0o755)
+        write_fake_helper(fake_cwd, "/definitely/not/the/cwd/root")
+
+        fake_codex_root = temp_root / "codex plugin root"
+        write_fake_helper(fake_codex_root, "/definitely/not/the/codex/root")
+
+        fake_openclaw_root = temp_root / "openclaw plugin root"
+        write_fake_helper(fake_openclaw_root, "/definitely/not/the/openclaw/root")
 
         spaced_root = temp_root / "claude plugin root"
         spaced_root.mkdir()
@@ -82,8 +93,8 @@ def test_hooks_command_uses_claude_override_branch() -> None:
             env={
                 **os.environ,
                 "CLAUDE_PLUGIN_ROOT": str(repo_link),
-                "CODEX_PLUGIN_ROOT": "",
-                "OPENCLAW_PLUGIN_ROOT": "",
+                "CODEX_PLUGIN_ROOT": str(fake_codex_root),
+                "OPENCLAW_PLUGIN_ROOT": str(fake_openclaw_root),
             },
             text=True,
             capture_output=True,
