@@ -185,6 +185,31 @@ def _approved_error(paper: dict[str, Any], exc: Exception) -> dict[str, str]:
     }
 
 
+_DIRECT_RESOLUTION_ERROR = "Item must be resolved to an arXiv URL, arXiv ID, or arXiv DOI before capture."
+
+
+def _direct_item_error(input_item: str, error: Exception | str) -> dict[str, str]:
+    message = str(error)
+    return {
+        "input": input_item,
+        "error": message,
+    }
+
+
+def _direct_batch_result(
+    items: list[dict[str, Any]],
+    errors: list[dict[str, str]],
+    skipped_duplicates: list[str],
+) -> dict[str, Any]:
+    return {
+        "items": items,
+        "errors": errors,
+        "captured_count": len(items),
+        "error_count": len(errors),
+        "skipped_duplicates": skipped_duplicates,
+    }
+
+
 async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
     input_value = input_value.strip()
     if not input_value:
@@ -222,36 +247,62 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
             )
         return {"items": items, "errors": errors}
 
-    source_url = input_value
-    arxiv_id = extract_arxiv_id(source_url)
-    if not arxiv_id:
-        return {"error": "Direct URL must be an arXiv URL or arXiv DOI"}
+    input_items = _split_direct_input_items(input_value)
+    items: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    skipped_duplicates: list[str] = []
+    seen_arxiv_ids: set[str] = set()
 
-    paper = dict(await fetch_arxiv_record(arxiv_id) or {})
-    paper["arxiv_id"] = str(paper.get("arxiv_id") or arxiv_id).strip()
-    paper["paper_id"] = str(paper.get("paper_id") or paper_id(paper)).strip()
-    if not paper["paper_id"]:
-        paper["paper_id"] = paper_id(paper)
-    paper["title"] = str(paper.get("title") or f"arXiv {arxiv_id}").strip()
+    for input_item in input_items:
+        arxiv_id = extract_arxiv_id(input_item)
+        if not arxiv_id:
+            errors.append(_direct_item_error(input_item, _DIRECT_RESOLUTION_ERROR))
+            continue
+        if arxiv_id in seen_arxiv_ids:
+            skipped_duplicates.append(arxiv_id)
+            continue
+        seen_arxiv_ids.add(arxiv_id)
 
-    try:
-        capture = await _capture_raw_evidence(paper, source_url)
-        raw_path = _write_raw_evidence(vault_path, capture)
-    except Exception as exc:
-        return {
-            "error": str(exc),
-            "paper_id": str(paper.get("paper_id") or ""),
-            "title": str(paper.get("title") or ""),
-            "source_url": source_url,
-        }
-    return {
-        "items": [
+        source_url = input_item
+        if source_url == arxiv_id:
+            source_url = f"https://arxiv.org/abs/{arxiv_id}"
+
+        paper = dict(await fetch_arxiv_record(arxiv_id) or {})
+        paper["arxiv_id"] = str(paper.get("arxiv_id") or arxiv_id).strip()
+        paper["paper_id"] = str(paper.get("paper_id") or paper_id(paper)).strip()
+        if not paper["paper_id"]:
+            paper["paper_id"] = paper_id(paper)
+        paper["title"] = str(paper.get("title") or f"arXiv {arxiv_id}").strip()
+
+        try:
+            capture = await _capture_raw_evidence(paper, source_url)
+            raw_path = _write_raw_evidence(vault_path, capture)
+        except Exception as exc:
+            error = {
+                "input": input_item,
+                "paper_id": str(paper.get("paper_id") or ""),
+                "title": str(paper.get("title") or ""),
+                "source_url": source_url,
+                "error": str(exc),
+            }
+            errors.append(error)
+            continue
+        items.append(
             {
+                "input": input_item,
                 "paper_id": capture["paper_id"],
                 "title": capture["title"],
                 "path": str(raw_path),
                 "markdown": capture["markdown"],
                 "source_url": capture["source_url"],
             }
-        ]
-    }
+        )
+
+    result = _direct_batch_result(items, errors, skipped_duplicates)
+    if len(input_items) == 1 and errors and not items:
+        result["error"] = errors[0]["error"]
+        if "paper_id" in errors[0]:
+            result["paper_id"] = errors[0].get("paper_id", "")
+            result["title"] = errors[0].get("title", "")
+            result["source_url"] = errors[0].get("source_url", input_items[0])
+    return result

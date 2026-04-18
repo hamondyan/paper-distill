@@ -64,6 +64,140 @@ class V3IngestTest(unittest.TestCase):
             ["https://arxiv.org/abs/2405.12213"],
         )
 
+    def test_direct_input_accepts_bare_arxiv_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = _cleaned_doc("Bare ID Paper", "# Bare ID Paper\n\nBody.")
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch(
+                        "server.v3_ingest.fetch_arxiv_record",
+                        new=AsyncMock(
+                            return_value={
+                                "paper_id": "arxiv:1706.03762",
+                                "title": "Bare ID Paper",
+                                "arxiv_id": "1706.03762",
+                                "authors": ["Ashish Vaswani"],
+                                "year": 2017,
+                            }
+                        ),
+                    ) as fetch_mock:
+                        with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(return_value=captured)):
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(ingest_and_read_v3("1706.03762"))
+
+        self.assertEqual(fetch_mock.await_count, 1)
+        self.assertEqual(result["captured_count"], 1)
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["input"], "1706.03762")
+        self.assertEqual(result["items"][0]["paper_id"], "arxiv:1706.03762")
+
+    def test_direct_input_ingests_multiple_resolved_arxiv_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs = {
+                "2405.12213": _cleaned_doc("First Paper", "# First Paper\n\nBody."),
+                "1706.03762": _cleaned_doc("Second Paper", "# Second Paper\n\nBody."),
+            }
+
+            async def fake_fetch(arxiv_id: str):
+                return {
+                    "paper_id": f"arxiv:{arxiv_id}",
+                    "title": "First Paper" if arxiv_id == "2405.12213" else "Second Paper",
+                    "arxiv_id": arxiv_id,
+                    "authors": ["Ada Lovelace"],
+                    "year": 2025,
+                }
+
+            async def fake_capture(paper: dict, **_kwargs):
+                return docs[paper["arxiv_id"]]
+
+            raw_input = """
+            - https://arxiv.org/abs/2405.12213
+            - 1706.03762
+            """
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch("server.v3_ingest.fetch_arxiv_record", new=AsyncMock(side_effect=fake_fetch)):
+                        with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(ingest_and_read_v3(raw_input))
+
+        self.assertEqual(result["captured_count"], 2)
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual([item["paper_id"] for item in result["items"]], ["arxiv:2405.12213", "arxiv:1706.03762"])
+        self.assertEqual(result["errors"], [])
+
+    def test_direct_input_reports_invalid_items_without_stopping_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = _cleaned_doc("Good Paper", "# Good Paper\n\nBody.")
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch(
+                        "server.v3_ingest.fetch_arxiv_record",
+                        new=AsyncMock(
+                            return_value={
+                                "paper_id": "arxiv:2405.12213",
+                                "title": "Good Paper",
+                                "arxiv_id": "2405.12213",
+                                "authors": ["Ada Lovelace"],
+                                "year": 2024,
+                            }
+                        ),
+                    ):
+                        with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(return_value=captured)):
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(
+                                ingest_and_read_v3("openvla, https://arxiv.org/abs/2405.12213")
+                            )
+
+        self.assertEqual(result["captured_count"], 1)
+        self.assertEqual(result["error_count"], 1)
+        self.assertEqual(result["items"][0]["paper_id"], "arxiv:2405.12213")
+        self.assertEqual(result["errors"][0]["input"], "openvla")
+        self.assertIn("resolved to an arXiv", result["errors"][0]["error"])
+        self.assertNotIn("error", result)
+
+    def test_direct_input_skips_duplicate_arxiv_ids_in_same_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = _cleaned_doc("Duplicate Paper", "# Duplicate Paper\n\nBody.")
+
+            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
+                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
+                    with patch(
+                        "server.v3_ingest.fetch_arxiv_record",
+                        new=AsyncMock(
+                            return_value={
+                                "paper_id": "arxiv:2405.12213",
+                                "title": "Duplicate Paper",
+                                "arxiv_id": "2405.12213",
+                                "authors": ["Ada Lovelace"],
+                                "year": 2024,
+                            }
+                        ),
+                    ) as fetch_mock:
+                        with patch(
+                            "server.v3_ingest.capture_arxiv_source",
+                            new=AsyncMock(return_value=captured),
+                        ) as capture_mock:
+                            from server.v3_ingest import ingest_and_read_v3
+
+                            result = asyncio.run(
+                                ingest_and_read_v3(
+                                    "https://arxiv.org/abs/2405.12213, 2405.12213, https://arxiv.org/pdf/2405.12213.pdf"
+                                )
+                            )
+
+        self.assertEqual(fetch_mock.await_count, 1)
+        self.assertEqual(capture_mock.await_count, 1)
+        self.assertEqual(result["captured_count"], 1)
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["skipped_duplicates"], ["2405.12213", "2405.12213"])
+
     def test_approved_body_accepts_only_plain_body_tags(self) -> None:
         from server.v3_ingest import _approved_body
 
