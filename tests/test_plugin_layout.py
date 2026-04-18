@@ -14,6 +14,16 @@ def test_mcp_launcher_uses_shared_root_helper() -> None:
     assert 'uv --directory "${REPO_ROOT}" run paper-distill-server' in launcher
 
 
+def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
+    hooks_json = (REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8")
+    assert "CLAUDE_PLUGIN_ROOT" not in hooks_json
+
+
+def test_session_start_resolves_root_via_shared_helper() -> None:
+    session_start = (REPO_ROOT / "hooks" / "session-start").read_text(encoding="utf-8")
+    assert "plugin-root.sh" in session_start
+
+
 def test_plugin_root_helper_honors_precedence_and_repo_fallback() -> None:
     script = REPO_ROOT / "scripts" / "plugin-root.sh"
     base_env = os.environ.copy()
