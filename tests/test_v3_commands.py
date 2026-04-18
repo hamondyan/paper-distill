@@ -59,6 +59,14 @@ def test_public_command_docs_point_to_v3_tools() -> None:
     assert "lint_vault" in lint_doc
 
 
+def test_ingest_command_documents_agent_resolved_batch_inputs() -> None:
+    ingest_doc = Path("commands/ingest.md").read_text(encoding="utf-8")
+
+    assert "agent resolves" in ingest_doc
+    assert "multiple resolved arXiv" in ingest_doc
+    assert "openvla" in ingest_doc
+
+
 def test_public_docs_describe_v3_qmd_cutover() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     docs_index = (REPO_ROOT / "docs/README.md").read_text(encoding="utf-8")

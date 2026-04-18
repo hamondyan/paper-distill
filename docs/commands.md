@@ -28,7 +28,9 @@ Summarizes inbox notes and explains approval. Approval is file-native: add a pla
 
 ### `/ingest`
 
-Use `/ingest approved` to ingest approved inbox notes. Use `/ingest <arXiv URL>` or `/ingest <arXiv DOI>` for direct capture.
+Use `/ingest approved` to ingest approved inbox notes.
+
+For direct paper intake, the agent can accept arXiv URLs, arXiv IDs, arXiv DOI values, exact titles, acronyms, aliases, project names, or mixed multi-paper requests. Natural references are resolved by the agent to arXiv URLs before calling the MCP tool. The MCP tool captures only resolved arXiv identities.
 
 Examples:
 
@@ -36,6 +38,8 @@ Examples:
 /ingest approved
 /ingest https://arxiv.org/abs/2410.24164
 /ingest 10.48550/arxiv.2410.24164
+/ingest 1706.03762
+/ingest openvla, octo, diffusion policy
 ```
 
 ### `/lint`

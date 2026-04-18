@@ -16,11 +16,13 @@ Paper Distill v3.0 is a Markdown-first research knowledge system for paper disco
 /discover -> add #approved in inbox note -> /ingest approved -> qmd query or qmd get -> write -> /lint
 ```
 
-Direct ingestion is also available for supported arXiv URLs and arXiv DOI values:
+Direct ingestion is also available. The agent can resolve paper titles, acronyms, aliases, project names, arXiv URLs, arXiv IDs, or arXiv DOI values to arXiv identities, then call the single intake tool:
 
 ```text
 /ingest https://arxiv.org/abs/2410.24164
 /ingest 10.48550/arxiv.2410.24164
+/ingest 1706.03762
+/ingest openvla, octo, diffusion policy
 ```
 
 ## Vault Shape
