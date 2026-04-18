@@ -27,7 +27,7 @@
   "interface": {
     "displayName": "Paper Distill",
     "shortDescription": "Discover, capture, search, and maintain a qmd-backed research vault.",
-    "longDescription": "Paper Distill v3 stages candidate papers for human approval, captures approved arXiv source material into qmd-backed vault notes, retrieves pages through search/get tools, and writes updates through Python MCP tools for lint/status/index workflows.",
+    "longDescription": "Paper Distill v3 stages candidate papers for human approval, captures approved arXiv source material into qmd-backed vault notes, reads through QMD CLI query/get, and writes updates through Python MCP tools with explicit QMD refresh guidance.",
     "developerName": "Huang",
     "category": "Productivity",
     "capabilities": [
@@ -40,8 +40,8 @@
     "defaultPrompt": [
       "Discover new VLA papers and stage them in my inbox.",
       "Ingest approved arXiv papers into qmd-backed source notes.",
-      "Search my v3 vault and get the exact qmd page I need.",
-      "Run lint, status, and index maintenance on my research vault."
+      "Search my v3 vault with QMD and get the exact page I need.",
+      "Run Paper Distill lint and QMD maintenance guidance."
     ],
     "brandColor": "#2563EB"
   }

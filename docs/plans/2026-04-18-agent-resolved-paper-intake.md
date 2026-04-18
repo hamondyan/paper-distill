@@ -1,5 +1,9 @@
 # Agent-Resolved Paper Intake Implementation Plan
 
+Status: Implemented / archived
+
+Archive note: this file preserves the original execution plan. Unchecked task boxes and "Expected: FAIL" lines describe the TDD sequence at the time the plan was written, not the current repository state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the agent resolve natural paper references to arXiv identities, then ingest one or many resolved arXiv URLs, IDs, or arXiv DOI values through the existing `ingest_and_read` interface.

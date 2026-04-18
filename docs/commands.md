@@ -8,6 +8,8 @@ Paper Distill v3.0 keeps slash commands for business actions only.
 - `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
 
+In plugin hosts that namespace slash commands, these may appear with the plugin prefix, for example `/paper-distill:discover`.
+
 Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd query`, `qmd get`, `qmd status`, `qmd update`, `qmd embed -f`, collection/context checks, and `qmd ls`.
 
 ## Tool Mapping

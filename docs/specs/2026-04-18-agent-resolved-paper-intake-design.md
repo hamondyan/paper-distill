@@ -1,10 +1,11 @@
 # Agent-Resolved Paper Intake Design
 
 Date: 2026-04-18
+Status: Implemented / archived
 
 ## Context
 
-Paper Distill currently has a conservative intake boundary. The `paper-intake` skill routes direct capture only when the user provides an arXiv URL or arXiv DOI, and the `ingest_and_read` MCP tool rejects direct inputs that cannot yield an arXiv ID.
+At design time, Paper Distill had a conservative intake boundary. The `paper-intake` skill routed direct capture only when the user provided an arXiv URL or arXiv DOI, and the `ingest_and_read` MCP tool rejected direct inputs that could not yield an arXiv ID.
 
 This protects `raw/evidence/`, but it makes natural intake clumsy. Users often refer to papers by title, acronym, model name, project name, or a mixed list of several papers. Examples include `openvla`, `Attention Is All You Need`, and multi-line lists containing both aliases and arXiv links.
 

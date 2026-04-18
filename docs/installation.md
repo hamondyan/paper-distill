@@ -21,15 +21,13 @@ Copy the example settings file:
 cp settings.example.json settings.json
 ```
 
-Set the absolute vault path:
+Open `settings.json` and set the absolute vault path:
 
-```json
-{
-  "paper_distill": {
-    "vault_path": "/absolute/path/to/your/vault"
-  }
-}
+```text
+paper_distill.vault_path = "/absolute/path/to/your/vault"
 ```
+
+Keep the rest of the `settings.example.json` structure intact. The runtime validates the full schema, including QMD, search, workflow, capture, venue, scoring, and research profile settings.
 
 `settings.json` is the only runtime configuration source. Environment-variable overrides are not supported.
 If this checkout already has a `settings.json`, edit that file directly instead of copying over it.

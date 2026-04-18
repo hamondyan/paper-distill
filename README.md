@@ -35,6 +35,8 @@ uv run paper-distill-admin bootstrap
 /discover -> /approve <paper id or path> -> /ingest approved -> qmd query "your topic"
 ```
 
+When installed as a namespaced plugin, the slash commands may appear with the plugin prefix, for example `/paper-distill:discover`.
+
 Bootstrap succeeds when the command reports the vault layout plus ready QMD collections. If QMD retrieval looks stale after write-heavy work, run `qmd update`; run `qmd embed -f` when semantic search must reflect the new state immediately.
 
 ## v3.0 Rules
@@ -82,6 +84,8 @@ vault/
 - `/inbox` summarizes pending and approved candidates.
 - `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
 - `/lint` runs v3 health checks.
+
+Some hosts expose plugin commands with the plugin namespace, such as `/paper-distill:ingest`.
 
 For QMD read/index work, use [docs/qmd-cli.md](docs/qmd-cli.md).
 

@@ -1,8 +1,12 @@
 # QMD CLI Boundary Implementation Plan
 
+Status: Implemented / archived
+
+Archive note: this file preserves the original execution plan. Unchecked task boxes and "Expected: FAIL" lines describe the TDD sequence at the time the plan was written, not the current repository state. The current v3 MCP surface has seven business tools because `approve_papers` is part of the retained approval workflow.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the five QMD-wrapper MCP tools with direct QMD CLI usage, keep only six Paper Distill business MCP tools, and teach agents to use `qmd` CLI through `docs/qmd-cli.md`, skills, and retained business command docs.
+**Goal:** Replace the five QMD-wrapper MCP tools with direct QMD CLI usage, keep only seven Paper Distill business MCP tools, and teach agents to use `qmd` CLI through `docs/qmd-cli.md`, skills, and retained business command docs.
 
 **Architecture:** QMD becomes the only read and index-maintenance interface. Paper Distill MCP shrinks to business operations only. `paper-distill-admin bootstrap` remains as the one-time vault and QMD initialization entry, while write tools stop invoking QMD commands and instead return follow-up guidance for a later `qmd update` / `qmd embed -f` round.
 
@@ -71,6 +75,7 @@
 ```python
 # tests/test_v3_commands.py
 EXPECTED_MCP_TOOLS = {
+    "approve_papers",
     "discover_papers",
     "ingest_and_read",
     "check_concept_alias",

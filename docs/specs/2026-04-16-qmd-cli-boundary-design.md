@@ -1,7 +1,9 @@
 # QMD CLI Boundary Design
 
 Date: 2026-04-16
-Status: Approved for planning
+Status: Implemented / archived
+
+Archive note: this design has landed. The current v3 MCP surface has seven business tools because the approval command was added to the retained business surface.
 
 ## Goal
 
@@ -13,7 +15,7 @@ After this change:
 - Paper Distill MCP exposes only business operations that QMD does not know how to perform.
 - `paper-distill-admin bootstrap` remains as the one-time initialization entry for an empty vault, but it only creates the v3 layout and initializes QMD collections and contexts.
 
-`docs/qmd-cli.md` will state:
+`docs/qmd-cli.md` now states:
 
 > QMD CLI is the primary source; command details follow the runtime output of `qmd --help`.
 
@@ -43,6 +45,7 @@ These actions are performed directly through QMD CLI, not through Paper Distill 
 
 ### Retained MCP tools
 
+- `approve_papers`
 - `discover_papers`
 - `ingest_and_read`
 - `check_concept_alias`
@@ -58,7 +61,7 @@ These actions are performed directly through QMD CLI, not through Paper Distill 
 - `kb_update_index`
 - `kb_reembed_force`
 
-The MCP smoke surface must shrink from 11 tools to 6 tools.
+The MCP smoke surface is seven business tools.
 
 ## Bootstrap
 
@@ -128,6 +131,7 @@ The document should be comprehensive enough for agents to work effectively, but 
 
 The retained command set is:
 
+- `approve.md`
 - `discover.md`
 - `inbox.md`
 - `ingest.md`
@@ -177,7 +181,7 @@ If helpful for clarity, the bootstrap logic may move into a dedicated module suc
 
 ### Tool surface
 
-- update MCP surface tests to require exactly the six retained business tools
+- update MCP surface tests to require exactly the seven retained business tools
 - fail if any removed QMD wrapper tool reappears
 
 ### Command inventory
@@ -214,7 +218,7 @@ If helpful for clarity, the bootstrap logic may move into a dedicated module suc
 
 This design is complete when:
 
-- only six business MCP tools remain,
+- only seven business MCP tools remain,
 - all read and index-maintenance guidance routes agents to QMD CLI,
 - `docs/qmd-cli.md` becomes the single repository reference for QMD usage,
 - bootstrap remains the only initialization shortcut,
