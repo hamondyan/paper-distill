@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,36 @@ def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
     assert "scripts/plugin-root.sh" in command
     assert "hooks/session-start" in command
     assert "CLAUDE_PLUGIN_ROOT" not in command
+
+
+def test_hooks_command_runs_through_bash_with_spaced_root() -> None:
+    hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+
+    with TemporaryDirectory(prefix="paper distill ") as temp_dir:
+        temp_root = Path(temp_dir)
+        spaced_root = temp_root / "plugin root"
+        spaced_root.mkdir()
+        repo_link = spaced_root / "paper-distill"
+        repo_link.symlink_to(REPO_ROOT, target_is_directory=True)
+
+        proc = subprocess.run(
+            ["bash", "-lc", command],
+            cwd=repo_link,
+            env={
+                **os.environ,
+                "CODEX_PLUGIN_ROOT": str(repo_link),
+                "CLAUDE_PLUGIN_ROOT": "",
+                "OPENCLAW_PLUGIN_ROOT": "",
+            },
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+    payload = json.loads(proc.stdout)
+    assert "additionalContext" in payload
+    assert "Paper Distill v3 installed" in payload["additionalContext"]
 
 
 def test_session_start_resolves_root_via_shared_helper() -> None:
