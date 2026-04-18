@@ -6,6 +6,13 @@ from server.paper_utils import canonical_html_url, canonical_pdf_url, normalize_
 
 
 class PaperUtilsTest(unittest.TestCase):
+    def test_extract_arxiv_id_accepts_bare_ids(self) -> None:
+        from server.paper_utils import extract_arxiv_id
+
+        self.assertEqual(extract_arxiv_id("1706.03762"), "1706.03762")
+        self.assertEqual(extract_arxiv_id("1706.03762v7"), "1706.03762")
+        self.assertEqual(extract_arxiv_id("  2501.00001  "), "2501.00001")
+
     def test_canonical_arxiv_urls_prefer_arxiv_assets(self) -> None:
         paper = {
             "doi": "10.48550/arxiv.2501.00001",

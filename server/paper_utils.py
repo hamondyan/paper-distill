@@ -36,12 +36,16 @@ def first_author_surname(paper: dict[str, Any]) -> str:
 def extract_arxiv_id(value: str) -> str:
     if not value:
         return ""
+    cleaned = value.strip()
     match = re.search(
         r"(?:arxiv\.org/(?:abs|pdf)/|arxiv:|arxiv\.)(\d{4}\.\d{4,5})(?:v\d+)?",
-        value,
+        cleaned,
         re.IGNORECASE,
     )
-    return match.group(1) if match else ""
+    if match:
+        return match.group(1)
+    bare = re.fullmatch(r"(\d{4}\.\d{4,5})(?:v\d+)?", cleaned, re.IGNORECASE)
+    return bare.group(1) if bare else ""
 
 
 def paper_arxiv_id(paper: dict[str, Any]) -> str:
