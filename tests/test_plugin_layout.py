@@ -61,6 +61,16 @@ def test_hooks_command_uses_claude_override_branch() -> None:
 
     with TemporaryDirectory(prefix="paper distill ") as temp_dir:
         temp_root = Path(temp_dir)
+        fake_cwd = temp_root / "cwd helper"
+        fake_cwd.mkdir()
+        fake_helper = fake_cwd / "scripts"
+        fake_helper.mkdir()
+        (fake_helper / "plugin-root.sh").write_text(
+            "#!/usr/bin/env bash\nprintf '%s\n' '/definitely/not/the/claude/root'\n",
+            encoding="utf-8",
+        )
+        (fake_helper / "plugin-root.sh").chmod(0o755)
+
         spaced_root = temp_root / "claude plugin root"
         spaced_root.mkdir()
         repo_link = spaced_root / "paper-distill"
@@ -68,7 +78,7 @@ def test_hooks_command_uses_claude_override_branch() -> None:
 
         proc = subprocess.run(
             ["bash", "-lc", command],
-            cwd=temp_root,
+            cwd=fake_cwd,
             env={
                 **os.environ,
                 "CLAUDE_PLUGIN_ROOT": str(repo_link),
