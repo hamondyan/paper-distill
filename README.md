@@ -107,6 +107,12 @@ qmd query "your topic"
 
 When installed as a namespaced plugin, slash commands may appear with a plugin prefix such as `/paper-distill:discover`.
 
+## Plugin Root
+
+Paper Distill uses the repository root as the plugin root. Installation means registering this checkout with the host rather than moving the project into a separate plugin bundle.
+
+For host-specific installation and uninstall notes, see [docs/plugin-installation.md](docs/plugin-installation.md).
+
 ## Commands
 
 | Command | Use it when | Backing surface |

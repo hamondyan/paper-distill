@@ -1,7 +1,7 @@
 {
   "name": "paper-distill",
   "version": "3.0.0",
-  "description": "Pure v3 research vault with qmd-backed retrieval, approved arXiv capture, and Python-tool writes.",
+  "description": "Codex local plugin manifest for the repository-root Paper Distill checkout.",
   "author": {
     "name": "Huang",
     "email": "",

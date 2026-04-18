@@ -1,6 +1,6 @@
 {
   "name": "paper-distill",
-  "description": "Pure v3 research vault with qmd-backed retrieval, approved arXiv capture, and Python-tool writes.",
+  "description": "Claude compatibility manifest for the repository-root Paper Distill checkout.",
   "version": "3.0.0",
   "author": {
     "name": "Huang",
