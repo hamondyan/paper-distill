@@ -5,7 +5,7 @@
 Run:
 
 ```bash
-uv run pytest -q
+uv run python -m pytest -q
 uv run python -m compileall -q server tests
 ```
 
@@ -14,7 +14,7 @@ uv run python -m compileall -q server tests
 Run:
 
 ```bash
-uv run pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
+uv run python -m pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
 ```
 
 ## Business MCP Smoke Check
@@ -28,6 +28,7 @@ async def main():
     tools = await mcp.list_tools()
     names = sorted(tool.name for tool in tools)
     required = {
+        "approve_papers",
         "discover_papers",
         "ingest_and_read",
         "check_concept_alias",
@@ -44,7 +45,7 @@ asyncio.run(main())
 PY
 ```
 
-This smoke check should stay on the six-tool business surface only.
+This smoke check should stay on the business surface only.
 
 ## CLI-Native QMD Checks
 
@@ -56,3 +57,10 @@ qmd query "test"
 qmd get path/to/file.md
 qmd status
 ```
+
+## Common Failures
+
+- If `uv run pytest -q` fails with `Failed to spawn: pytest`, use `uv run python -m pytest -q`.
+- If `qmd --help` fails, install or expose the QMD binary before bootstrapping.
+- If tools report a missing `settings.json`, copy `settings.example.json` to `settings.json` and set an absolute `paper_distill.vault_path`.
+- If `qmd query` does not show recent writes, run `qmd update`; run `qmd embed -f` when semantic retrieval must be fresh immediately.

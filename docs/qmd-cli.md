@@ -48,6 +48,8 @@ These names are the QMD-facing handles for the main Paper Distill knowledge laye
 
 Use `qmd query <query>` as the default retrieval path. Runtime `qmd --help` describes it as the recommended hybrid search with auto expansion and reranking.
 
+There are two query modes. Use a plain one-line query for normal work. Use a typed query document only when every query line is prefixed with `lex:`, `vec:`, or `hyde:`.
+
 Examples:
 
 ```bash
@@ -55,6 +57,8 @@ qmd query "diffusion scaling law"
 qmd query $'lex: "transformer"\nvec: retrieval augmentation'
 qmd query "paper distill concept merge" -c canon-concepts
 ```
+
+Do not mix a plain query with typed lines in one invocation.
 
 Use `-c <collection>` when you want to stay within one repo layer such as `canon-papers`, `canon-concepts`, or `raw-evidence`.
 

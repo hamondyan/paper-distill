@@ -1,6 +1,6 @@
 # Paper Distill Docs
 
-Paper Distill is an Obsidian-friendly v3 research knowledge system for discovering papers, approving capture, reading through QMD CLI, and maintaining canonical Markdown notes.
+Paper Distill is an Obsidian-friendly v3 research knowledge system for discovering papers, approving capture from chat or inbox notes, reading through QMD CLI, and maintaining canonical Markdown notes.
 
 ## Start Here
 

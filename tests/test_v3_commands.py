@@ -7,8 +7,9 @@ from server.server import mcp
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_COMMANDS = {"discover", "inbox", "ingest", "lint"}
+EXPECTED_COMMANDS = {"approve", "discover", "inbox", "ingest", "lint"}
 EXPECTED_MCP_TOOLS = {
+    "approve_papers",
     "discover_papers",
     "ingest_and_read",
     "check_concept_alias",
@@ -46,11 +47,14 @@ def test_superpowers_process_artifacts_are_absent_from_docs() -> None:
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:
+    approve_doc = (REPO_ROOT / "commands/approve.md").read_text(encoding="utf-8")
     discover_doc = (REPO_ROOT / "commands/discover.md").read_text(encoding="utf-8")
     inbox_doc = (REPO_ROOT / "commands/inbox.md").read_text(encoding="utf-8")
     ingest_doc = (REPO_ROOT / "commands/ingest.md").read_text(encoding="utf-8")
     lint_doc = (REPO_ROOT / "commands/lint.md").read_text(encoding="utf-8")
 
+    assert "approve_papers" in approve_doc
+    assert "#approved" in approve_doc
     assert "discover_papers" in discover_doc
     assert "#approved" in inbox_doc
     assert "ingest_and_read" in ingest_doc
@@ -87,11 +91,12 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "business MCP" in architecture
     assert "docs/qmd-cli.md" in commands
     assert "/discover" in commands
+    assert "/approve" in commands
     assert "/lint" in commands
     assert "/get" not in commands
-    assert "uv run pytest -q" in testing
+    assert "uv run python -m pytest -q" in testing
     assert "uv run python -m compileall -q server tests" in testing
-    assert "six-tool business surface" in testing
+    assert "business surface" in testing
     assert "qmd --help" in testing
     assert "QMD CLI is the primary source; command details follow the runtime output of `qmd --help`." in qmd_cli
     assert "canon-papers" in qmd_cli

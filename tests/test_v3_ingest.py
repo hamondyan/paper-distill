@@ -187,6 +187,17 @@ class V3IngestTest(unittest.TestCase):
         self.assertEqual(result["captured_count"], 1)
         self.assertEqual(result["error_count"], 1)
         self.assertEqual(result["items"][0]["paper_id"], "arxiv:2405.12213")
+        self.assertEqual(
+            result["resolved_inputs"],
+            [
+                {
+                    "input": "https://arxiv.org/abs/2405.12213",
+                    "arxiv_id": "2405.12213",
+                    "source_url": "https://arxiv.org/abs/2405.12213",
+                }
+            ],
+        )
+        self.assertEqual(result["unresolved_inputs"], ["openvla"])
         self.assertEqual(result["errors"][0]["input"], "openvla")
         self.assertIn("resolved to an arXiv", result["errors"][0]["error"])
         self.assertNotIn("error", result)

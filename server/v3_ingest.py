@@ -11,10 +11,9 @@ from server.arxiv_capture import capture_arxiv_source
 from server.config import ConfigError, get_vault_path
 from server.paper_utils import extract_arxiv_id, paper_id
 from server.search import fetch_arxiv_record
+from server.v3_approval import _approved_body
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
 from server.v3_markdown import split_frontmatter, write_markdown
-
-_APPROVED_MARKER = "#approved"
 
 
 def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
@@ -23,33 +22,6 @@ def _read_markdown_note(path: Path) -> tuple[dict[str, Any], str]:
     if not has_frontmatter:
         return {}, text.strip()
     return frontmatter, body.lstrip()
-
-
-def _approved_body(body: str) -> bool:
-    in_fence = False
-    fence_marker = ""
-
-    for line in body.splitlines():
-        stripped = line.strip()
-
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
-            if not in_fence:
-                in_fence = True
-                fence_marker = marker
-            elif marker == fence_marker:
-                in_fence = False
-                fence_marker = ""
-            continue
-
-        if in_fence or not stripped or stripped.startswith(">"):
-            continue
-
-        tokens = stripped.split()
-        if _APPROVED_MARKER in tokens and all(token.startswith("#") and len(token) > 1 for token in tokens):
-            return True
-
-    return False
 
 
 def _paper_arxiv_id(paper: dict[str, Any], source_url: str = "") -> str:
@@ -200,6 +172,8 @@ def _direct_batch_result(
     items: list[dict[str, Any]],
     errors: list[dict[str, str]],
     skipped_duplicates: list[str],
+    resolved_inputs: list[dict[str, str]],
+    unresolved_inputs: list[str],
 ) -> dict[str, Any]:
     return {
         "items": items,
@@ -207,6 +181,8 @@ def _direct_batch_result(
         "captured_count": len(items),
         "error_count": len(errors),
         "skipped_duplicates": skipped_duplicates,
+        "resolved_inputs": resolved_inputs,
+        "unresolved_inputs": unresolved_inputs,
     }
 
 
@@ -251,12 +227,15 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     skipped_duplicates: list[str] = []
+    resolved_inputs: list[dict[str, str]] = []
+    unresolved_inputs: list[str] = []
     seen_arxiv_ids: set[str] = set()
 
     for input_item in input_items:
         arxiv_id = extract_arxiv_id(input_item)
         if not arxiv_id:
             errors.append(_direct_item_error(input_item, _DIRECT_RESOLUTION_ERROR))
+            unresolved_inputs.append(input_item)
             continue
         if arxiv_id in seen_arxiv_ids:
             skipped_duplicates.append(arxiv_id)
@@ -266,6 +245,13 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
         source_url = input_item
         if source_url == arxiv_id:
             source_url = f"https://arxiv.org/abs/{arxiv_id}"
+        resolved_inputs.append(
+            {
+                "input": input_item,
+                "arxiv_id": arxiv_id,
+                "source_url": source_url,
+            }
+        )
 
         paper = dict(await fetch_arxiv_record(arxiv_id) or {})
         paper["arxiv_id"] = str(paper.get("arxiv_id") or arxiv_id).strip()
@@ -298,7 +284,13 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
             }
         )
 
-    result = _direct_batch_result(items, errors, skipped_duplicates)
+    result = _direct_batch_result(
+        items,
+        errors,
+        skipped_duplicates,
+        resolved_inputs,
+        unresolved_inputs,
+    )
     if len(input_items) == 1 and errors and not items:
         result["error"] = errors[0]["error"]
         if "paper_id" in errors[0]:

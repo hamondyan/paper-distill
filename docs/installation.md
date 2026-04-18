@@ -32,6 +32,18 @@ Set the absolute vault path:
 ```
 
 `settings.json` is the only runtime configuration source. Environment-variable overrides are not supported.
+If this checkout already has a `settings.json`, edit that file directly instead of copying over it.
+
+## Verify Local Commands
+
+Confirm the Paper Distill admin entrypoint and QMD are both available:
+
+```bash
+uv run paper-distill-admin --help
+qmd --help
+```
+
+`paper-distill-admin --help` should list the `bootstrap` subcommand. `qmd --help` should list commands such as `query`, `get`, `status`, `update`, and `embed`.
 
 ## Empty Vault Bootstrap
 
@@ -42,6 +54,7 @@ uv run paper-distill-admin bootstrap
 ```
 
 `paper-distill-admin bootstrap` creates the vault layout and initializes the QMD collections and contexts used by Paper Distill.
+It succeeds when the output reports the created layout entries and ready QMD collections.
 
 ## QMD Collections And Contexts
 

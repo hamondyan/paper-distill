@@ -27,6 +27,7 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 ## Business MCP Surface
 
 - `discover_papers(query=None)` writes inbox stubs and updates `.state/seen_papers.json`.
+- `approve_papers(input_value)` marks selected inbox stubs approved from chat or explicit paper IDs/paths.
 - `ingest_and_read(input_value)` captures approved inbox notes or agent-resolved natural references and batch arXiv identities into `raw/evidence/`.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
 - `upsert_wiki_page(page_type, target, frontmatter, body)` writes `paper`, `concept`, `idea`, or `conversation` pages through Python validation.
