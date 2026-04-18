@@ -36,6 +36,34 @@ def _cleaned_doc(title: str, markdown: str, capture_source: str = "arxiv_native_
 
 
 class V3IngestTest(unittest.TestCase):
+    def test_split_direct_input_items_handles_agent_batch_formats(self) -> None:
+        from server.v3_ingest import _split_direct_input_items
+
+        raw = """
+        - https://arxiv.org/abs/2405.12213
+        2. 1706.03762
+        3) 10.48550/arxiv.2410.24164; https://arxiv.org/pdf/2501.00001.pdf, https://arxiv.org/abs/2501.00002
+        """
+
+        self.assertEqual(
+            _split_direct_input_items(raw),
+            [
+                "https://arxiv.org/abs/2405.12213",
+                "1706.03762",
+                "10.48550/arxiv.2410.24164",
+                "https://arxiv.org/pdf/2501.00001.pdf",
+                "https://arxiv.org/abs/2501.00002",
+            ],
+        )
+
+    def test_split_direct_input_items_keeps_single_url_intact(self) -> None:
+        from server.v3_ingest import _split_direct_input_items
+
+        self.assertEqual(
+            _split_direct_input_items("https://arxiv.org/abs/2405.12213"),
+            ["https://arxiv.org/abs/2405.12213"],
+        )
+
     def test_approved_body_accepts_only_plain_body_tags(self) -> None:
         from server.v3_ingest import _approved_body
 

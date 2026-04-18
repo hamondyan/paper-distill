@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,24 @@ def _paper_arxiv_id(paper: dict[str, Any], source_url: str = "") -> str:
         if arxiv_id:
             return arxiv_id
     return ""
+
+
+_DIRECT_ITEM_SPLIT_RE = re.compile(r"[\n;,]+")
+_DIRECT_ITEM_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
+
+
+def _clean_direct_input_item(value: str) -> str:
+    cleaned = _DIRECT_ITEM_PREFIX_RE.sub("", value.strip())
+    return cleaned.strip().strip("`").strip()
+
+
+def _split_direct_input_items(input_value: str) -> list[str]:
+    items: list[str] = []
+    for part in _DIRECT_ITEM_SPLIT_RE.split(input_value):
+        cleaned = _clean_direct_input_item(part)
+        if cleaned:
+            items.append(cleaned)
+    return items
 
 
 def _approved_inbox_papers(vault_path: Path) -> list[dict[str, Any]]:
