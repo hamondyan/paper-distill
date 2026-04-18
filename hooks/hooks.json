@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash -lc 'ROOT_CANDIDATE=\"${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-${OPENCLAW_PLUGIN_ROOT:-$PWD}}}\"; ROOT=\"$($ROOT_CANDIDATE/scripts/plugin-root.sh)\"; exec \"$ROOT/hooks/session-start\"'",
+            "command": "/bin/bash -lc 'ROOT_CANDIDATE=\"${CODEX_PLUGIN_ROOT:-${OPENCLAW_PLUGIN_ROOT:-$PWD}}\"; CLAUDE_ENV=CLAUDE; CLAUDE_ENV=\"${CLAUDE_ENV}_PLUGIN_ROOT\"; if [ -n \"${!CLAUDE_ENV-}\" ]; then ROOT_CANDIDATE=\"${!CLAUDE_ENV}\"; fi; ROOT=\"$($ROOT_CANDIDATE/scripts/plugin-root.sh)\"; exec \"$ROOT/hooks/session-start\"'",
             "timeout": 10000
           }
         ]

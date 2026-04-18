@@ -21,7 +21,7 @@ def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
     assert "/bin/bash -lc" in command
     assert "scripts/plugin-root.sh" in command
     assert "hooks/session-start" in command
-    assert "CLAUDE_PLUGIN_ROOT" in command
+    assert "CLAUDE_PLUGIN_ROOT" not in command
 
 
 def test_session_start_resolves_root_via_shared_helper() -> None:
