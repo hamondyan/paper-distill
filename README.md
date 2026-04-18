@@ -1,6 +1,67 @@
 # Paper Distill
 
-Paper Distill v3.0 is a Markdown-first research knowledge system for paper discovery, approved ingestion, QMD-backed retrieval, and agent-safe knowledge writes.
+Paper Distill is a Markdown-first research knowledge system for discovering papers, approving capture in chat, preserving raw evidence, and turning papers into canonical wiki pages.
+
+v3.0 uses qmd as the read/index path, keeps Markdown as the source of truth, and gives business workflows to a small MCP surface.
+
+## Why Paper Distill
+
+Most research stacks are good at one layer and fuzzy everywhere else: they can search, or summarize, or store notes, but they do not keep a clean boundary between discovery, capture, retrieval, and canonical synthesis.
+
+Paper Distill is built around those boundaries:
+
+- discovery writes inbox stubs instead of pretending capture already happened
+- approval is explicit and user-driven
+- raw evidence is preserved before synthesis
+- canonical pages are written through schema-validated tools
+- retrieval and indexing go through QMD CLI instead of custom wrapper commands
+
+The result is a vault that stays readable as plain Markdown while still being usable by agents.
+
+## What It Does
+
+- Discover candidate papers from configured topics or direct research queries.
+- Approve capture from chat without exposing users to internal inbox mechanics.
+- Ingest approved notes or direct arXiv references into `raw/evidence/`.
+- Distill captured papers into canonical `wiki/papers/` pages with required metadata and concept links.
+- Maintain canonical concept pages, idea notes, and conversation insights through deterministic write tools.
+- Audit vault health with schema-aware linting and a high-level `/status` snapshot.
+
+## Core Workflow
+
+The normal workflow is:
+
+```text
+/discover -> approve in chat -> /ingest approved -> qmd query/get -> write -> /lint
+```
+
+Direct ingestion is also available when you already know the paper identity:
+
+```text
+/ingest https://arxiv.org/abs/2410.24164
+/ingest 10.48550/arxiv.2410.24164
+/ingest 1706.03762
+/ingest openvla, octo, diffusion policy
+```
+
+The agent resolves natural references to arXiv identities before capture. After write-heavy work, run `qmd update`; run `qmd embed -f` only when semantic retrieval must reflect new content immediately.
+
+## Architecture At A Glance
+
+Paper Distill has three clear surfaces:
+
+1. Markdown vault: the durable knowledge layer under `inbox/`, `raw/evidence/`, `wiki/`, and `insights/`
+2. Business MCP: discovery, approval, ingest, deterministic writes, concept maintenance, and linting
+3. QMD CLI: query, get, status, collections, contexts, and index refresh
+
+In practice that means:
+
+- QMD CLI is the only read/index path.
+- Paper Distill business MCP tools own discovery, approved ingest, deterministic writes, and linting.
+- `qmd update` and `qmd embed -f` are explicit follow-up steps, not hidden side effects.
+- Markdown files remain inspectable and editable as project artifacts, but canonical writes are routed through tools so validation stays enforced.
+
+For the repo-level architecture guide, see [docs/architecture.md](docs/architecture.md). For QMD usage, see [docs/qmd-cli.md](docs/qmd-cli.md).
 
 ## Quickstart
 
@@ -10,13 +71,13 @@ Paper Distill v3.0 is a Markdown-first research knowledge system for paper disco
 uv sync
 ```
 
-2. Configure `settings.json` with an absolute `paper_distill.vault_path`. If this checkout already has `settings.json`, edit it directly; otherwise copy `settings.example.json` first:
+2. Configure `settings.json` with an absolute `paper_distill.vault_path`:
 
 ```bash
 cp settings.example.json settings.json
 ```
 
-3. Check the local command entrypoints:
+3. Verify the local entrypoints:
 
 ```bash
 uv run paper-distill-admin --help
@@ -29,40 +90,36 @@ qmd --help
 uv run paper-distill-admin bootstrap
 ```
 
-5. Run the first workflow:
+5. Start the MCP server:
 
-```text
-/discover -> /approve <paper id or path> -> /ingest approved -> qmd query "your topic"
+```bash
+uv run paper-distill-server
 ```
 
-When installed as a namespaced plugin, the slash commands may appear with the plugin prefix, for example `/paper-distill:discover`.
-
-Bootstrap succeeds when the command reports the vault layout plus ready QMD collections. If QMD retrieval looks stale after write-heavy work, run `qmd update`; run `qmd embed -f` when semantic search must reflect the new state immediately.
-
-## v3.0 Rules
-
-- `qmd` is a hard dependency in v3.0.
-- Use qmd as the read/index path.
-- Paper Distill business MCP tools own discovery, approved ingest, deterministic writes, and linting.
-- Markdown files are the source of truth.
-- The normal workflow is `discover -> approve -> ingest -> qmd query/get -> write -> lint`.
-
-## Core Flow
+6. Run the first workflow:
 
 ```text
-/discover -> approve in chat -> /ingest approved -> qmd query or qmd get -> write -> /lint
+/discover
+/approve <paper id or path>
+/ingest approved
+qmd query "your topic"
 ```
 
-Direct ingestion is also available. The agent can resolve paper titles, acronyms, aliases, project names, arXiv URLs, arXiv IDs, or arXiv DOI values to arXiv identities, then call the single intake tool:
+When installed as a namespaced plugin, slash commands may appear with a plugin prefix such as `/paper-distill:discover`.
 
-```text
-/ingest https://arxiv.org/abs/2410.24164
-/ingest 10.48550/arxiv.2410.24164
-/ingest 1706.03762
-/ingest openvla, octo, diffusion policy
-```
+## Commands
 
-## Vault Shape
+| Command | Use it when | Backing surface |
+| --- | --- | --- |
+| `/discover` | you want new papers, a daily digest, or a topic search | `discover_papers` |
+| `/approve` | you want to accept recommended candidates from chat | `approve_papers` |
+| `/ingest` | you want to capture approved notes or direct arXiv references | `ingest_and_read` |
+| `/lint` | you want a structural audit of the vault | `lint_vault` |
+| `/status` | you want a quick health snapshot and next action | agent-side summary |
+
+For command details, see [docs/commands.md](docs/commands.md).
+
+## Vault Layout
 
 ```text
 vault/
@@ -77,22 +134,37 @@ vault/
 └── .state/
 ```
 
-## Public Commands
+This layout keeps candidate intake, preserved source material, canonical knowledge, and higher-level insights separate on purpose.
 
-- `/discover` writes inbox stubs.
-- `/approve` marks selected inbox stubs approved from chat or explicit paper IDs/paths.
-- `/ingest approved` or `/ingest <ref>` captures raw evidence from approved inbox notes or agent-resolved natural references.
-- `/lint` runs v3 health checks.
-- `/status` returns a vault health snapshot (counts, pending approvals, lint issues, last activity).
+## Development
 
-Some hosts expose plugin commands with the plugin namespace, such as `/paper-distill:ingest`.
+Run the main verification commands:
 
-For QMD read/index work, use [docs/qmd-cli.md](docs/qmd-cli.md).
+```bash
+uv run python -m pytest -q
+uv run python -m compileall -q server tests
+```
+
+Useful focused checks:
+
+```bash
+uv run python -m pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
+qmd --help
+qmd status
+```
+
+If `qmd query` does not show recent writes, run `qmd update`; run `qmd embed -f` when semantic retrieval needs to be current immediately.
 
 ## Documentation
 
 - [Installation](docs/installation.md)
-- [QMD CLI Guide](docs/qmd-cli.md)
 - [Commands](docs/commands.md)
 - [Architecture](docs/architecture.md)
+- [QMD CLI Guide](docs/qmd-cli.md)
+- [Frontmatter Reference](docs/frontmatter-reference.md)
+- [Vault Layout](docs/vault-layout.md)
 - [Testing](docs/testing.md)
+
+## Project Status
+
+Paper Distill is in an active v3 phase: the FastMCP backend, QMD CLI boundary, progressive-disclosure skills, schema-validated writes, and vault health flows are in place, while the surrounding product surface is still being tightened.
