@@ -17,6 +17,14 @@ Run:
 uv run python -m pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
 ```
 
+## Cross-Host Plugin Layout Checks
+
+Run:
+
+```bash
+uv run --with pytest python -m pytest tests/test_plugin_layout.py tests/test_v3_commands.py tests/test_skill_inventory.py tests/test_no_retired_names.py -q
+```
+
 ## Business MCP Smoke Check
 
 ```bash

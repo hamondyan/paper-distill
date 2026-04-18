@@ -16,13 +16,14 @@ def test_mcp_launcher_uses_shared_root_helper() -> None:
     assert 'uv --directory "${REPO_ROOT}" run paper-distill-server' in launcher
 
 
-def test_hooks_json_does_not_hardcode_claude_plugin_root() -> None:
-    hooks_json = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-    assert "/bin/bash -lc" in command
-    assert "scripts/plugin-root.sh" in command
-    assert "hooks/session-start" in command
-    assert "CLAUDE_PLUGIN_ROOT" not in command
+def test_mcp_json_uses_cross_host_root_fallback_chain() -> None:
+    mcp_json = json.loads((REPO_ROOT / ".mcp.json").read_text(encoding="utf-8"))
+    command = mcp_json["mcpServers"]["paper-distill"]["args"][1]
+
+    assert "CLAUDE_PLUGIN_ROOT" in command
+    assert "CODEX_PLUGIN_ROOT" in command
+    assert "OPENCLAW_PLUGIN_ROOT" in command
+    assert "$PWD" in command
 
 
 def test_hooks_command_runs_through_bash_with_spaced_root() -> None:
@@ -150,4 +151,7 @@ def test_plugin_docs_and_manifests_describe_root_as_plugin() -> None:
     assert "[Plugin Installation](plugin-installation.md)" in docs_readme
     assert "registering this checkout as a local plugin root" in installation
     assert "Codex local plugin manifest" in codex_manifest["description"]
+    assert codex_manifest["skills"] == "./skills/"
+    assert codex_manifest["hooks"] == "./hooks/hooks.json"
+    assert codex_manifest["mcpServers"] == "./.mcp.json"
     assert "Claude compatibility manifest" in claude_manifest["description"]

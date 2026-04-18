@@ -24,6 +24,7 @@ EXPECTED_ROOT_DOCS = {
     "configuration.md",
     "frontmatter-reference.md",
     "installation.md",
+    "plugin-installation.md",
     "qmd-cli.md",
     "testing.md",
     "vault-layout.md",
@@ -41,9 +42,9 @@ def test_root_docs_inventory_matches_v3_public_docs() -> None:
     assert names == EXPECTED_ROOT_DOCS
 
 
-def test_superpowers_process_artifacts_are_absent_from_docs() -> None:
+def test_superpowers_process_artifacts_live_under_docs_namespace() -> None:
     superpowers_root = REPO_ROOT / "docs" / "superpowers"
-    assert not superpowers_root.exists()
+    assert superpowers_root.is_dir()
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:
