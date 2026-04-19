@@ -159,7 +159,7 @@ def test_plugin_docs_and_manifests_describe_root_as_plugin() -> None:
     assert "[Plugin Installation](docs/plugin-installation.md)" in readme
     assert "[Plugin Installation](plugin-installation.md)" in docs_readme
     assert "registering this checkout as a local plugin root" in installation
-    assert "Codex: register this checkout as a local plugin" in installation
+    assert "Codex can install Paper Distill from the repo-local marketplace entry" in installation
     assert "Claude: remove the `.claude-plugin/plugin.json` registration" in installation
     assert "OpenClaw: remove the `.mcp.json` registration" in installation
     assert "Codex local plugin manifest" in codex_manifest["description"]
