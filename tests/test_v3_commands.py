@@ -7,9 +7,8 @@ from server.server import mcp
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_COMMANDS = {"approve", "discover", "ingest", "lint", "status"}
+EXPECTED_COMMANDS = {"discover", "ingest", "lint", "status"}
 EXPECTED_MCP_TOOLS = {
-    "approve_papers",
     "discover_papers",
     "ingest_and_read",
     "distill_paper",
@@ -55,22 +54,19 @@ def test_superpowers_process_artifacts_live_under_docs_namespace() -> None:
 
 
 def test_public_command_docs_point_to_v3_tools() -> None:
-    approve_doc = (REPO_ROOT / "commands/approve.md").read_text(encoding="utf-8")
     discover_doc = (REPO_ROOT / "commands/discover.md").read_text(encoding="utf-8")
     ingest_doc = (REPO_ROOT / "commands/ingest.md").read_text(encoding="utf-8")
     lint_doc = (REPO_ROOT / "commands/lint.md").read_text(encoding="utf-8")
     status_doc = (REPO_ROOT / "commands/status.md").read_text(encoding="utf-8")
 
-    assert "approve_papers" in approve_doc
-    assert "#approved" in approve_doc
     assert "discover_papers" in discover_doc
     assert "ingest_and_read" in ingest_doc
     assert "qmd update" in ingest_doc
     assert "qmd embed -f" in ingest_doc
     assert "lint_vault" in lint_doc
     assert "lint_vault" in status_doc
-    assert 'argument-hint: "[paper-id | arxiv-id | inbox-path | all]"' in approve_doc
-    assert 'argument-hint: "[approved | arxiv-url | arxiv-id | arxiv-doi | paper-title]"' in ingest_doc
+    assert 'argument-hint: "[arxiv-url | arxiv-id | arxiv-doi | paper-title]"' in ingest_doc
+    assert "approved" not in ingest_doc
     assert 'argument-hint: ""' in status_doc
     assert "paper_missing_required_fields" in status_doc
     assert "paper_key_concept_unlinked" in status_doc

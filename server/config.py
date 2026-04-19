@@ -224,10 +224,6 @@ def _validate_paper_distill_settings(value: Any) -> dict[str, Any]:
             ),
         },
         "workflow": {
-            "detailed_inbox_cards": _require_bool(
-                _require_key(workflow_settings, "detailed_inbox_cards", "paper_distill.workflow"),
-                "paper_distill.workflow.detailed_inbox_cards",
-            ),
             "max_candidates_per_topic": _require_int(
                 _require_key(workflow_settings, "max_candidates_per_topic", "paper_distill.workflow"),
                 "paper_distill.workflow.max_candidates_per_topic",

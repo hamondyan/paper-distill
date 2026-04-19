@@ -1,11 +1,10 @@
 ---
-name: discover
-description: Use when the user wants to find new papers, pull a daily digest, or search arXiv/Semantic Scholar/OpenAlex for a research topic. Runs the v3 discovery flow and writes deduplicated inbox stubs.
+description: Use when the user wants to find new papers, pull a daily digest, or search arXiv/Semantic Scholar/OpenAlex for a research topic. Runs stateless v3 discovery and returns chat-only candidates.
 argument-hint: "[query]"
-user-invocable: true
 ---
 
 Call `discover_papers` to run the v3 discovery flow.
 
-This searches paper sources, deduplicates against `.state/seen_papers.json`, writes new inbox stubs into `inbox/`, and reports how many papers were saved versus skipped because they were already seen.
-Do not ingest from this command. After discovery, the next step is human approval in chat, with the agent resolving that selection and writing the internal approval marker.
+This searches paper sources, scores and ranks candidates, and returns the results directly to the agent for presentation in chat. It does not write `inbox/`, update a seen cache, approve papers, or ingest anything.
+
+After discovery, help the user choose candidates from the current chat result. To capture a paper, resolve the chosen item to an arXiv URL, arXiv ID, or arXiv DOI and call `/ingest` with that resolved identity.

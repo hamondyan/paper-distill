@@ -25,7 +25,6 @@
       "semantic_scholar_api_key": ""
     },
     "workflow": {
-      "detailed_inbox_cards": true,
       "max_candidates_per_topic": 5,
       "diversity_cap_per_cluster": 2,
       "require_arxiv_binding": true
@@ -33,7 +32,7 @@
     "capture": {
       "cleaning_scope": "body_abstract_sections_captions",
       "appendix_policy": "summary_only",
-      "failure_policy": "return_to_inbox",
+      "failure_policy": "report_error",
       "min_body_chars": 1500,
       "preserve_math": true,
       "preserve_figures": true,

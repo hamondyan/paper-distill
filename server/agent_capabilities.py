@@ -8,7 +8,7 @@ AGENT_CAPABILITY_INDEX: dict[str, list[dict[str, str]]] = {
     "skills": [
         {
             "name": "paper-intake",
-            "use_when": "discovering papers, approving inbox candidates, or ingesting arXiv evidence",
+            "use_when": "discovering chat-only paper candidates or ingesting resolved arXiv evidence",
         },
         {
             "name": "paper-distillation",
@@ -29,15 +29,13 @@ AGENT_CAPABILITY_INDEX: dict[str, list[dict[str, str]]] = {
     ],
     "commands": [
         {"name": "/discover", "use_when": "find new papers", "backing": "discover_papers"},
-        {"name": "/approve", "use_when": "accept inbox candidates", "backing": "approve_papers"},
-        {"name": "/ingest", "use_when": "capture approved or resolved arXiv papers", "backing": "ingest_and_read"},
+        {"name": "/ingest", "use_when": "capture resolved arXiv papers", "backing": "ingest_and_read"},
         {"name": "/lint", "use_when": "audit vault structure and weak links", "backing": "lint_vault"},
         {"name": "/status", "use_when": "summarize vault health", "backing": "lint_vault plus agent-side counts"},
     ],
     "mcp_tools": [
-        {"name": "discover_papers", "use_when": "find new papers and write inbox stubs"},
-        {"name": "approve_papers", "use_when": "mark selected inbox stubs approved from chat"},
-        {"name": "ingest_and_read", "use_when": "capture approved notes or resolved arXiv identities"},
+        {"name": "discover_papers", "use_when": "find new papers and return chat-only candidates"},
+        {"name": "ingest_and_read", "use_when": "capture resolved arXiv identities"},
         {"name": "distill_paper", "use_when": "distill one captured raw evidence note into a canonical paper page"},
         {"name": "distill_papers", "use_when": "distill several captured papers sequentially"},
         {"name": "upsert_wiki_page", "use_when": "write canonical paper, concept, idea, or conversation pages"},
@@ -53,7 +51,7 @@ AGENT_CAPABILITY_INDEX: dict[str, list[dict[str, str]]] = {
         {"name": "qmd embed -f", "use_when": "force embeddings when semantic retrieval must be current"},
     ],
     "routing": [
-        {"name": "Find new papers", "use_when": "call discover_papers, not qmd query."},
+        {"name": "Find new papers", "use_when": "call discover_papers for chat-only candidates, not qmd query."},
         {"name": "Query existing vault content", "use_when": "use qmd query or qmd get."},
         {"name": "Ingest known papers", "use_when": "resolve natural references to arXiv identities, then call ingest_and_read."},
         {"name": "Distill captured evidence", "use_when": "use distill_paper or distill_papers."},

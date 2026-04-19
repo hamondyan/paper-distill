@@ -49,7 +49,6 @@ def _valid_settings(vault_path: str = "/vault/from/settings") -> dict:
                 "semantic_scholar_api_key": "s2-key-from-settings",
             },
             "workflow": {
-                "detailed_inbox_cards": True,
                 "max_candidates_per_topic": 5,
                 "diversity_cap_per_cluster": 2,
                 "require_arxiv_binding": True,
@@ -57,7 +56,7 @@ def _valid_settings(vault_path: str = "/vault/from/settings") -> dict:
             "capture": {
                 "cleaning_scope": "body_abstract_sections_captions",
                 "appendix_policy": "summary_only",
-                "failure_policy": "return_to_inbox",
+                "failure_policy": "report_error",
                 "min_body_chars": 1500,
                 "preserve_math": True,
                 "preserve_figures": True,
@@ -210,4 +209,5 @@ def test_load_settings_returns_validated_settings_without_python_fallbacks(
     assert settings["vault_path"] == "/validated/vault"
     assert settings["qmd"]["binary"] == "qmd-from-settings"
     assert settings["search"]["contact_email"] == "contact@example.com"
+    assert "detailed_inbox_cards" not in settings["workflow"]
     assert settings["scoring"]["weights"]["profile_alignment"] == 0.05
