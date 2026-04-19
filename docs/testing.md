@@ -25,6 +25,16 @@ Run:
 uv run --with pytest python -m pytest tests/test_plugin_layout.py tests/test_v3_commands.py tests/test_skill_inventory.py tests/test_no_retired_names.py -q
 ```
 
+## Repo-Local Marketplace Check
+
+Run:
+
+```bash
+uv run --with pytest python -m pytest tests/test_plugin_layout.py -q
+```
+
+This check covers the root-as-plugin manifests, hook launch path, and the repo-local marketplace entry that points at `./`.
+
 ## Business MCP Smoke Check
 
 ```bash

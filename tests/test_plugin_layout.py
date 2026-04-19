@@ -189,3 +189,10 @@ def test_repo_local_marketplace_entry_points_at_root_plugin() -> None:
     assert entry["policy"]["installation"] == "AVAILABLE"
     assert entry["policy"]["authentication"] == "ON_INSTALL"
     assert entry["category"] == "Productivity"
+
+
+def test_testing_docs_include_repo_marketplace_check() -> None:
+    testing = (REPO_ROOT / "docs" / "testing.md").read_text(encoding="utf-8")
+
+    assert "repo-local marketplace" in testing
+    assert "tests/test_plugin_layout.py -q" in testing
