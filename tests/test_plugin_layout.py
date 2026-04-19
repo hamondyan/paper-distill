@@ -167,3 +167,14 @@ def test_plugin_docs_and_manifests_describe_root_as_plugin() -> None:
     assert codex_manifest["hooks"] == "./hooks/hooks.json"
     assert codex_manifest["mcpServers"] == "./.mcp.json"
     assert "Claude compatibility manifest" in claude_manifest["description"]
+
+
+def test_repo_local_marketplace_entry_points_at_root_plugin() -> None:
+    marketplace = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
+    entry = next(plugin for plugin in marketplace["plugins"] if plugin["name"] == "paper-distill")
+
+    assert entry["source"]["source"] == "local"
+    assert entry["source"]["path"] == "./"
+    assert entry["policy"]["installation"] == "AVAILABLE"
+    assert entry["policy"]["authentication"] == "ON_INSTALL"
+    assert entry["category"] == "Productivity"
