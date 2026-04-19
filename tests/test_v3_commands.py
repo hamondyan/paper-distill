@@ -101,6 +101,8 @@ def test_ingest_command_documents_agent_resolved_batch_inputs() -> None:
     assert "agent resolves" in ingest_doc
     assert "multiple resolved arXiv" in ingest_doc
     assert "10.48550/arxiv.2410.24164, 1706.03762" in ingest_doc
+    assert "resolved arXiv URLs, arXiv IDs, or arXiv DOI values" in ingest_doc
+    assert "URLs, IDs, or DOIs" not in ingest_doc
 
 
 def test_public_docs_describe_v3_qmd_cutover() -> None:
@@ -117,6 +119,10 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "qmd as the read/index path" in readme
     assert "docs/qmd-cli.md" in readme
     assert "chat-only discovery" in readme
+    assert "/ingest https://arxiv.org/abs/2410.24164" in readme
+    assert "/ingest 10.48550/arxiv.2410.24164" in readme
+    assert "/ingest 1706.03762" in readme
+    assert "openvla, octo, diffusion policy" not in readme
     assert "inbox/" not in readme
     assert "qmd-cli.md" in docs_index
     assert "chat-only discovery" in docs_index
@@ -137,7 +143,7 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "acronyms" not in commands
     assert "aliases" not in commands
     assert "project names" not in commands
-    assert "resolved arXiv URLs, IDs, or DOI values" in commands
+    assert "resolved arXiv URLs, IDs, or arXiv DOI values" in commands
     assert "/lint" in commands
     assert "/status" in commands
     assert "distill_paper" in commands

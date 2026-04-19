@@ -1,6 +1,6 @@
 ---
 name: ingest
-description: Use when the user wants to capture one or more resolved arXiv URLs, IDs, or DOIs. Writes raw evidence to raw/evidence/.
+description: Use when the user wants to capture one or more resolved arXiv URLs, arXiv IDs, or arXiv DOI values. Writes raw evidence to raw/evidence/.
 argument-hint: "[arxiv-url | arxiv-id | arxiv-doi]"
 user-invocable: true
 ---

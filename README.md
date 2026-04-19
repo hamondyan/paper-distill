@@ -21,7 +21,7 @@ The result is a vault that stays readable as plain Markdown while still being us
 ## What It Does
 
 - Discover candidate papers from configured topics or direct research queries as chat-only discovery results.
-- Capture selected papers from resolved arXiv URLs, IDs, or DOI values.
+- Capture selected papers from resolved arXiv URLs, IDs, or arXiv DOI values.
 - Ingest direct arXiv references into `raw/evidence/`.
 - Distill captured papers into canonical `wiki/papers/` pages with required metadata and concept links.
 - Maintain canonical concept pages, idea notes, and conversation insights through deterministic write tools.
@@ -32,7 +32,7 @@ The result is a vault that stays readable as plain Markdown while still being us
 The normal workflow is:
 
 ```text
-/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|DOI> -> raw evidence -> distill_paper -> qmd update -> /lint
+/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|arXiv DOI> -> raw evidence -> distill_paper -> qmd update -> /lint
 ```
 
 Direct ingestion is available when you already know the paper identity:
@@ -41,7 +41,7 @@ Direct ingestion is available when you already know the paper identity:
 /ingest https://arxiv.org/abs/2410.24164
 /ingest 10.48550/arxiv.2410.24164
 /ingest 1706.03762
-/ingest openvla, octo, diffusion policy
+/ingest 10.48550/arxiv.2410.24164, 1706.03762
 ```
 
 The agent resolves natural references to arXiv identities before capture. After write-heavy work, run `qmd update`; run `qmd embed -f` only when semantic retrieval must reflect new content immediately.
@@ -119,7 +119,7 @@ For host-specific installation and uninstall notes, see [docs/plugin-installatio
 | Command | Use it when | Backing surface |
 | --- | --- | --- |
 | `/discover` | you want new papers, a daily digest, or a topic search | `discover_papers` |
-| `/ingest` | you want to capture resolved arXiv URLs, IDs, or DOI values | `ingest_and_read` |
+| `/ingest` | you want to capture resolved arXiv URLs, IDs, or arXiv DOI values | `ingest_and_read` |
 | MCP `distill_paper(s)` | you want to turn captured evidence into canonical paper pages | `distill_paper`, `distill_papers` |
 | `/lint` | you want a structural and weak-link audit of the vault | `lint_vault` |
 | `/status` | you want a quick health snapshot and next action | agent-side summary |

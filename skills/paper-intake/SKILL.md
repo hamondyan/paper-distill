@@ -1,6 +1,6 @@
 ---
 name: paper-intake
-description: Use when the user wants chat-only paper discovery, candidate summaries, direct arXiv URL/ID/DOI ingest, or natural paper names resolved before capture.
+description: Use when the user wants chat-only paper discovery, candidate summaries, direct arXiv URL/ID/arXiv DOI ingest, or natural paper names resolved before capture.
 ---
 
 # Paper Intake
@@ -15,7 +15,7 @@ For read/index work, consult `docs/qmd-cli.md` and runtime `qmd --help`.
 | Tool | Purpose |
 |------|---------|
 | `discover_papers` | Search, score, deduplicate, and return transient candidates for chat presentation |
-| `ingest_and_read` | Capture one or many resolved arXiv URLs, IDs, or DOI values |
+| `ingest_and_read` | Capture one or many resolved arXiv URLs, IDs, or arXiv DOI values |
 | `upsert_wiki_page` | Create canonical paper pages after reading and distilling |
 | `check_concept_alias` | Resolve uncertain concept names before creating core concept pages |
 
@@ -24,9 +24,9 @@ For read/index work, consult `docs/qmd-cli.md` and runtime `qmd --help`.
 Execute this decision tree before any tool call:
 
 1. User asked for discovery without asking to ingest specific papers: call `discover_papers(query=...)`, present returned candidates in chat, apply the agent-side presentation guidance in [references/post-discovery-rescoring.md](references/post-discovery-rescoring.md), then stop.
-2. User selects a candidate from the current conversation: resolve that candidate to an arXiv URL, arXiv ID, or DOI value, then call `ingest_and_read(input_value=...)`.
+2. User selects a candidate from the current conversation: resolve that candidate to an arXiv URL, arXiv ID, or arXiv DOI value, then call `ingest_and_read(input_value=...)`.
 3. User provided arXiv URL(s), arXiv ID(s), or arXiv DOI value(s): call `ingest_and_read(input_value=...)` directly. Batch multiple resolved identifiers into one call when possible.
-4. User provided title(s), acronym(s), alias(es), project name(s), or mixed natural paper references: resolve each reference to an arXiv URL, ID, or DOI value first, then call `ingest_and_read` with only the resolved identities. Do not pass unresolved names to MCP.
+4. User provided title(s), acronym(s), alias(es), project name(s), or mixed natural paper references: resolve each reference to an arXiv URL, ID, or arXiv DOI value first, then call `ingest_and_read` with only the resolved identities. Do not pass unresolved names to MCP.
 5. User asked whether something is already in the vault or wants to read local evidence: use QMD CLI directly, usually `qmd query` or `qmd get`.
 6. User wants a canonical paper page after capture and reading: hand off to the `paper-distillation` skill.
 
@@ -49,7 +49,7 @@ After `discover_papers` returns, the agent should review returned low-score cand
 
 ## Output Expectations
 
-- After discovery, summarize the strongest candidates, include resolved arXiv or DOI identities when available, and stop for user selection.
+- After discovery, summarize the strongest candidates, include resolved arXiv identities or arXiv DOI values when available, and stop for user selection.
 - After ingest, report exact identifiers processed and unresolved references separately.
 - If ingest cannot proceed, explain the blocking state in one sentence before suggesting the next step.
 

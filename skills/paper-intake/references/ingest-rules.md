@@ -4,10 +4,10 @@
 
 ## Natural reference resolution
 
-Natural references — titles, project names, acronyms, aliases — must be resolved by the agent to arXiv URLs, IDs, or DOI values before the MCP call. The MCP tool itself does not search arbitrary strings.
+Natural references — titles, project names, acronyms, aliases — must be resolved by the agent to arXiv URLs, IDs, or arXiv DOI values before the MCP call. The MCP tool itself does not search arbitrary strings.
 
 - If the agent cannot find a credible resolved identity for a reference, treat it as unresolved and do not include it in the tool call.
-- Do not ask the user to confirm agent-resolved arXiv URLs, IDs, or DOI values before calling `ingest_and_read`. Resolution confidence is part of the agent's job.
+- Do not ask the user to confirm agent-resolved arXiv URLs, IDs, or arXiv DOI values before calling `ingest_and_read`. Resolution confidence is part of the agent's job.
 
 ## Reporting contract
 

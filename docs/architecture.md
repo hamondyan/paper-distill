@@ -25,7 +25,7 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 ## Business MCP Surface
 
 - `discover_papers(query=None)` returns stateless, chat-only candidates for the agent to present.
-- `ingest_and_read(input_value)` captures resolved arXiv URLs, IDs, or DOI values into `raw/evidence/`.
+- `ingest_and_read(input_value)` captures resolved arXiv URLs, IDs, or arXiv DOI values into `raw/evidence/`.
 - `distill_paper(input_value, distilled=None)` resolves captured raw evidence and writes a canonical paper page when the agent supplies grounded frontmatter/body content.
 - `distill_papers(items)` runs the same distillation write workflow sequentially for a batch.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
@@ -40,7 +40,7 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 discover -> ingest resolved arXiv references -> distill_paper -> qmd update -> lint
 ```
 
-Discovery is stateless. The agent presents transient candidates in chat, resolves selected papers to arXiv URLs, IDs, or DOI values, then calls ingest with those resolved identities.
+Discovery is stateless. The agent presents transient candidates in chat, resolves selected papers to arXiv URLs, IDs, or arXiv DOI values, then calls ingest with those resolved identities.
 
 ## Failure Semantics
 
