@@ -294,14 +294,23 @@ source_url: https://arxiv.org/abs/2501.00001
 
             with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
                 with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock()) as capture_mock:
-                        from server.v3_ingest import ingest_and_read_v3
+                    with patch(
+                        "server.v3_ingest._read_markdown_note",
+                        side_effect=AssertionError("must not scan retired inbox"),
+                    ):
+                        with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock()) as capture_mock:
+                            from server.v3_ingest import ingest_and_read_v3
 
-                        result = asyncio.run(ingest_and_read_v3("approved"))
+                            result = asyncio.run(ingest_and_read_v3("approved"))
 
             self.assertFalse(result["ok"])
             self.assertEqual(result["items"], [])
             self.assertEqual(result["errors"], [])
+            self.assertEqual(result["captured_count"], 0)
+            self.assertEqual(result["error_count"], 0)
+            self.assertEqual(result["skipped_duplicates"], [])
+            self.assertEqual(result["resolved_inputs"], [])
+            self.assertEqual(result["unresolved_inputs"], [])
             self.assertIn("retired", result["error"])
             self.assertIn("arXiv", result["error"])
             self.assertEqual(capture_mock.await_count, 0)

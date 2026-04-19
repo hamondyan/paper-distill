@@ -163,6 +163,9 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
             "errors": [],
             "captured_count": 0,
             "error_count": 0,
+            "skipped_duplicates": [],
+            "resolved_inputs": [],
+            "unresolved_inputs": [],
         }
 
     input_items = _split_direct_input_items(input_value)
