@@ -127,7 +127,9 @@ def test_discover_papers_skips_items_without_identity_or_title(monkeypatch) -> N
     async def fake_score(*args, **kwargs):
         return [
             {"paper_id": "", "title": "Missing ID", "_score": 1.0},
+            {"paper_id": None, "title": "None ID", "_score": 1.0},
             {"paper_id": "arxiv:2501.00003", "title": "", "_score": 1.0},
+            {"paper_id": "arxiv:2501.00005", "title": None, "_score": 1.0},
             {
                 "paper_id": "arxiv:2501.00004",
                 "title": "Complete",
@@ -142,3 +144,24 @@ def test_discover_papers_skips_items_without_identity_or_title(monkeypatch) -> N
     result = asyncio.run(discover_papers_v3(query="robotics"))
 
     assert [item["paper_id"] for item in result["results"]] == ["arxiv:2501.00004"]
+
+
+def test_discover_papers_clamps_negative_scores_to_zero(monkeypatch) -> None:
+    async def fake_search(*args, **kwargs):
+        return [
+            {
+                "title": "Negative Score",
+                "paper_id": "arxiv:2501.00006",
+                "source_url": "https://arxiv.org/abs/2501.00006",
+            }
+        ]
+
+    async def fake_score(papers):
+        return [dict(papers[0], _score=-0.8)]
+
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
+
+    result = asyncio.run(discover_papers_v3(query="robotics"))
+
+    assert result["results"][0]["score"] == 0

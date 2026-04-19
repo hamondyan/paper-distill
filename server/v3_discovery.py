@@ -24,7 +24,7 @@ def _paper_score(paper: dict[str, Any]) -> int:
         return 0
     if 0 <= numeric <= 1:
         numeric *= 100
-    return int(round(numeric))
+    return max(0, min(100, int(round(numeric))))
 
 
 def _string_list(value: Any) -> list[str]:
@@ -34,8 +34,12 @@ def _string_list(value: Any) -> list[str]:
 
 
 def _candidate_result(paper: dict[str, Any]) -> dict[str, Any] | None:
-    pid = str(paper.get("paper_id", "")).strip()
-    title = str(paper.get("title", "")).strip()
+    pid_raw = paper.get("paper_id")
+    title_raw = paper.get("title")
+    if pid_raw is None or title_raw is None:
+        return None
+    pid = str(pid_raw).strip()
+    title = str(title_raw).strip()
     if not pid or not title:
         return None
 
