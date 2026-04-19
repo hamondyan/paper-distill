@@ -34,7 +34,7 @@ Discovery is stateless. It does not write `inbox/`, update a seen cache, store s
 
 Captures raw evidence for resolved arXiv papers.
 
-The agent can accept arXiv URLs, arXiv IDs, arXiv DOI values, exact titles, acronyms, aliases, project names, or mixed multi-paper requests. Natural references are resolved by the agent before calling the MCP tool. The MCP tool itself captures only resolved arXiv identities such as arXiv URLs, arXiv IDs, or arXiv DOI values.
+The command receives resolved arXiv URLs, IDs, or DOI values. Natural paper names must be resolved by the agent before invoking `/ingest`; the MCP tool itself captures only resolved arXiv identities.
 
 For mixed direct intake, report resolved arXiv inputs separately from unresolved user references. That makes it clear which papers were eligible for capture and which names still need lookup.
 
@@ -44,7 +44,7 @@ Examples:
 /ingest https://arxiv.org/abs/2410.24164
 /ingest 10.48550/arxiv.2410.24164
 /ingest 1706.03762
-/ingest openvla, octo, diffusion policy
+/ingest 10.48550/arxiv.2410.24164, 1706.03762
 ```
 
 ### Distill MCP Tools

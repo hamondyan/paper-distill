@@ -123,6 +123,11 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "/approve" not in commands
     assert "approve_papers" not in commands
     assert "ingest approved" not in commands
+    assert "exact titles" not in commands
+    assert "acronyms" not in commands
+    assert "aliases" not in commands
+    assert "project names" not in commands
+    assert "resolved arXiv URLs, IDs, or DOI values" in commands
     assert "/lint" in commands
     assert "/status" in commands
     assert "distill_paper" in commands
