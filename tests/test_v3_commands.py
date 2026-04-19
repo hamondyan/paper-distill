@@ -65,9 +65,20 @@ def test_public_command_docs_point_to_v3_tools() -> None:
     assert "qmd embed -f" in ingest_doc
     assert "lint_vault" in lint_doc
     assert "lint_vault" in status_doc
-    assert 'argument-hint: "[arxiv-url | arxiv-id | arxiv-doi | paper-title]"' in ingest_doc
+    assert 'argument-hint: "[arxiv-url | arxiv-id | arxiv-doi]"' in ingest_doc
+    assert "paper-title" not in ingest_doc
+    assert "acronym" not in ingest_doc
+    assert "/ingest approved" not in ingest_doc
     assert "approved" not in ingest_doc
     assert 'argument-hint: ""' in status_doc
+    assert "papers, concepts, ideas, conversations, raw evidence" in status_doc
+    assert "inbox" not in status_doc
+    assert "#approved" not in status_doc
+    assert "/ingest approved" not in status_doc
+    assert "pending approvals" not in status_doc
+    assert "inbox_stale" not in status_doc
+    assert "inbox pending" not in status_doc
+    assert "inbox approved" not in status_doc
     assert "paper_missing_required_fields" in status_doc
     assert "paper_key_concept_unlinked" in status_doc
     assert "concept_not_linked_in_body" not in status_doc
@@ -78,7 +89,7 @@ def test_ingest_command_documents_agent_resolved_batch_inputs() -> None:
 
     assert "agent resolves" in ingest_doc
     assert "multiple resolved arXiv" in ingest_doc
-    assert "openvla" in ingest_doc
+    assert "10.48550/arxiv.2410.24164, 1706.03762" in ingest_doc
 
 
 def test_public_docs_describe_v3_qmd_cutover() -> None:
