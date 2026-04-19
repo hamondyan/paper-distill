@@ -6,7 +6,7 @@ Installing Paper Distill means registering this checkout as a local plugin root 
 
 ## Install
 
-- Codex: register this checkout as a local plugin and point Codex at `.codex-plugin/plugin.json`.
+- Codex can install Paper Distill from the repo-local marketplace entry at `.agents/plugins/marketplace.json`, where `paper-distill` intentionally points at `./` so Codex resolves the repository root as the plugin root. Direct local registration through `.codex-plugin/plugin.json` still works.
 - Claude: register this checkout through `.claude-plugin/plugin.json`.
 - OpenClaw: register this checkout through the shared `.mcp.json` runtime.
 

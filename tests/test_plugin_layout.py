@@ -169,6 +169,16 @@ def test_plugin_docs_and_manifests_describe_root_as_plugin() -> None:
     assert "Claude compatibility manifest" in claude_manifest["description"]
 
 
+def test_root_marketplace_docs_explain_repo_local_discovery() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    installation = (REPO_ROOT / "docs" / "plugin-installation.md").read_text(encoding="utf-8")
+
+    assert "repo-local marketplace" in readme
+    assert ".agents/plugins/marketplace.json" in installation
+    assert "points at `./`" in installation
+    assert "Codex can install Paper Distill from the repo-local marketplace entry" in installation
+
+
 def test_repo_local_marketplace_entry_points_at_root_plugin() -> None:
     marketplace = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
     entry = next(plugin for plugin in marketplace["plugins"] if plugin["name"] == "paper-distill")
