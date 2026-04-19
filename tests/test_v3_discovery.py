@@ -53,6 +53,8 @@ def test_discover_papers_returns_ranked_chat_results_without_writing_vault(
             "title": "Attention Is All You Need",
             "score": 91,
             "source_url": "https://arxiv.org/abs/1706.03762",
+            "arxiv_id": "1706.03762",
+            "arxiv_url": "https://arxiv.org/abs/1706.03762",
             "abstract": "Transformer paper.",
             "venue": "NeurIPS",
             "year": 2017,
@@ -95,6 +97,36 @@ def test_discover_papers_scores_results_before_returning(monkeypatch) -> None:
 
     assert len(score_calls) == 1
     assert result["results"][0]["score"] == 42
+
+
+def test_discover_papers_exposes_ingestable_arxiv_identity(monkeypatch) -> None:
+    async def fake_search(*args, **kwargs):
+        return [
+            {
+                "title": "Arxiv Native Candidate",
+                "paper_id": "arxiv:2501.00001",
+                "arxiv_id": "2501.00001",
+            }
+        ]
+
+    async def fake_score(papers):
+        return [
+            {
+                "title": "Arxiv Native Candidate",
+                "paper_id": "arxiv:2501.00001",
+                "arxiv_id": "2501.00001",
+                "_score": 0.8,
+            }
+        ]
+
+    monkeypatch.setattr("server.v3_discovery.query_paper_sources_v3", fake_search)
+    monkeypatch.setattr("server.v3_discovery.score_papers_v3", fake_score, raising=False)
+
+    result = asyncio.run(discover_papers_v3(query="robotics"))
+
+    assert result["results"][0]["source_url"] == "https://arxiv.org/abs/2501.00001"
+    assert result["results"][0]["arxiv_id"] == "2501.00001"
+    assert result["results"][0]["arxiv_url"] == "https://arxiv.org/abs/2501.00001"
 
 
 def test_discover_papers_is_stateless_between_runs(monkeypatch) -> None:

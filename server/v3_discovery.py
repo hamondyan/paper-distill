@@ -3,17 +3,35 @@ from __future__ import annotations
 from typing import Any
 
 from server.config import ConfigError
-from server.paper_utils import canonical_item_url
+from server.paper_utils import canonical_item_url, extract_arxiv_id
 from server.v3_scoring import query_paper_sources_v3, score_papers_v3
 
 
+def _paper_arxiv_id(paper: dict[str, Any]) -> str:
+    for key in ("arxiv_id", "paper_id", "doi", "url", "source_url", "canonical_item_url"):
+        value = paper.get(key)
+        if not value:
+            continue
+        arxiv_id = extract_arxiv_id(str(value))
+        if arxiv_id:
+            return arxiv_id
+    return ""
+
+
 def _paper_source_url(paper: dict[str, Any]) -> str:
-    return str(
-        paper.get("source_url")
-        or paper.get("canonical_item_url")
-        or canonical_item_url(paper)
-        or ""
-    ).strip()
+    explicit_source_url = str(paper.get("source_url") or "").strip()
+    if explicit_source_url:
+        return explicit_source_url
+
+    explicit_canonical_item_url = str(paper.get("canonical_item_url") or "").strip()
+    if explicit_canonical_item_url:
+        return explicit_canonical_item_url
+
+    arxiv_id = _paper_arxiv_id(paper)
+    if arxiv_id:
+        return f"https://arxiv.org/abs/{arxiv_id}"
+
+    return str(canonical_item_url(paper) or "").strip()
 
 
 def _paper_score(paper: dict[str, Any]) -> int:
@@ -49,6 +67,10 @@ def _candidate_result(paper: dict[str, Any]) -> dict[str, Any] | None:
         "score": _paper_score(paper),
         "source_url": _paper_source_url(paper),
     }
+    arxiv_id = _paper_arxiv_id(paper)
+    if arxiv_id:
+        result["arxiv_id"] = arxiv_id
+        result["arxiv_url"] = f"https://arxiv.org/abs/{arxiv_id}"
     for key in ("abstract", "venue", "year", "best_topic"):
         value = paper.get(key)
         if value not in (None, ""):
