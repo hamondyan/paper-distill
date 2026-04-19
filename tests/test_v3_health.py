@@ -421,12 +421,14 @@ def test_lint_vault_ignores_retired_inbox_notes(tmp_path: Path) -> None:
     inbox_dir = tmp_path / "inbox"
     inbox_dir.mkdir(parents=True)
     inbox_dir.joinpath("stale.md").write_text(
-        '---\ntype: inbox_stub\ndiscovered_at: "2025-01-01"\n---\n\nsome note\n',
+        '---\ntype: inbox_stub\ndiscovered_at: "2025-01-01"\n---\n\n[[ Missing ]] [[Unknown]]\n',
         encoding="utf-8",
     )
 
     result = lint_vault_v3(tmp_path, today=date(2026, 4, 18))
 
+    assert not any("/inbox/" in issue["path"] for issue in result["issues"] if "path" in issue)
+    assert not any(issue["path"].endswith("/inbox/stale.md") for issue in result["issues"] if "path" in issue)
     assert not any(i["code"] == "inbox_stale" for i in result["issues"])
 
 

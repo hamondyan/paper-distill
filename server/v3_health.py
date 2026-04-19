@@ -394,7 +394,10 @@ def lint_vault_v3(
 ) -> dict[str, Any]:
     known_surfaces, concept_surfaces, issues = _known_surfaces_and_alias_issues(vault_path)
     known_paper_ids = _paper_id_index(vault_path / "raw" / "evidence")
+    inbox_root = vault_path / "inbox"
     for path in sorted(vault_path.rglob("*.md")):
+        if inbox_root in path.parents:
+            continue
         text = path.read_text(encoding="utf-8")
         frontmatter, body, _has_frontmatter = split_frontmatter(text)
         if path.parent.name == "papers" and path.parent.parent.name == "wiki":
