@@ -109,13 +109,18 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "distill_papers(items)" in architecture
     assert "docs/qmd-cli.md" in commands
     assert "/discover" in commands
-    assert "/approve" in commands
+    assert "/approve" not in commands
+    assert "approve_papers" not in commands
+    assert "ingest approved" not in commands
     assert "/lint" in commands
     assert "/status" in commands
     assert "distill_paper" in commands
+    assert "discover -> ingest resolved arXiv references -> distill_paper -> qmd update -> lint" in commands
     assert "paper pages without matching raw evidence" in commands
     assert "decorative concept links" in commands
-    assert "conversations, inbox pending, inbox approved, raw evidence" in commands
+    assert "papers, concepts, ideas, conversations, raw evidence" in commands
+    assert "inbox pending" not in commands
+    assert "inbox approved" not in commands
     assert "/get" not in commands
     assert "1-to-5 range" in frontmatter
     assert "paper_without_raw_evidence" in frontmatter
