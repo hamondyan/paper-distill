@@ -30,7 +30,7 @@ Configuration lives only in the repository-root `settings.json`. `server/config.
 | `qmd` | object | QMD executable settings. |
 | `topics` | object | Named research directions used by discovery and scoring. |
 | `search` | object | Source selection and result caps. |
-| `workflow` | object | Inbox card and discovery selection behavior. |
+| `workflow` | object | Discovery candidate limits and capture eligibility preferences. |
 | `capture` | object | arXiv capture cleaning and fidelity controls. |
 | `venue` | object | Venue authority order. |
 | `scoring` | object | Discovery ranking weights and venue tiers. |
@@ -57,7 +57,6 @@ Configuration lives only in the repository-root `settings.json`. `server/config.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `workflow.detailed_inbox_cards` | boolean | Write detailed inbox stubs. |
 | `workflow.max_candidates_per_topic` | integer | Limit candidates retained for each topic. |
 | `workflow.diversity_cap_per_cluster` | integer | Limit near-duplicate title clusters. |
 | `workflow.require_arxiv_binding` | boolean | Prefer candidates with arXiv capture support. |

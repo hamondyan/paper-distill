@@ -46,7 +46,6 @@ async def main():
     tools = await mcp.list_tools()
     names = sorted(tool.name for tool in tools)
     required = {
-        "approve_papers",
         "discover_papers",
         "ingest_and_read",
         "distill_paper",

@@ -1,6 +1,6 @@
 # Paper Distill
 
-Paper Distill is a Markdown-first research knowledge system for discovering papers, approving capture in chat, preserving raw evidence, and turning papers into canonical wiki pages.
+Paper Distill is a Markdown-first research knowledge system for chat-only discovery, direct paper capture, preserving raw evidence, and turning papers into canonical wiki pages.
 
 v3.0 uses qmd as the read/index path, keeps Markdown as the source of truth, and gives business workflows to a small MCP surface.
 
@@ -10,8 +10,8 @@ Most research stacks are good at one layer and fuzzy everywhere else: they can s
 
 Paper Distill is built around those boundaries:
 
-- discovery writes inbox stubs instead of pretending capture already happened
-- approval is explicit and user-driven
+- discovery returns transient candidates in chat instead of pretending capture already happened
+- capture is explicit and user-driven
 - raw evidence is preserved before synthesis
 - canonical pages are written through schema-validated tools
 - retrieval and indexing go through QMD CLI instead of custom wrapper commands
@@ -20,9 +20,9 @@ The result is a vault that stays readable as plain Markdown while still being us
 
 ## What It Does
 
-- Discover candidate papers from configured topics or direct research queries.
-- Approve capture from chat without exposing users to internal inbox mechanics.
-- Ingest approved notes or direct arXiv references into `raw/evidence/`.
+- Discover candidate papers from configured topics or direct research queries as chat-only discovery results.
+- Capture selected papers from resolved arXiv URLs, IDs, or DOI values.
+- Ingest direct arXiv references into `raw/evidence/`.
 - Distill captured papers into canonical `wiki/papers/` pages with required metadata and concept links.
 - Maintain canonical concept pages, idea notes, and conversation insights through deterministic write tools.
 - Audit vault health with schema-aware linting and a high-level `/status` snapshot.
@@ -32,10 +32,10 @@ The result is a vault that stays readable as plain Markdown while still being us
 The normal workflow is:
 
 ```text
-/discover -> approve in chat -> /ingest approved -> distill_paper -> qmd update -> /lint
+/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|DOI> -> raw evidence -> distill_paper -> qmd update -> /lint
 ```
 
-Direct ingestion is also available when you already know the paper identity:
+Direct ingestion is available when you already know the paper identity:
 
 ```text
 /ingest https://arxiv.org/abs/2410.24164
@@ -50,14 +50,14 @@ The agent resolves natural references to arXiv identities before capture. After 
 
 Paper Distill has three clear surfaces:
 
-1. Markdown vault: the durable knowledge layer under `inbox/`, `raw/evidence/`, `wiki/`, and `insights/`
-2. Business MCP: discovery, approval, ingest, deterministic writes, concept maintenance, and linting
+1. Markdown vault: the durable knowledge layer under `raw/evidence/`, `wiki/`, and `insights/`
+2. Business MCP: discovery, ingest, deterministic writes, concept maintenance, and linting
 3. QMD CLI: query, get, status, collections, contexts, and index refresh
 
 In practice that means:
 
 - QMD CLI is the only read/index path.
-- Paper Distill business MCP tools own discovery, approved ingest, deterministic writes, and linting.
+- Paper Distill business MCP tools own discovery, direct ingest, deterministic writes, and linting.
 - `qmd update` and `qmd embed -f` are explicit follow-up steps, not hidden side effects.
 - Markdown files remain inspectable and editable as project artifacts, but canonical writes are routed through tools so validation stays enforced.
 
@@ -100,8 +100,7 @@ uv run paper-distill-server
 
 ```text
 /discover
-/approve <paper id or path>
-/ingest approved
+/ingest 10.48550/arxiv.2410.24164
 qmd query "your topic"
 ```
 
@@ -120,8 +119,7 @@ For host-specific installation and uninstall notes, see [docs/plugin-installatio
 | Command | Use it when | Backing surface |
 | --- | --- | --- |
 | `/discover` | you want new papers, a daily digest, or a topic search | `discover_papers` |
-| `/approve` | you want to accept recommended candidates from chat | `approve_papers` |
-| `/ingest` | you want to capture approved notes or direct arXiv references | `ingest_and_read` |
+| `/ingest` | you want to capture resolved arXiv URLs, IDs, or DOI values | `ingest_and_read` |
 | MCP `distill_paper(s)` | you want to turn captured evidence into canonical paper pages | `distill_paper`, `distill_papers` |
 | `/lint` | you want a structural and weak-link audit of the vault | `lint_vault` |
 | `/status` | you want a quick health snapshot and next action | agent-side summary |
@@ -134,7 +132,6 @@ Installed agents also receive a short capability index at session start: use `di
 
 ```text
 vault/
-├── inbox/
 ├── raw/evidence/
 ├── wiki/papers/
 ├── wiki/concepts/

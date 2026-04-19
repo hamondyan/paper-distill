@@ -1,16 +1,13 @@
 # Ingest Rules — Detail
 
-`ingest_and_read` has two modes:
-
-- `ingest_and_read(input_value="approved")` reads every inbox note whose body contains the plain `#approved` marker and captures the source to `raw/evidence/`.
-- `ingest_and_read(input_value=<identifier_or_batch>)` accepts one or many arXiv URLs, arXiv IDs, or arXiv DOI values in a single call.
+`ingest_and_read(input_value=<identifier_or_batch>)` accepts one or many arXiv URLs, arXiv IDs, or arXiv DOI values in a single call.
 
 ## Natural reference resolution
 
-Natural references — titles, project names, acronyms, aliases — must be resolved by the agent to arXiv URLs before the MCP call. The MCP tool itself does not search arbitrary strings.
+Natural references — titles, project names, acronyms, aliases — must be resolved by the agent to arXiv URLs, IDs, or DOI values before the MCP call. The MCP tool itself does not search arbitrary strings.
 
-- If the agent cannot find a credible arXiv URL for a reference, treat it as unresolved and do not include it in the tool call.
-- Do not ask the user to confirm agent-resolved arXiv URLs before calling `ingest_and_read`. Resolution confidence is part of the agent's job.
+- If the agent cannot find a credible resolved identity for a reference, treat it as unresolved and do not include it in the tool call.
+- Do not ask the user to confirm agent-resolved arXiv URLs, IDs, or DOI values before calling `ingest_and_read`. Resolution confidence is part of the agent's job.
 
 ## Reporting contract
 

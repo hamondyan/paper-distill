@@ -18,7 +18,7 @@ escape_for_json() {
     printf '%s' "$s"
 }
 
-fallback_context_text="You have Paper Distill v3 installed. Use paper-intake for discover, approve, and ingest; paper-distillation for captured evidence; knowledge-workbench for QMD reads, writes, merges, and lint; idea-workbench for insights; qmd-reference for QMD syntax."
+fallback_context_text="You have Paper Distill v3 installed. Use paper-intake for chat-only discovery, resolved direct ingest, and captured evidence; paper-distillation for canonical paper pages; knowledge-workbench for QMD reads, writes, merges, and lint; idea-workbench for insights; qmd-reference for QMD syntax."
 context_text="$(
     python3 "${REPO_ROOT}/server/agent_capabilities.py" 2>/dev/null \
         || printf '%s\n' "${fallback_context_text}"

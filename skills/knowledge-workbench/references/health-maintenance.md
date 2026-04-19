@@ -16,7 +16,6 @@
 - `paper_too_many_concept_links` — a paper page links more than five concepts. Keep the important ones and turn the rest into prose.
 - `concept_missing_supporting_paper` — a concept page has no `related_papers_topk`. Add at least one supporting paper or delete the page.
 - `paper_without_raw_evidence` — a canonical paper page has no matching `raw/evidence/` file for its `paper_id`. Repair the capture trail before treating the page as canonical.
-- `inbox_stale` — an inbox note has sat unapproved for more than the stale threshold. Either approve it, reject it, or clean it out.
 
 ## When to run `qmd update`
 

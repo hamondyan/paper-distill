@@ -7,6 +7,6 @@ user-invocable: true
 
 Call `discover_papers` to run the v3 discovery flow.
 
-This searches paper sources, scores and ranks candidates, and returns the results directly to the agent for presentation in chat. It does not write `inbox/`, update a seen cache, approve papers, or ingest anything.
+This searches paper sources, scores and ranks candidates, and returns the results directly to the agent for presentation in chat. It stores no selection state and does not ingest anything.
 
 After discovery, help the user choose candidates from the current chat result. To capture a paper, resolve the chosen item to an arXiv URL, arXiv ID, or arXiv DOI and call `/ingest` with that resolved identity.

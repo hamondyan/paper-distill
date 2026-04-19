@@ -6,14 +6,12 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 
 ## Storage Layers
 
-- `inbox/` holds discovery candidates for human approval.
 - `raw/evidence/` holds captured source evidence.
 - `wiki/papers/` holds agent-owned canonical paper pages.
 - `wiki/concepts/` holds agent-owned canonical concept pages.
 - `insights/ideas/` holds idea assets written through Python tools.
 - `insights/conversations/` holds distilled conversation insights written through Python tools.
 - `exports/presentations/` is the direct-written delivery area.
-- `.state/` holds operational state such as the seen-paper cache.
 - `vault-log.md` records vault actions.
 
 ## Read And Index Surface
@@ -26,9 +24,8 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 
 ## Business MCP Surface
 
-- `discover_papers(query=None)` writes inbox stubs and updates `.state/seen_papers.json`.
-- `approve_papers(input_value)` marks selected inbox stubs approved from chat or explicit paper IDs/paths.
-- `ingest_and_read(input_value)` captures approved inbox notes or agent-resolved natural references and batch arXiv identities into `raw/evidence/`.
+- `discover_papers(query=None)` returns stateless, chat-only candidates for the agent to present.
+- `ingest_and_read(input_value)` captures resolved arXiv URLs, IDs, or DOI values into `raw/evidence/`.
 - `distill_paper(input_value, distilled=None)` resolves captured raw evidence and writes a canonical paper page when the agent supplies grounded frontmatter/body content.
 - `distill_papers(items)` runs the same distillation write workflow sequentially for a batch.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
@@ -40,10 +37,10 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 ## First-Release Flow
 
 ```text
-discover -> approve in chat -> ingest -> distill_paper -> qmd update -> lint
+discover -> ingest resolved arXiv references -> distill_paper -> qmd update -> lint
 ```
 
-Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest, but users still approve through the agent and `approve_papers` writes that marker for them.
+Discovery is stateless. The agent presents transient candidates in chat, resolves selected papers to arXiv URLs, IDs, or DOI values, then calls ingest with those resolved identities.
 
 ## Failure Semantics
 

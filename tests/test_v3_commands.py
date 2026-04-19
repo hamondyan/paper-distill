@@ -116,17 +116,16 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
 
     assert "qmd as the read/index path" in readme
     assert "docs/qmd-cli.md" in readme
-    assert "approve in chat" in readme
-    assert "add #approved in inbox note" not in readme
+    assert "chat-only discovery" in readme
+    assert "inbox/" not in readme
     assert "qmd-cli.md" in docs_index
-    assert "approving capture from chat, reading through QMD CLI" in docs_index
-    assert "approving capture from chat or inbox notes" not in docs_index
+    assert "chat-only discovery" in docs_index
     assert "paper-distill-admin bootstrap" in installation
     assert "creates the vault layout and initializes the QMD collections and contexts" in installation
     assert "docs/qmd-cli.md" in installation
     assert "QMD CLI is the only read/index path" in architecture
     assert "business MCP" in architecture
-    assert "discover -> approve in chat -> ingest -> distill_paper -> qmd update -> lint" in architecture
+    assert "discover -> ingest resolved arXiv references -> distill_paper -> qmd update -> lint" in architecture
     assert "distill_paper(input_value, distilled=None)" in architecture
     assert "distill_papers(items)" in architecture
     assert "docs/qmd-cli.md" in commands
@@ -151,6 +150,7 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "/get" not in commands
     assert "1-to-5 range" in frontmatter
     assert "paper_without_raw_evidence" in frontmatter
+    assert "Inbox Stub" not in frontmatter
     assert "agent-authored canonical pages usually use `wiki`" in frontmatter
     assert "uv run python -m pytest -q" in testing
     assert "uv run python -m compileall -q server tests" in testing
@@ -173,6 +173,11 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "qmd ls" in qmd_cli
     assert "kb_search" not in vault_layout
     assert "kb_get" not in vault_layout
+    assert "seen_papers.json" not in vault_layout
+    public_docs = "\n".join([readme, docs_index, installation, architecture, commands, frontmatter, testing, vault_layout, qmd_cli])
+    assert "/ingest approved" not in public_docs
+    assert "approve_papers" not in public_docs
+    assert "#approved" not in public_docs
 
 
 def test_mcp_surface_exposes_business_tools_only() -> None:

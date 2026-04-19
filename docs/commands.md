@@ -28,7 +28,7 @@ Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd q
 
 Runs discovery using configured topics or a user-supplied query, scores candidates, and returns results directly to the agent for presentation in chat.
 
-Discovery is stateless. It does not write `inbox/`, update a seen cache, store selection state, or ingest papers. After discovery, the agent helps the user choose candidates from the current chat result and resolves chosen papers to arXiv URLs, IDs, or DOI values before capture.
+Discovery is stateless. It returns transient candidates, stores no selection state, and does not ingest papers. After discovery, the agent helps the user choose candidates from the current chat result and resolves chosen papers to arXiv URLs, IDs, or DOI values before capture.
 
 ### `/ingest`
 

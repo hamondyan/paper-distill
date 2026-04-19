@@ -125,10 +125,11 @@ def test_skills_route_through_v3_tools_only() -> None:
 
     assert "discover_papers" in skill_docs["paper-intake"]
     assert "ingest_and_read" in skill_docs["paper-intake"]
-    assert "#approved" in skill_docs["paper-intake"]
+    assert "chat-only" in skill_docs["paper-intake"]
     assert "raw/evidence" in skill_docs["paper-intake"]
     assert "docs/qmd-cli.md" in skill_docs["paper-intake"]
     assert "qmd --help" in skill_docs["paper-intake"]
+    assert "#approved" not in skill_docs["paper-intake"]
 
     assert "qmd query" in skill_docs["knowledge-workbench"]
     assert "qmd get" in skill_docs["knowledge-workbench"]

@@ -2,21 +2,6 @@
 
 YAML frontmatter is intentionally small. Body content carries the research prose; frontmatter carries routing and lookup metadata.
 
-## Inbox Stub
-
-Written by `discover_papers` under `inbox/`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | string | `inbox_stub`. |
-| `paper_id` | string | Stable source identifier. |
-| `title` | string | Paper title. |
-| `source_url` | string | Canonical source URL when available. |
-| `discovered_at` | date | Discovery date. |
-| `score` | number | Rounded discovery score. |
-
-Approval is not a frontmatter field. Only a plain `#approved` tag in the note body counts.
-
 ## Raw Evidence
 
 Written by `ingest_and_read` under `raw/evidence/`.

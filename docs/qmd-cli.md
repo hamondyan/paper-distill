@@ -9,13 +9,12 @@ Use this document for the Paper Distill mapping, then verify uncertain syntax wi
 This is the normal read/index path in this repo:
 
 ```text
-discover/approve/ingest with Paper Distill -> read with qmd query/get -> write with business MCP -> refresh with qmd update and qmd embed -f when needed
+discover/direct ingest with Paper Distill -> read with qmd query/get -> write with business MCP -> refresh with qmd update and qmd embed -f when needed
 ```
 
 Paper Distill business MCP is for:
 
 - `discover_papers`
-- `approve_papers`
 - `ingest_and_read`
 - `distill_paper`
 - `distill_papers`
@@ -125,7 +124,7 @@ qmd ls canon-concepts/retrieval
 
 ## Working Rhythm
 
-1. Use Paper Distill MCP for business actions such as discovery, approved ingest, canonical page writes, concept merges, and linting.
+1. Use Paper Distill MCP for business actions such as chat-only discovery, direct ingest, canonical page writes, concept merges, and linting.
 2. Use `qmd query` and `qmd get` for reading.
 3. Use `qmd status`, `qmd collection ...`, and `qmd context ...` for health checks.
 4. After write-heavy work, run `qmd update`.

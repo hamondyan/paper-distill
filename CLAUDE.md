@@ -12,10 +12,10 @@ Agent-specific guidance for Paper Distill. Rules here are load-bearing across co
 ## Core Flow
 
 ```
-/discover -> approve in chat -> /ingest approved -> paper-distillation skill or distill_paper writes wiki page -> /lint
+/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|DOI> -> raw evidence -> paper-distillation skill or distill_paper writes wiki page -> /lint
 ```
 
-Direct ingestion (`/ingest <arxiv-url|arxiv-id|arxiv-doi|paper-title>`) skips the inbox step; the rest of the flow is identical.
+The agent resolves natural paper names before capture. Do not pass unresolved titles, acronyms, aliases, or project names to the MCP ingest tool.
 
 ## Insights Triggers
 
@@ -32,7 +32,7 @@ Offer, do not auto-write. Present the candidate in one or two sentences and let 
 
 ## When To Use Which Skill
 
-- `paper-intake` — discovery, approval parsing, capture to `raw/evidence/`.
+- `paper-intake` — chat-only discovery and direct capture to `raw/evidence/`.
 - `paper-distillation` — `raw/evidence/` → `wiki/papers/` cognitive step.
 - `knowledge-workbench` — research questions against the vault, concept maintenance, lint triage.
 - `idea-workbench` — generating and curating `insights/ideas/` and `insights/conversations/`.
