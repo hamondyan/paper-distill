@@ -110,7 +110,8 @@ When installed as a namespaced plugin, slash commands may appear with a plugin p
 ## Plugin Root
 
 Paper Distill uses the repository root as the plugin root. Installation means registering this checkout with the host rather than moving the project into a separate plugin bundle.
-Codex can also discover Paper Distill from the repo-local marketplace at `.agents/plugins/marketplace.json`, where the `paper-distill` entry intentionally points at the repository root.
+Codex can also discover Paper Distill from the repo-local marketplace at `.agents/plugins/marketplace.json`.
+The `paper-distill` entry intentionally points at the repository root.
 
 For host-specific installation and uninstall notes, see [docs/plugin-installation.md](docs/plugin-installation.md).
 
