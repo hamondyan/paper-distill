@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +9,6 @@ from server.v3_followup import FOLLOW_UP
 from server.v3_markdown import render_markdown, split_frontmatter
 from server.v3_names import slugify, surface_key
 
-INBOX_STALE_DAYS = 30
 _PAPER_REQUIRED_STRING_FIELDS = ("paper_id", "title", "venue", "source_layer")
 
 
@@ -390,52 +389,6 @@ def _paper_without_raw_evidence_issues(
     ]
 
 
-def _parse_discovered_at(value: Any) -> date | None:
-    if not isinstance(value, str):
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text).date()
-    except ValueError:
-        try:
-            return date.fromisoformat(text[:10])
-        except ValueError:
-            return None
-
-
-def _inbox_stale_issues(
-    vault_path: Path, today: date, stale_after_days: int
-) -> list[dict[str, str]]:
-    inbox_dir = vault_path / "inbox"
-    if not inbox_dir.is_dir():
-        return []
-    cutoff = today - timedelta(days=stale_after_days)
-    issues: list[dict[str, str]] = []
-    for path in sorted(inbox_dir.rglob("*.md")):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        frontmatter, body, _ = split_frontmatter(text)
-        if "#approved" in body:
-            continue
-        discovered = _parse_discovered_at(frontmatter.get("discovered_at"))
-        if discovered is None or discovered > cutoff:
-            continue
-        age_days = (today - discovered).days
-        issues.append(
-            {
-                "code": "inbox_stale",
-                "path": str(path),
-                "discovered_at": discovered.isoformat(),
-                "age_days": str(age_days),
-            }
-        )
-    return issues
-
-
 def lint_vault_v3(
     vault_path: Path, *, today: date | None = None
 ) -> dict[str, Any]:
@@ -458,7 +411,6 @@ def lint_vault_v3(
             issues.extend(_malformed_link_issues(path, text))
             issues.extend(_repeated_link_issues(path, text))
             issues.extend(_link_quality_issues(path, text, known_surfaces))
-    issues.extend(_inbox_stale_issues(vault_path, today or date.today(), INBOX_STALE_DAYS))
     return {"ok": True, "issues": issues}
 
 

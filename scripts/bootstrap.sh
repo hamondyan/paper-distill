@@ -12,7 +12,6 @@ fi
 
 echo "Creating Paper Distill v3 vault structure at: ${VAULT_PATH}"
 
-mkdir -p "${VAULT_PATH}/inbox"
 mkdir -p "${VAULT_PATH}/raw/evidence"
 mkdir -p "${VAULT_PATH}/wiki/papers"
 mkdir -p "${VAULT_PATH}/wiki/concepts"
@@ -20,12 +19,6 @@ mkdir -p "${VAULT_PATH}/insights/ideas"
 mkdir -p "${VAULT_PATH}/insights/conversations"
 mkdir -p "${VAULT_PATH}/exports/presentations"
 mkdir -p "${VAULT_PATH}/.state"
-
-if [[ ! -f "${VAULT_PATH}/.state/seen_papers.json" ]]; then
-  cat > "${VAULT_PATH}/.state/seen_papers.json" << 'EOF'
-{}
-EOF
-fi
 
 if [[ ! -f "${VAULT_PATH}/vault-log.md" ]]; then
   cat > "${VAULT_PATH}/vault-log.md" << 'EOF'
@@ -42,12 +35,11 @@ echo ""
 echo "Vault root: ${VAULT_PATH}"
 echo ""
 echo "Directories created:"
-echo "  inbox/"
 echo "  raw/evidence/"
 echo "  wiki/papers/"
 echo "  wiki/concepts/"
 echo "  insights/ideas/"
 echo "  insights/conversations/"
 echo "  exports/presentations/"
-echo "  .state/seen_papers.json"
+echo "  .state/"
 echo "  vault-log.md"

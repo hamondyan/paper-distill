@@ -18,17 +18,18 @@ def test_bootstrap_script_uses_direct_v3_layout() -> None:
 
         root = Path(tmpdir)
         for rel_path in (
-            "inbox",
             "raw/evidence",
             "wiki/papers",
             "wiki/concepts",
             "insights/ideas",
             "insights/conversations",
             "exports/presentations",
-            ".state/seen_papers.json",
+            ".state",
             "vault-log.md",
         ):
             assert (root / rel_path).exists()
 
+        assert not (root / "inbox").exists()
+        assert not (root / ".state" / "seen_papers.json").exists()
         assert not (root / "Paper Distill").exists()
         assert not (root / "index.md").exists()

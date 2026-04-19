@@ -5,7 +5,6 @@ from pathlib import Path
 
 
 V3_DIRS = (
-    "inbox",
     "raw/evidence",
     "wiki/papers",
     "wiki/concepts",
@@ -34,11 +33,6 @@ def ensure_v3_layout(vault_path: Path) -> dict[str, list[str]]:
         if not path.exists():
             path.mkdir(parents=True, exist_ok=True)
             created.append(rel)
-
-    seen_path = vault_path / ".state" / "seen_papers.json"
-    if not seen_path.exists():
-        seen_path.write_text("{}\n", encoding="utf-8")
-        created.append(".state/seen_papers.json")
 
     log_path = vault_path / "vault-log.md"
     if not log_path.exists():

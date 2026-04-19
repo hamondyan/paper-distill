@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from server.server import mcp
-from server.v3_health import INBOX_STALE_DAYS, lint_vault_v3, merge_concept_v3
+from server.v3_health import lint_vault_v3, merge_concept_v3
 from tests.helpers import read_frontmatter as _read_frontmatter
 
 
@@ -417,31 +417,17 @@ def test_lint_vault_does_not_flag_paper_with_matching_raw_evidence(tmp_path: Pat
     assert not any(i["code"] == "paper_without_raw_evidence" for i in result["issues"])
 
 
-def test_lint_vault_flags_stale_inbox_notes(tmp_path: Path) -> None:
+def test_lint_vault_ignores_retired_inbox_notes(tmp_path: Path) -> None:
     inbox_dir = tmp_path / "inbox"
     inbox_dir.mkdir(parents=True)
-    today = date(2026, 4, 18)
-    stale_day = (today - timedelta(days=INBOX_STALE_DAYS + 5)).isoformat()
-    fresh_day = (today - timedelta(days=3)).isoformat()
     inbox_dir.joinpath("stale.md").write_text(
-        f'---\ntype: inbox_stub\ndiscovered_at: "{stale_day}"\n---\n\nsome note\n',
-        encoding="utf-8",
-    )
-    inbox_dir.joinpath("approved.md").write_text(
-        f'---\ntype: inbox_stub\ndiscovered_at: "{stale_day}"\n---\n\n#approved\n',
-        encoding="utf-8",
-    )
-    inbox_dir.joinpath("fresh.md").write_text(
-        f'---\ntype: inbox_stub\ndiscovered_at: "{fresh_day}"\n---\n\nstill deciding\n',
+        '---\ntype: inbox_stub\ndiscovered_at: "2025-01-01"\n---\n\nsome note\n',
         encoding="utf-8",
     )
 
-    result = lint_vault_v3(tmp_path, today=today)
-    stale = [i for i in result["issues"] if i["code"] == "inbox_stale"]
+    result = lint_vault_v3(tmp_path, today=date(2026, 4, 18))
 
-    assert len(stale) == 1
-    assert stale[0]["path"].endswith("stale.md")
-    assert int(stale[0]["age_days"]) >= INBOX_STALE_DAYS
+    assert not any(i["code"] == "inbox_stale" for i in result["issues"])
 
 
 def test_merge_concept_rewrites_links_updates_aliases_and_returns_follow_up(
