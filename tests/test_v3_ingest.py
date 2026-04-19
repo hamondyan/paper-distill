@@ -230,80 +230,6 @@ class V3IngestTest(unittest.TestCase):
         self.assertEqual(result["error_count"], 0)
         self.assertEqual(result["skipped_duplicates"], ["2405.12213", "2405.12213"])
 
-    def test_approved_body_accepts_only_plain_body_tags(self) -> None:
-        from server.v3_ingest import _approved_body
-
-        self.assertTrue(_approved_body("#approved"))
-        self.assertTrue(_approved_body("  #approved  "))
-        self.assertTrue(_approved_body("#approved #robotics"))
-        self.assertTrue(_approved_body("Intro text.\n\n#approved #robotics\n"))
-
-        self.assertFalse(_approved_body("not #approved yet"))
-        self.assertFalse(_approved_body("> #approved"))
-        self.assertFalse(_approved_body("`#approved`"))
-        self.assertFalse(_approved_body("```\n#approved\n```"))
-        self.assertFalse(_approved_body("```markdown\n#approved\n```\n# pending"))
-
-    def test_approved_inbox_mode_only_ingests_body_marked_notes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vault_root = Path(tmpdir)
-            inbox_dir = vault_root / "inbox" / "2026-04-15"
-            inbox_dir.mkdir(parents=True)
-
-            approved_note = inbox_dir / "approved.md"
-            approved_note.write_text(
-                """---
-paper_id: arxiv:2501.00001
-title: Approved Paper
-source_url: https://arxiv.org/abs/2501.00001
----
-
-This note is ready for ingest.
-#approved
-""",
-                encoding="utf-8",
-            )
-            frontmatter_only_note = inbox_dir / "frontmatter-only.md"
-            frontmatter_only_note.write_text(
-                """---
-paper_id: arxiv:2501.00002
-title: Not Yet Approved
-source_url: https://arxiv.org/abs/2501.00002
-body: "#approved"
----
-
-This note is still pending review.
-""",
-                encoding="utf-8",
-            )
-
-            captured = _cleaned_doc("Approved Paper", "# Approved Paper\n\nBody text.")
-
-            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
-                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch(
-                        "server.v3_ingest.capture_arxiv_source",
-                        new=AsyncMock(return_value=captured),
-                    ) as capture_mock:
-                        from server.v3_ingest import ingest_and_read_v3
-
-                        result = asyncio.run(ingest_and_read_v3("approved"))
-
-            self.assertEqual(capture_mock.await_count, 1)
-            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00001")
-            raw_path = Path(result["items"][0]["path"])
-            self.assertEqual(raw_path.name, paper_filename("Approved Paper", "arxiv:2501.00001"))
-            self.assertTrue(raw_path.exists())
-
-            frontmatter = _read_frontmatter(raw_path)
-            self.assertEqual(frontmatter["type"], "raw_evidence")
-            self.assertEqual(frontmatter["paper_id"], "arxiv:2501.00001")
-            self.assertEqual(frontmatter["title"], "Approved Paper")
-            self.assertEqual(frontmatter["source_url"], "https://arxiv.org/abs/2501.00001")
-            self.assertIn("captured_at", frontmatter)
-            self.assertIn("content_hash", frontmatter)
-            self.assertNotIn("#approved", raw_path.read_text(encoding="utf-8"))
-
     def test_direct_url_reingest_with_title_change_overwrites_same_raw_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             vault_root = Path(tmpdir)
@@ -348,150 +274,37 @@ This note is still pending review.
             self.assertEqual(first_path.name, paper_filename("Direct Paper", "arxiv:2501.00003"))
             self.assertEqual(first_path.read_text(encoding="utf-8").count("Second capture"), 1)
 
-    def test_approved_batch_continues_after_one_capture_failure(self) -> None:
+    def test_approved_input_is_retired_and_does_not_scan_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             vault_root = Path(tmpdir)
-            inbox_dir = vault_root / "inbox" / "2026-04-15"
+            inbox_dir = vault_root / "inbox"
             inbox_dir.mkdir(parents=True)
 
-            good_note = inbox_dir / "good.md"
-            good_note.write_text(
+            inbox_dir.joinpath("approved.md").write_text(
                 """---
-paper_id: arxiv:2501.00005
-title: Good Paper
-source_url: https://arxiv.org/abs/2501.00005
+paper_id: arxiv:2501.00001
+title: Approved Paper
+source_url: https://arxiv.org/abs/2501.00001
 ---
 
-This note is approved.
 #approved
 """,
                 encoding="utf-8",
             )
-            bad_note = inbox_dir / "bad.md"
-            bad_note.write_text(
-                """---
-paper_id: arxiv:2501.00006
-title: Broken Paper
-source_url: https://arxiv.org/abs/2501.00006
----
-
-This note is approved, but capture will fail.
-#approved
-""",
-                encoding="utf-8",
-            )
-
-            captures = [
-                _cleaned_doc("Good Paper", "# Good Paper\n\nWorking body."),
-            ]
-
-            async def fake_capture(paper: dict, **_kwargs):
-                if paper["paper_id"] == "arxiv:2501.00005":
-                    return captures[0]
-                raise ValueError("unsupported capture path")
 
             with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
                 with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
+                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock()) as capture_mock:
                         from server.v3_ingest import ingest_and_read_v3
 
                         result = asyncio.run(ingest_and_read_v3("approved"))
 
-            self.assertEqual(len(result["items"]), 1)
-            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00005")
-            self.assertEqual(len(result["errors"]), 1)
-            self.assertEqual(result["errors"][0]["paper_id"], "arxiv:2501.00006")
-            self.assertIn("unsupported capture path", result["errors"][0]["error"])
-
-    def test_approved_inbox_note_uses_paper_id_for_ar5iv_source_url(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vault_root = Path(tmpdir)
-            inbox_dir = vault_root / "inbox" / "2026-04-15"
-            inbox_dir.mkdir(parents=True)
-
-            note = inbox_dir / "ar5iv.md"
-            note.write_text(
-                """---
-paper_id: arxiv:2501.00007
-title: Ar5iv Paper
-source_url: https://ar5iv.labs.arxiv.org/html/2501.00007
----
-
-Approved discovery stub.
-#approved
-""",
-                encoding="utf-8",
-            )
-
-            captured = _cleaned_doc("Ar5iv Paper", "# Ar5iv Paper\n\nBody text.")
-
-            async def fake_capture(paper: dict, **_kwargs):
-                self.assertEqual(paper["paper_id"], "arxiv:2501.00007")
-                self.assertEqual(paper["arxiv_id"], "2501.00007")
-                return captured
-
-            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
-                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
-                        from server.v3_ingest import ingest_and_read_v3
-
-                        result = asyncio.run(ingest_and_read_v3("approved"))
-
-            self.assertEqual(len(result["items"]), 1)
-            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00007")
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["items"], [])
             self.assertEqual(result["errors"], [])
-
-    def test_approved_batch_skips_malformed_yaml_and_continues(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vault_root = Path(tmpdir)
-            inbox_dir = vault_root / "inbox" / "2026-04-15"
-            inbox_dir.mkdir(parents=True)
-
-            broken_note = inbox_dir / "broken.md"
-            broken_note.write_text(
-                """---
-paper_id: arxiv:2501.00009
-title: "Broken Paper
-source_url: https://arxiv.org/abs/2501.00009
----
-
-This note is approved even though the frontmatter is malformed.
-#approved
-""",
-                encoding="utf-8",
-            )
-            good_note = inbox_dir / "good.md"
-            good_note.write_text(
-                """---
-paper_id: arxiv:2501.00010
-title: Good Paper
-source_url: https://arxiv.org/abs/2501.00010
----
-
-This note is approved.
-#approved
-""",
-                encoding="utf-8",
-            )
-
-            captured = _cleaned_doc("Good Paper", "# Good Paper\n\nBody text.")
-
-            async def fake_capture(paper: dict, **_kwargs):
-                self.assertEqual(paper["paper_id"], "arxiv:2501.00010")
-                return captured
-
-            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
-                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock(side_effect=fake_capture)):
-                        from server.v3_ingest import ingest_and_read_v3
-
-                        result = asyncio.run(ingest_and_read_v3("approved"))
-
-            self.assertEqual(len(result["items"]), 1)
-            self.assertEqual(result["items"][0]["paper_id"], "arxiv:2501.00010")
-            self.assertEqual(len(result["errors"]), 1)
-            self.assertTrue(result["errors"][0]["note_path"].endswith("broken.md"))
-            self.assertIn("missing source_url", result["errors"][0]["error"])
+            self.assertIn("retired", result["error"])
+            self.assertIn("arXiv", result["error"])
+            self.assertEqual(capture_mock.await_count, 0)
 
     def test_direct_input_rejects_non_arxiv_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -531,34 +344,6 @@ This note is approved.
         self.assertIn("error", result)
         self.assertIn("capture exploded", result["error"])
         self.assertEqual(result["paper_id"], "arxiv:2501.00008")
-
-    def test_frontmatter_only_approval_marker_does_not_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vault_root = Path(tmpdir)
-            inbox_dir = vault_root / "inbox" / "2026-04-15"
-            inbox_dir.mkdir(parents=True)
-            note = inbox_dir / "pending.md"
-            note.write_text(
-                """---
-paper_id: arxiv:2501.00004
-title: Pending Paper
-body: "#approved"
----
-
-This body is not approved.
-""",
-                encoding="utf-8",
-            )
-
-            with patch("server.v3_ingest.get_vault_path", return_value=tmpdir):
-                with patch("server.v3_ingest.ensure_v3_layout", return_value={"created": []}):
-                    with patch("server.v3_ingest.capture_arxiv_source", new=AsyncMock()) as capture_mock:
-                        from server.v3_ingest import ingest_and_read_v3
-
-                        result = asyncio.run(ingest_and_read_v3("approved"))
-
-            self.assertEqual(result["items"], [])
-            self.assertEqual(capture_mock.await_count, 0)
 
 
 if __name__ == "__main__":

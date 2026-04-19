@@ -11,7 +11,6 @@ from server.arxiv_capture import capture_arxiv_source
 from server.config import ConfigError, get_vault_path
 from server.paper_utils import extract_arxiv_id, paper_id
 from server.search import fetch_arxiv_record
-from server.v3_approval import _approved_body
 from server.v3_bootstrap import ensure_v3_layout, paper_filename
 from server.v3_markdown import split_frontmatter, write_markdown
 
@@ -52,43 +51,6 @@ def _split_direct_input_items(input_value: str) -> list[str]:
         if cleaned:
             items.append(cleaned)
     return items
-
-
-def _approved_inbox_papers(vault_path: Path) -> list[dict[str, Any]]:
-    inbox_root = vault_path / "inbox"
-    if not inbox_root.exists():
-        return []
-
-    papers: list[dict[str, Any]] = []
-    for note_path in sorted(inbox_root.rglob("*.md")):
-        if note_path.name.startswith("_"):
-            continue
-
-        frontmatter, body = _read_markdown_note(note_path)
-        if not _approved_body(body):
-            continue
-
-        paper = dict(frontmatter)
-        source_url = str(
-            frontmatter.get("source_url")
-            or frontmatter.get("canonical_html_url")
-            or ""
-        ).strip()
-        if not source_url:
-            arxiv_id = str(frontmatter.get("arxiv_id") or "").strip()
-            if arxiv_id:
-                source_url = f"https://arxiv.org/abs/{arxiv_id}"
-
-        paper["source_url"] = source_url
-        paper["paper_id"] = str(frontmatter.get("paper_id") or "").strip()
-        if not paper["paper_id"]:
-            paper["paper_id"] = paper_id(paper)
-        paper["arxiv_id"] = _paper_arxiv_id(paper, source_url)
-        paper["title"] = str(frontmatter.get("title") or paper.get("title") or paper["paper_id"]).strip()
-        paper["_note_path"] = str(note_path)
-        papers.append(paper)
-
-    return papers
 
 
 def _existing_raw_evidence_path(vault_path: Path, paper_id_value: str) -> Path | None:
@@ -148,16 +110,11 @@ def _write_raw_evidence(vault_path: Path, capture: dict[str, Any]) -> Path:
     return raw_path
 
 
-def _approved_error(paper: dict[str, Any], exc: Exception) -> dict[str, str]:
-    return {
-        "paper_id": str(paper.get("paper_id") or ""),
-        "title": str(paper.get("title") or ""),
-        "note_path": str(paper.get("_note_path") or ""),
-        "error": str(exc),
-    }
-
-
 _DIRECT_RESOLUTION_ERROR = "Item must be resolved to an arXiv URL, arXiv ID, or arXiv DOI before capture."
+_APPROVED_WORKFLOW_RETIRED_ERROR = (
+    "The legacy approval ingest workflow is retired. "
+    "Pass resolved arXiv URLs, arXiv IDs, or arXiv DOI values to /ingest instead."
+)
 
 
 def _direct_item_error(input_item: str, error: Exception | str) -> dict[str, str]:
@@ -199,29 +156,14 @@ async def ingest_and_read_v3(input_value: str) -> dict[str, Any]:
     ensure_v3_layout(vault_path)
 
     if input_value == "approved":
-        items: list[dict[str, Any]] = []
-        errors: list[dict[str, str]] = []
-        for paper in _approved_inbox_papers(vault_path):
-            source_url = str(paper.get("source_url") or "").strip()
-            if not source_url:
-                errors.append(_approved_error(paper, ValueError("missing source_url")))
-                continue
-            try:
-                capture = await _capture_raw_evidence(paper, source_url)
-                raw_path = _write_raw_evidence(vault_path, capture)
-            except Exception as exc:
-                errors.append(_approved_error(paper, exc))
-                continue
-            items.append(
-                {
-                    "paper_id": capture["paper_id"],
-                    "title": capture["title"],
-                    "path": str(raw_path),
-                    "markdown": capture["markdown"],
-                    "source_url": capture["source_url"],
-                }
-            )
-        return {"items": items, "errors": errors}
+        return {
+            "ok": False,
+            "error": _APPROVED_WORKFLOW_RETIRED_ERROR,
+            "items": [],
+            "errors": [],
+            "captured_count": 0,
+            "error_count": 0,
+        }
 
     input_items = _split_direct_input_items(input_value)
     items: list[dict[str, Any]] = []
