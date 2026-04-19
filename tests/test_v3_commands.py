@@ -37,6 +37,17 @@ def test_command_inventory_matches_v3_surface() -> None:
     assert names == EXPECTED_COMMANDS
 
 
+def test_user_facing_commands_have_consistent_frontmatter() -> None:
+    for command_name in EXPECTED_COMMANDS:
+        command_path = REPO_ROOT / "commands" / f"{command_name}.md"
+        command_doc = command_path.read_text(encoding="utf-8")
+
+        assert command_doc.startswith("---\n")
+        frontmatter = command_doc.split("---\n", 2)[1]
+        assert f"name: {command_name}" in frontmatter
+        assert "user-invocable: true" in frontmatter
+
+
 def test_root_docs_inventory_matches_v3_public_docs() -> None:
     docs_root = REPO_ROOT / "docs"
     names = {path.name for path in docs_root.glob("*.md")}

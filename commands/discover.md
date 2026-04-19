@@ -1,6 +1,8 @@
 ---
+name: discover
 description: Use when the user wants to find new papers, pull a daily digest, or search arXiv/Semantic Scholar/OpenAlex for a research topic. Runs stateless v3 discovery and returns chat-only candidates.
 argument-hint: "[query]"
+user-invocable: true
 ---
 
 Call `discover_papers` to run the v3 discovery flow.
