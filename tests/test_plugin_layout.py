@@ -176,19 +176,77 @@ def test_root_marketplace_docs_explain_repo_local_discovery() -> None:
 
     assert "repo-local marketplace" in readme
     assert ".agents/plugins/marketplace.json" in installation
-    assert "points at `./`" in installation
+    assert "./plugins/paper-distill" in installation
     assert "Codex can install Paper Distill from the repo-local marketplace entry" in installation
 
 
-def test_repo_local_marketplace_entry_points_at_root_plugin() -> None:
+def test_repo_local_marketplace_entry_points_at_codex_compat_plugin() -> None:
     marketplace = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
     entry = next(plugin for plugin in marketplace["plugins"] if plugin["name"] == "paper-distill")
 
     assert entry["source"]["source"] == "local"
-    assert entry["source"]["path"] == "./"
+    assert entry["source"]["path"] == "./plugins/paper-distill"
     assert entry["policy"]["installation"] == "AVAILABLE"
     assert entry["policy"]["authentication"] == "ON_INSTALL"
     assert entry["category"] == "Productivity"
+
+
+def test_codex_marketplace_compat_manifest_matches_repo_runtime() -> None:
+    manifest = json.loads(
+        (REPO_ROOT / "plugins" / "paper-distill" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["name"] == "paper-distill"
+    assert manifest["skills"] == "./skills/"
+    assert manifest["hooks"] == "./hooks/hooks.json"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert len(manifest["interface"]["defaultPrompt"]) <= 3
+
+
+def test_codex_marketplace_compat_plugin_root_helper_resolves_repo_root() -> None:
+    script = REPO_ROOT / "plugins" / "paper-distill" / "scripts" / "plugin-root.sh"
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        check=True,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert proc.stdout.strip() == str(REPO_ROOT)
+
+
+def test_codex_marketplace_compat_hooks_command_uses_repo_runtime() -> None:
+    hooks_json = json.loads(
+        (REPO_ROOT / "plugins" / "paper-distill" / "hooks" / "hooks.json").read_text(encoding="utf-8")
+    )
+    command = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    compat_root = REPO_ROOT / "plugins" / "paper-distill"
+
+    proc = subprocess.run(
+        ["bash", "-lc", command],
+        cwd=compat_root,
+        env={
+            **os.environ,
+            "CODEX_PLUGIN_ROOT": str(compat_root),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "OPENCLAW_PLUGIN_ROOT": "",
+        },
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(proc.stdout)
+    assert "additionalContext" in payload
+    assert "Paper Distill v3 installed" in payload["additionalContext"]
+
+
+def test_codex_root_manifest_default_prompt_fits_cli_limit() -> None:
+    manifest = json.loads((REPO_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+
+    assert len(manifest["interface"]["defaultPrompt"]) <= 3
 
 
 def test_testing_docs_include_repo_marketplace_check() -> None:
@@ -196,4 +254,4 @@ def test_testing_docs_include_repo_marketplace_check() -> None:
 
     assert "## Repo-Local Marketplace Check" in testing
     assert "uv run --with pytest python -m pytest tests/test_plugin_layout.py -q" in testing
-    assert "repo-local marketplace entry that points at `./`" in testing
+    assert "repo-local marketplace entry that points at `./plugins/paper-distill`" in testing

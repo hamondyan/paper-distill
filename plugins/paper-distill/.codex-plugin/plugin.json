@@ -1,7 +1,7 @@
 {
   "name": "paper-distill",
   "version": "3.0.0",
-  "description": "Codex local plugin manifest for the repository-root Paper Distill checkout.",
+  "description": "Codex marketplace compatibility manifest for the repository-root Paper Distill checkout.",
   "author": {
     "name": "Huang",
     "email": "",

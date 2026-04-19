@@ -8,7 +8,7 @@
       "name": "paper-distill",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./plugins/paper-distill"
       },
       "policy": {
         "installation": "AVAILABLE",

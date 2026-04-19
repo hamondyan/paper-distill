@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash -lc 'set -euo pipefail; CLAUDE_ENV=CLAUDE; CLAUDE_ENV=\"${CLAUDE_ENV}_PLUGIN_ROOT\"; HELPER=\"\"; for ROOT_DIR in \"${!CLAUDE_ENV-}\" \"${CODEX_PLUGIN_ROOT:-}\" \"${OPENCLAW_PLUGIN_ROOT:-}\" \"$PWD\"; do if [ -n \"$ROOT_DIR\" ] && [ -x \"$ROOT_DIR/scripts/plugin-root.sh\" ]; then HELPER=\"$ROOT_DIR/scripts/plugin-root.sh\"; break; fi; done; if [ -z \"$HELPER\" ]; then printf >&2 \"plugin-root helper not found\\n\"; exit 1; fi; ROOT=\"$(\"$HELPER\")\"; exec \"$ROOT/hooks/session-start\"'",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

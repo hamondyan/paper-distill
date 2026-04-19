@@ -33,7 +33,7 @@ Run:
 uv run --with pytest python -m pytest tests/test_plugin_layout.py -q
 ```
 
-This check covers the root-as-plugin manifests, hook launch path, and the repo-local marketplace entry that points at `./`.
+This check covers the root-as-plugin manifests, hook launch path, and the repo-local marketplace entry that points at `./plugins/paper-distill`.
 
 ## Business MCP Smoke Check
 
