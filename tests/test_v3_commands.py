@@ -106,6 +106,7 @@ def test_ingest_command_documents_agent_resolved_batch_inputs() -> None:
 
 
 def test_public_docs_describe_v3_qmd_cutover() -> None:
+    claude = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     docs_index = (REPO_ROOT / "docs/README.md").read_text(encoding="utf-8")
     installation = (REPO_ROOT / "docs/installation.md").read_text(encoding="utf-8")
@@ -116,6 +117,8 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     vault_layout = (REPO_ROOT / "docs/vault-layout.md").read_text(encoding="utf-8")
     qmd_cli = (REPO_ROOT / "docs/qmd-cli.md").read_text(encoding="utf-8")
 
+    assert "/ingest <resolved arXiv URL|ID|arXiv DOI>" in claude
+    assert "URL|ID|DOI" not in claude
     assert "qmd as the read/index path" in readme
     assert "docs/qmd-cli.md" in readme
     assert "chat-only discovery" in readme

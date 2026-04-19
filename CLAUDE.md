@@ -12,7 +12,7 @@ Agent-specific guidance for Paper Distill. Rules here are load-bearing across co
 ## Core Flow
 
 ```
-/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|DOI> -> raw evidence -> paper-distillation skill or distill_paper writes wiki page -> /lint
+/discover -> agent presents chat-only candidates -> /ingest <resolved arXiv URL|ID|arXiv DOI> -> raw evidence -> paper-distillation skill or distill_paper writes wiki page -> /lint
 ```
 
 The agent resolves natural paper names before capture. Do not pass unresolved titles, acronyms, aliases, or project names to the MCP ingest tool.
