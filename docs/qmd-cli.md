@@ -15,7 +15,10 @@ discover/approve/ingest with Paper Distill -> read with qmd query/get -> write w
 Paper Distill business MCP is for:
 
 - `discover_papers`
+- `approve_papers`
 - `ingest_and_read`
+- `distill_paper`
+- `distill_papers`
 - `upsert_wiki_page`
 - `check_concept_alias`
 - `merge_concept`

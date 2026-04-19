@@ -6,13 +6,8 @@ from typing import Any
 
 from server.paper_utils import normalise_title
 from server.v3_bootstrap import ensure_v3_layout
+from server.v3_followup import FOLLOW_UP
 from server.v3_markdown import atomic_write_text, render_markdown, split_frontmatter
-
-
-FOLLOW_UP: list[str] = [
-    "Run qmd update after all writes in this round finish.",
-    "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
-]
 
 
 _PAGE_DIRS: dict[str, tuple[str, ...]] = {

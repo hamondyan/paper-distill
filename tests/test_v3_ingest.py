@@ -6,17 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import yaml
-
 from server.arxiv_capture_adapter import CleanedArxivDocument
 from server.v3_bootstrap import paper_filename
-
-
-def _read_frontmatter(path: Path) -> dict:
-    content = path.read_text(encoding="utf-8")
-    _, remainder = content.split("---\n", 1)
-    fm_text, _ = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}
+from tests.helpers import read_frontmatter as _read_frontmatter
 
 
 def _cleaned_doc(title: str, markdown: str, capture_source: str = "arxiv_native_html") -> CleanedArxivDocument:

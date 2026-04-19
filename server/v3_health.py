@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from server.v3_followup import FOLLOW_UP
 from server.v3_markdown import render_markdown, split_frontmatter
 from server.v3_names import slugify, surface_key
 
@@ -16,12 +17,38 @@ _WIKILINK_RE = re.compile(
     r"\[\[(?P<target>[^\]|#]+)(?P<section>#[^\]|]+)?(?P<label>\|[^\]]+)?\]\]"
 )
 _FOOTER_CUES = ("related:", "see also:", "links:", "references:")
-FOLLOW_UP: list[str] = [
-    "Run qmd update after all writes in this round finish.",
-    "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
-]
-
-
+_CATEGORY_LINK_SUFFIXES = (
+    "models",
+    "systems",
+    "methods",
+    "approaches",
+    "tasks",
+    "policies",
+    "pipelines",
+    "benchmarks",
+    "frameworks",
+)
+_CONCEPT_SUPPORT_CUES = (
+    "define",
+    "defined",
+    "defines",
+    "as ",
+    "refers to",
+    "maps",
+    "map ",
+    "policy",
+    "policies",
+    "architecture",
+    "method",
+    "objective",
+    "trained",
+    "evaluates",
+    "introduced",
+    "proposes",
+    "extends",
+    "instantiates",
+    "operationalizes",
+)
 def _surface_key(value: str) -> str:
     normalized = value.casefold().strip()
     if normalized.isascii():
@@ -183,6 +210,7 @@ def _paper_quality_issues(
     path: Path,
     frontmatter: dict[str, Any],
     text: str,
+    body: str,
     concept_surfaces: set[str],
 ) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
@@ -204,6 +232,63 @@ def _paper_quality_issues(
                 "count": str(len(concept_links)),
             }
         )
+    issues.extend(
+        _decorative_concept_link_issues(
+            path,
+            body,
+            concept_surfaces,
+            key_concept_surfaces,
+        )
+    )
+    return issues
+
+
+def _is_category_like_link_target(target: str) -> bool:
+    normalized = target.casefold().strip()
+    return any(normalized.endswith(f" {suffix}") for suffix in _CATEGORY_LINK_SUFFIXES)
+
+
+def _has_local_concept_support(line: str) -> bool:
+    normalized = _WIKILINK_RE.sub("", line).casefold()
+    return any(cue in normalized for cue in _CONCEPT_SUPPORT_CUES)
+
+
+def _decorative_concept_link_issues(
+    path: Path,
+    body: str,
+    concept_surfaces: set[str],
+    key_concept_surfaces: set[str],
+) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    reported: set[str] = set()
+    eligible_surfaces = concept_surfaces | key_concept_surfaces
+
+    for line_no, line in enumerate(body.splitlines(), start=1):
+        for match in _WIKILINK_RE.finditer(line):
+            target = match.group("target").strip()
+            target_key = _surface_key(target)
+            if target_key in reported:
+                continue
+            if target_key not in eligible_surfaces:
+                continue
+            if not _is_category_like_link_target(target):
+                continue
+            if _has_local_concept_support(line):
+                continue
+            reported.add(target_key)
+            issues.append(
+                {
+                    "code": "decorative_concept_link",
+                    "severity": "warning",
+                    "path": str(path),
+                    "target": target,
+                    "line": str(line_no),
+                    "message": (
+                        "Wikilink is structurally valid but may be too broad or decorative "
+                        "to earn a canonical concept link."
+                    ),
+                }
+            )
     return issues
 
 
@@ -358,9 +443,9 @@ def lint_vault_v3(
     known_paper_ids = _paper_id_index(vault_path / "raw" / "evidence")
     for path in sorted(vault_path.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
-        frontmatter, _body, _has_frontmatter = split_frontmatter(text)
+        frontmatter, body, _has_frontmatter = split_frontmatter(text)
         if path.parent.name == "papers" and path.parent.parent.name == "wiki":
-            issues.extend(_paper_quality_issues(path, frontmatter, text, concept_surfaces))
+            issues.extend(_paper_quality_issues(path, frontmatter, text, body, concept_surfaces))
             issues.extend(_paper_required_field_issues(path, frontmatter))
             issues.extend(
                 _paper_without_raw_evidence_issues(path, frontmatter, known_paper_ids)

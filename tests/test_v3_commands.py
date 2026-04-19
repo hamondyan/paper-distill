@@ -12,6 +12,8 @@ EXPECTED_MCP_TOOLS = {
     "approve_papers",
     "discover_papers",
     "ingest_and_read",
+    "distill_paper",
+    "distill_papers",
     "check_concept_alias",
     "upsert_wiki_page",
     "merge_concept",
@@ -106,13 +108,17 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "docs/qmd-cli.md" in installation
     assert "QMD CLI is the only read/index path" in architecture
     assert "business MCP" in architecture
-    assert "discover -> approve in chat -> ingest -> qmd query/get -> canonical write -> lint" in architecture
+    assert "discover -> approve in chat -> ingest -> distill_paper -> qmd update -> lint" in architecture
+    assert "distill_paper(input_value, distilled=None)" in architecture
+    assert "distill_papers(items)" in architecture
     assert "docs/qmd-cli.md" in commands
     assert "/discover" in commands
     assert "/approve" in commands
     assert "/lint" in commands
     assert "/status" in commands
+    assert "distill_paper" in commands
     assert "paper pages without matching raw evidence" in commands
+    assert "decorative concept links" in commands
     assert "conversations, inbox pending, inbox approved, raw evidence" in commands
     assert "/get" not in commands
     assert "1-to-5 range" in frontmatter
@@ -121,6 +127,7 @@ def test_public_docs_describe_v3_qmd_cutover() -> None:
     assert "uv run python -m pytest -q" in testing
     assert "uv run python -m compileall -q server tests" in testing
     assert "business surface" in testing
+    assert "distill_papers" in testing
     assert "qmd --help" in testing
     assert "QMD CLI is the primary source; command details follow the runtime output of `qmd --help`." in qmd_cli
     assert "canon-papers" in qmd_cli

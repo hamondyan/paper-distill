@@ -7,6 +7,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 from server.config import ConfigError, get_vault_path
+from server.tools_distill import register_distill_tools
 from server.tools_health import register_health_tools
 from server.tools_intake import register_intake_tools
 from server.tools_knowledge import register_knowledge_tools
@@ -15,6 +16,7 @@ from server.v3_store import audit_wiki_schema
 mcp = FastMCP("paper-distill")
 
 register_intake_tools(mcp)
+register_distill_tools(mcp)
 register_knowledge_tools(mcp)
 register_health_tools(mcp)
 

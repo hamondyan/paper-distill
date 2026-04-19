@@ -2,16 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 from server.v3_conversations import write_conversation_insight
-
-
-def _read_markdown(path: Path) -> tuple[dict, str]:
-    content = path.read_text(encoding="utf-8")
-    _, remainder = content.split("---\n", 1)
-    fm_text, body = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}, body.strip()
+from tests.helpers import read_markdown as _read_markdown
 
 
 def test_write_conversation_insight_creates_insight_asset(

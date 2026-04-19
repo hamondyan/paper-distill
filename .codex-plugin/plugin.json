@@ -27,7 +27,7 @@
   "interface": {
     "displayName": "Paper Distill",
     "shortDescription": "Discover, capture, search, and maintain a qmd-backed research vault.",
-    "longDescription": "Paper Distill v3 stages candidate papers for human approval, captures approved arXiv source material into qmd-backed vault notes, reads through QMD CLI query/get, and writes updates through Python MCP tools with explicit QMD refresh guidance.",
+    "longDescription": "Paper Distill v3 stages candidate papers for human approval, captures approved arXiv source material into qmd-backed vault notes, exposes an agent-facing capability index, reads through QMD CLI query/get, and writes canonical distillations through Python MCP tools with explicit QMD refresh guidance.",
     "developerName": "Huang",
     "category": "Productivity",
     "capabilities": [

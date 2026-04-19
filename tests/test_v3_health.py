@@ -4,17 +4,9 @@ import asyncio
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
-
 from server.server import mcp
 from server.v3_health import INBOX_STALE_DAYS, lint_vault_v3, merge_concept_v3
-
-
-def _read_frontmatter(path: Path) -> dict:
-    content = path.read_text(encoding="utf-8")
-    _, remainder = content.split("---\n", 1)
-    fm_text, _body = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}
+from tests.helpers import read_frontmatter as _read_frontmatter
 
 
 def test_lint_vault_flags_repeated_links_and_oversized_frontmatter(tmp_path: Path) -> None:
@@ -162,6 +154,95 @@ def test_lint_vault_flags_paper_with_too_many_concept_links(tmp_path: Path) -> N
     result = lint_vault_v3(tmp_path)
 
     assert any(issue["code"] == "paper_too_many_concept_links" for issue in result["issues"])
+
+
+def test_lint_vault_flags_decorative_category_like_concept_link(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    evidence_dir = tmp_path / "raw" / "evidence"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    evidence_dir.mkdir(parents=True)
+    concept_dir.joinpath("vision-language-action-models.md").write_text(
+        "---\n"
+        "type: concept\n"
+        "concept: Vision-Language-Action Models\n"
+        "aliases: []\n"
+        "source_layer: wiki\n"
+        "related_papers_topk: [arxiv:2401.00001]\n"
+        "---\n\n"
+        "# Vision-Language-Action Models\n",
+        encoding="utf-8",
+    )
+    paper_dir.joinpath("demo.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:2401.00001\n"
+        "title: Demo VLA Paper\n"
+        "year: 2024\n"
+        "venue: arXiv\n"
+        "source_layer: wiki\n"
+        "key_concepts_topk: [Vision-Language-Action Models]\n"
+        "---\n\n"
+        "# Demo VLA Paper\n\n"
+        "This paper is broadly related to [[Vision-Language-Action Models]].\n",
+        encoding="utf-8",
+    )
+    evidence_dir.joinpath("demo.md").write_text(
+        "---\ntype: raw_evidence\npaper_id: arxiv:2401.00001\n---\n\n# Evidence\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+    decorative = [issue for issue in result["issues"] if issue["code"] == "decorative_concept_link"]
+
+    assert decorative
+    assert decorative[0]["target"] == "Vision-Language-Action Models"
+    assert decorative[0]["severity"] == "warning"
+    assert "structurally valid" in decorative[0]["message"]
+
+
+def test_lint_vault_accepts_supported_category_like_concept_link(tmp_path: Path) -> None:
+    concept_dir = tmp_path / "wiki" / "concepts"
+    paper_dir = tmp_path / "wiki" / "papers"
+    evidence_dir = tmp_path / "raw" / "evidence"
+    concept_dir.mkdir(parents=True)
+    paper_dir.mkdir(parents=True)
+    evidence_dir.mkdir(parents=True)
+    concept_dir.joinpath("vision-language-action-models.md").write_text(
+        "---\n"
+        "type: concept\n"
+        "concept: Vision-Language-Action Models\n"
+        "aliases: []\n"
+        "source_layer: wiki\n"
+        "related_papers_topk: [arxiv:2401.00001]\n"
+        "---\n\n"
+        "# Vision-Language-Action Models\n",
+        encoding="utf-8",
+    )
+    paper_dir.joinpath("demo.md").write_text(
+        "---\n"
+        "type: paper\n"
+        "paper_id: arxiv:2401.00001\n"
+        "title: Demo VLA Paper\n"
+        "year: 2024\n"
+        "venue: arXiv\n"
+        "source_layer: wiki\n"
+        "key_concepts_topk: [Vision-Language-Action Models]\n"
+        "---\n\n"
+        "# Demo VLA Paper\n\n"
+        "The paper defines [[Vision-Language-Action Models]] as policies that map images "
+        "and language instructions to robot actions for manipulation tasks.\n",
+        encoding="utf-8",
+    )
+    evidence_dir.joinpath("demo.md").write_text(
+        "---\ntype: raw_evidence\npaper_id: arxiv:2401.00001\n---\n\n# Evidence\n",
+        encoding="utf-8",
+    )
+
+    result = lint_vault_v3(tmp_path)
+
+    assert not any(issue["code"] == "decorative_concept_link" for issue in result["issues"])
 
 
 def test_lint_vault_flags_concept_without_supporting_paper(tmp_path: Path) -> None:

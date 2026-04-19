@@ -5,7 +5,7 @@
 Run:
 
 ```bash
-uv run python -m pytest -q
+uv run --with pytest python -m pytest -q
 uv run python -m compileall -q server tests
 ```
 
@@ -14,7 +14,7 @@ uv run python -m compileall -q server tests
 Run:
 
 ```bash
-uv run python -m pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
+uv run --with pytest python -m pytest tests/test_v3_commands.py tests/test_no_retired_names.py tests/test_skill_inventory.py tests/test_v3_conversations.py -q
 ```
 
 ## Cross-Host Plugin Layout Checks
@@ -49,6 +49,8 @@ async def main():
         "approve_papers",
         "discover_papers",
         "ingest_and_read",
+        "distill_paper",
+        "distill_papers",
         "check_concept_alias",
         "upsert_wiki_page",
         "merge_concept",

@@ -3,18 +3,10 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import yaml
-
 from server import tools_knowledge
 from server import tools_health
 from server.v3_store import upsert_wiki_page_v3
-
-
-def _read_markdown(path: Path) -> tuple[dict, str]:
-    content = path.read_text(encoding="utf-8")
-    _, remainder = content.split("---\n", 1)
-    fm_text, body = remainder.split("\n---\n", 1)
-    return yaml.safe_load(fm_text) or {}, body.strip()
+from tests.helpers import read_markdown as _read_markdown
 
 
 def test_upsert_wiki_page_writes_markdown_and_returns_follow_up_guidance(
@@ -280,6 +272,14 @@ def test_upsert_wiki_page_returns_a_fresh_follow_up_list_each_time(tmp_path: Pat
         "Run qmd update after all writes in this round finish.",
         "Run qmd embed -f after all writes finish if semantic retrieval must reflect the new state immediately.",
     ]
+
+
+def test_write_surfaces_share_follow_up_guidance() -> None:
+    from server.v3_followup import FOLLOW_UP
+    from server import v3_health, v3_store
+
+    assert v3_store.FOLLOW_UP is FOLLOW_UP
+    assert v3_health.FOLLOW_UP is FOLLOW_UP
 
 
 def test_server_entrypoint_registers_knowledge_tools_without_delegate_layer() -> None:

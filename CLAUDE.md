@@ -12,7 +12,7 @@ Agent-specific guidance for Paper Distill. Rules here are load-bearing across co
 ## Core Flow
 
 ```
-/discover -> approve in chat -> /ingest approved -> paper-distillation skill writes wiki page -> /lint
+/discover -> approve in chat -> /ingest approved -> paper-distillation skill or distill_paper writes wiki page -> /lint
 ```
 
 Direct ingestion (`/ingest <arxiv-url|arxiv-id|arxiv-doi|paper-title>`) skips the inbox step; the rest of the flow is identical.

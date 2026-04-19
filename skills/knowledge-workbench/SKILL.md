@@ -16,7 +16,7 @@ Use QMD CLI retrieval plus business MCP write tools to answer research questions
 | `upsert_wiki_page` | Write `paper`, `concept`, `idea`, or `conversation` pages |
 | `check_concept_alias` | Resolve candidate concept surfaces |
 | `merge_concept` | Merge concept aliases and rewrite links |
-| `lint_vault` | Report link, alias, footer, and frontmatter issues |
+| `lint_vault` | Report link, alias, footer, frontmatter, and decorative concept-link issues |
 
 ## Query Workflow
 
@@ -54,7 +54,7 @@ See [references/conversation-insights.md](references/conversation-insights.md) f
 
 ## Health And Index Maintenance
 
-- Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, and concept pages without supporting papers.
+- Use `lint_vault` for dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing concept links, paper key concepts not linked in the body, decorative concept links, overly dense paper concept links, and concept pages without supporting papers.
 - Use QMD CLI directly for `qmd status`, `qmd update`, `qmd embed -f`, `qmd collection ...`, and `qmd context ...`.
 - For a vault health snapshot (counts + lint issues + recent activity), run the `/status` command.
 - Check `docs/qmd-cli.md` first for the Paper Distill mapping.

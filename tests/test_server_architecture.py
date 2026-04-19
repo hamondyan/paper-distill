@@ -42,10 +42,11 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
 
     allowed_imports = {
         ("__future__", ("annotations",)),
-        ("fastmcp", ("FastMCP",)),
-        ("server.tools_health", ("register_health_tools",)),
-        ("server.tools_intake", ("register_intake_tools",)),
-        ("server.tools_knowledge", ("register_knowledge_tools",)),
+            ("fastmcp", ("FastMCP",)),
+            ("server.tools_distill", ("register_distill_tools",)),
+            ("server.tools_health", ("register_health_tools",)),
+            ("server.tools_intake", ("register_intake_tools",)),
+            ("server.tools_knowledge", ("register_knowledge_tools",)),
         ("logging", None),
         ("pathlib", ("Path",)),
         ("server.config", ("ConfigError", "get_vault_path")),
@@ -59,6 +60,7 @@ def test_server_entrypoint_is_thin_and_domain_registered() -> None:
         "register_health_tools",
         "register_intake_tools",
         "register_knowledge_tools",
+        "register_distill_tools",
     }
     assert "tools_core" not in source
     assert not any(name in source for name in forbidden_names)

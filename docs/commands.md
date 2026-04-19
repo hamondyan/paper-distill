@@ -20,6 +20,8 @@ Read/index tasks belong to QMD CLI. Use [docs/qmd-cli.md](qmd-cli.md) for `qmd q
 - `/lint` -> `lint_vault`
 - `/status` -> agent-side snapshot (calls `lint_vault` + scans vault directories)
 
+`distill_paper` and `distill_papers` are MCP workflow tools rather than slash commands. Use them after raw evidence exists and the agent has a distilled payload ready to write.
+
 ## Command Details
 
 ### `/discover`
@@ -58,9 +60,15 @@ Examples:
 /ingest openvla, octo, diffusion policy
 ```
 
+### Distill MCP Tools
+
+Use `distill_paper(input_value, distilled?)` or `distill_papers(items)` when the user says "distill this paper" after capture.
+
+Without a distilled payload, `distill_paper` resolves the raw evidence and returns a `needs_distillation_payload` response. After the agent reads the evidence and prepares grounded frontmatter/body content, call it again with `distilled.frontmatter`, `distilled.body`, and optional `distilled.target`.
+
 ### `/lint`
 
-Runs `lint_vault` and reports structural issues without rewriting files. It checks malformed or dead links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing required fields, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, concept pages without supporting papers, paper pages without matching raw evidence, and stale inbox notes.
+Runs `lint_vault` and reports structural issues without rewriting files. It checks malformed or dead links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper pages missing required fields, paper pages missing concept links, paper key concepts not linked in the body, overly dense paper concept links, decorative concept links, concept pages without supporting papers, paper pages without matching raw evidence, and stale inbox notes.
 
 ### `/status`
 

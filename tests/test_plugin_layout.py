@@ -63,6 +63,11 @@ def test_hooks_command_runs_through_bash_with_spaced_root() -> None:
     payload = json.loads(proc.stdout)
     assert "additionalContext" in payload
     assert "Paper Distill v3 installed" in payload["additionalContext"]
+    assert "Agent-facing capability index" in payload["additionalContext"]
+    assert "discover_papers" in payload["additionalContext"]
+    assert "distill_paper" in payload["additionalContext"]
+    assert "qmd query" in payload["additionalContext"]
+    assert "decorative_concept_link" in payload["additionalContext"]
 
 
 def test_hooks_command_uses_claude_override_branch() -> None:

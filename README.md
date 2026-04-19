@@ -32,7 +32,7 @@ The result is a vault that stays readable as plain Markdown while still being us
 The normal workflow is:
 
 ```text
-/discover -> approve in chat -> /ingest approved -> qmd query/get -> write -> /lint
+/discover -> approve in chat -> /ingest approved -> distill_paper -> qmd update -> /lint
 ```
 
 Direct ingestion is also available when you already know the paper identity:
@@ -122,10 +122,13 @@ For host-specific installation and uninstall notes, see [docs/plugin-installatio
 | `/discover` | you want new papers, a daily digest, or a topic search | `discover_papers` |
 | `/approve` | you want to accept recommended candidates from chat | `approve_papers` |
 | `/ingest` | you want to capture approved notes or direct arXiv references | `ingest_and_read` |
-| `/lint` | you want a structural audit of the vault | `lint_vault` |
+| MCP `distill_paper(s)` | you want to turn captured evidence into canonical paper pages | `distill_paper`, `distill_papers` |
+| `/lint` | you want a structural and weak-link audit of the vault | `lint_vault` |
 | `/status` | you want a quick health snapshot and next action | agent-side summary |
 
 For command details, see [docs/commands.md](docs/commands.md).
+
+Installed agents also receive a short capability index at session start: use `discover_papers` for new papers, `qmd query` / `qmd get` for existing vault content, `distill_paper(s)` for captured evidence, `upsert_wiki_page` for canonical writes, and `lint_vault` for structural and decorative-link checks.
 
 ## Vault Layout
 

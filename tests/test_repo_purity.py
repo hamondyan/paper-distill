@@ -93,6 +93,22 @@ def test_tracked_cache_artifacts_are_removed() -> None:
     assert offenders == []
 
 
+def test_process_plans_and_specs_are_not_live_repo_files() -> None:
+    tracked = _tracked_paths()
+    process_prefixes = (
+        "docs/plans/",
+        "docs/specs/",
+        "docs/superpowers/",
+    )
+    offenders = [
+        path
+        for path in tracked
+        if any(path.startswith(prefix) for prefix in process_prefixes)
+        and (REPO_ROOT / path).exists()
+    ]
+    assert offenders == []
+
+
 def test_orphaned_templates_and_wave1_fixtures_are_gone() -> None:
     tracked = _tracked_paths()
     offenders = [

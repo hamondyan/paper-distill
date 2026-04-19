@@ -29,16 +29,18 @@ Paper Distill business MCP owns deterministic writes, validation, and business w
 - `discover_papers(query=None)` writes inbox stubs and updates `.state/seen_papers.json`.
 - `approve_papers(input_value)` marks selected inbox stubs approved from chat or explicit paper IDs/paths.
 - `ingest_and_read(input_value)` captures approved inbox notes or agent-resolved natural references and batch arXiv identities into `raw/evidence/`.
+- `distill_paper(input_value, distilled=None)` resolves captured raw evidence and writes a canonical paper page when the agent supplies grounded frontmatter/body content.
+- `distill_papers(items)` runs the same distillation write workflow sequentially for a batch.
 - `check_concept_alias(name)` checks concept names and aliases from `wiki/concepts/`.
 - `upsert_wiki_page(page_type, target, frontmatter, body)` writes `paper`, `concept`, `idea`, or `conversation` pages through Python validation.
 - `merge_concept(old, new)` rewrites concept links and adds the old surface as an alias on the target concept.
-- `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper concept-link quality issues, and concept pages without supporting papers.
+- `lint_vault()` reports dead links, malformed links, alias ambiguity, repeated links, template-like footer linking, oversized frontmatter, paper concept-link quality issues, decorative concept links, and concept pages without supporting papers.
 - Business MCP does not wrap `qmd query`, `qmd get`, `qmd status`, `qmd update`, or `qmd embed -f`.
 
 ## First-Release Flow
 
 ```text
-discover -> approve in chat -> ingest -> qmd query/get -> canonical write -> lint
+discover -> approve in chat -> ingest -> distill_paper -> qmd update -> lint
 ```
 
 Approval is file-native. Only a plain `#approved` tag in the inbox note body allows approved-batch ingest, but users still approve through the agent and `approve_papers` writes that marker for them.

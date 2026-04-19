@@ -15,13 +15,15 @@ This skill runs after `paper-intake` has captured the evidence. For read/index w
 
 | Tool | Purpose |
 |------|---------|
+| `distill_paper` | Resolve raw evidence and write one canonical paper page from a distilled payload |
+| `distill_papers` | Apply the same distillation write workflow sequentially to a batch |
 | `upsert_wiki_page` | Write the canonical paper page with write-time schema validation |
 | `check_concept_alias` | Resolve concept surfaces before linking |
 
 ## Routing Decision
 
-1. User asked to distill, write the wiki page for, or process the raw evidence of a specific paper: locate the evidence with `qmd get` or by `paper_id`, read it, extract the structured summary, and call `upsert_wiki_page(page_type="paper", ...)`.
-2. User asked to distill a batch: run the single-paper flow per paper sequentially; do not parallelize upserts.
+1. User asked to distill, write the wiki page for, or process the raw evidence of a specific paper: locate the evidence with `qmd get`, `distill_paper(input_value)` or by `paper_id`, read it, extract the structured summary, and call `distill_paper(input_value, distilled=...)` or `upsert_wiki_page(page_type="paper", ...)`.
+2. User asked to distill a batch: run the single-paper flow per paper sequentially; use `distill_papers(items)` only after each item has grounded distilled content.
 3. User asked to distill but the paper has not been captured yet: hand off to `paper-intake` to run `ingest_and_read` first.
 
 ## Required Frontmatter
